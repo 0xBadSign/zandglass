@@ -11,7 +11,7 @@ Live state of the project. The agent updates it at the end of every work unit, n
 | Last updated | 2026-09-30 |
 | Plan version | 2 |
 | Current milestone | M0 Foundations and feasibility (starts 2026-10-01) |
-| Next task | T0.8 M0 exit review; then merge the M1 CLI work (T1.3, T1.4, in progress by a subagent) |
+| Next task | Merge M2 subagent work (T2.1 keeper, T2.2 heir page); T1.5 mainnet run once O-5 arrives |
 | Blocked / waiting on owner | O-5 (0.02 ZEC to the mainnet float address, by 10-08) |
 | Days to deadline | 28 (submissions due 2026-10-28 23:59 UTC; owner submits by 10-27) |
 | Health | on track |
@@ -45,11 +45,11 @@ Live state of the project. The agent updates it at the end of every work unit, n
 - [x] T0.8 Decisions recorded; M0 exit review (all spikes passed; no plan change needed; known issue: re-sync right before building a sweep, since testnet blocks come about every 18 s and a stale tip expired one attempt)
 
 ### M1 Core and CLI (10-04 to 10-10)
-- [ ] T1.1 core::drand
-- [ ] T1.2 core::seal, heir keys, kit v1
-- [ ] T1.3 sandglass-wallet (vault manager, sweep, split, claim)
-- [ ] T1.4 CLI commands
-- [ ] T1.5 End to end: testnet then mainnet, with evidence
+- [x] T1.1 core::drand
+- [x] T1.2 core::seal, heir keys, kit v1
+- [x] T1.3 sandglass-wallet: encrypted store, flip, cancel, claim (split moves to T2.3)
+- [x] T1.4 CLI commands (terminal QR not done; low priority)
+- [ ] T1.5 End to end: testnet DONE (evidence 2026-09-30); mainnet pending O-5; third-party wallet restore pending
 - [ ] T1.6 CI
 
 ### M2 Keeper, heir page, installments (10-11 to 10-16)
