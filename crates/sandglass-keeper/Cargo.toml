@@ -8,6 +8,21 @@ rust-version.workspace = true
 
 [dependencies]
 sandglass-core = { path = "../sandglass-core" }
+anyhow = "1"
+axum = "0.8"
+hex = "0.4"
+rand = "0.8"
+rusqlite = { version = "0.37", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+subtle = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time"] }
+tower-http = { version = "0.6", default-features = false, features = ["cors", "fs"] }
+
+[dev-dependencies]
+tempfile = "3"
+ureq = "3"
 
 [lints]
 workspace = true

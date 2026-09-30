@@ -105,6 +105,13 @@ pub struct Plan {
     /// Optional keeper mailbox URL.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mailbox_url: Option<String>,
+    /// Mailbox id on that keeper.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mailbox_id: Option<String>,
+    /// Token that may replace or delete the kit in the mailbox. It opens no
+    /// funds and no kit, so it is stored with the plan.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mailbox_write_token: Option<String>,
     /// All epochs, oldest first.
     pub epochs: Vec<EpochRecord>,
 }
@@ -355,6 +362,8 @@ mod tests {
             status: PlanStatus::Active,
             created: 1,
             mailbox_url: None,
+            mailbox_id: None,
+            mailbox_write_token: None,
             epochs: vec![EpochRecord {
                 epoch: 1,
                 dir: Store::vault_rel_dir(id, 1),

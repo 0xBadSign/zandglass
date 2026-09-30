@@ -11,6 +11,7 @@ use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use sandglass_core::heir::{generate_phrase, identity_from_phrase};
 use sandglass_core::kit::{self, Kit};
+use sandglass_core::mailbox::{ClaimLink, MailboxClient, MailboxError};
 use sandglass_core::KitError;
 use sandglass_wallet::ops::{self, format_span, network_name, now, zec};
 use sandglass_wallet::{
@@ -88,8 +89,9 @@ enum Cmd {
     },
     /// Heir side: open an unlocked kit and move the funds.
     Claim {
-        /// The `*.sandglass` kit file.
-        kit: PathBuf,
+        /// The `*.sandglass` kit file, or the claim link the owner sent you
+        /// (`https://.../claim#m=...&r=...`).
+        kit: String,
         /// File holding the heir's 24-word phrase.
         #[arg(long)]
         phrase_file: PathBuf,
@@ -128,7 +130,8 @@ enum PlanCmd {
         /// A message for the heirs, sealed into the kit.
         #[arg(long)]
         message: Option<String>,
-        /// Keeper mailbox URL to remember for this plan.
+        /// Keeper URL: creates a mailbox, uploads every kit there and prints
+        /// the claim link for the heir.
         #[arg(long)]
         mailbox: Option<String>,
         /// Amount in ZEC to put in the funding request.
@@ -298,7 +301,15 @@ async fn run(cli: Cli) -> Result<()> {
             println!("\nFund the vault from any Zcash wallet with this payment request:\n");
             println!("  {}\n", c.uri);
             println!("Vault address: {}", c.address);
-            println!("\nGive the kit file to your heirs. Run `sandglass flip {}` before the unlock time to keep the funds yours.", c.plan.short_id());
+            match &c.claim_link {
+                Some(link) => {
+                    println!("\nThe kit was uploaded to your keeper mailbox. Send this claim link to your heir now. It is shown only once:\n");
+                    println!("  {link}\n");
+                    println!("The link alone opens nothing: the heir also needs the heir phrase and must wait for the unlock time.");
+                    println!("Run `sandglass flip {}` before the unlock time to keep the funds yours; the mailbox is updated automatically.", c.plan.short_id());
+                }
+                None => println!("\nGive the kit file to your heirs. Run `sandglass flip {}` before the unlock time to keep the funds yours.", c.plan.short_id()),
+            }
         }
         Cmd::Receive { plan } => {
             let store = open_store(&cli, network)?;
@@ -417,10 +428,21 @@ async fn run(cli: Cli) -> Result<()> {
             print_txids(&r.sweeps);
             println!("New kit: {}", r.kit_path.display());
             println!(
-                "It unlocks at {} ({}). Give it to your heirs in place of the old kit; the old kit now opens an empty vault.",
+                "It unlocks at {} ({}). The old kit now opens an empty vault.",
                 unix_to_text(unlock),
                 time_left(unlock)
             );
+            match (&r.plan.mailbox_url, &r.mailbox_error) {
+                (None, _) => println!("Give the new kit to your heirs in place of the old one."),
+                (Some(_), None) => {
+                    println!("The new kit replaced the old one in your keeper mailbox; the heir's claim link still works.")
+                }
+                (Some(_), Some(e)) => eprintln!(
+                    "WARNING: the funds moved, but the new kit could not be uploaded to the keeper ({e}). \
+                     The mailbox still holds the old, empty kit. Give your heirs {} directly.",
+                    r.kit_path.display()
+                ),
+            }
         }
         Cmd::Cancel { plan, to } => {
             warn_unaudited(network);
@@ -434,6 +456,14 @@ async fn run(cli: Cli) -> Result<()> {
                 to
             );
             print_txids(&r.sweeps);
+            if r.plan.mailbox_id.is_some() {
+                match &r.mailbox_error {
+                    None => println!("The keeper mailbox was deleted."),
+                    Some(e) => eprintln!(
+                        "WARNING: the keeper mailbox could not be deleted ({e}); the keeper removes it after 180 days."
+                    ),
+                }
+            }
         }
         Cmd::Claim {
             kit: kit_path,
@@ -485,12 +515,18 @@ fn write_secret_file(path: &Path, text: &str) -> Result<()> {
 
 async fn claim(
     cli: &Cli,
-    kit_path: &Path,
+    source: &str,
     phrase_file: &Path,
     to: Option<&str>,
     wait: bool,
 ) -> Result<()> {
-    let kit = read_kit(kit_path)?;
+    let kit = match ClaimLink::parse(source) {
+        Some(link) if !Path::new(source).exists() => {
+            let text = MailboxClient::new(&link.base).get(&link.id, &link.read_token)?;
+            Kit::from_json(&text)?
+        }
+        _ => read_kit(Path::new(source))?,
+    };
     let kit_net = ops::wallet_network(kit.network);
     if let Some(n) = cli.network {
         let asked = match n {
@@ -596,6 +632,15 @@ fn error_code(e: &anyhow::Error) -> Option<&'static str> {
     }
     if let Some(k) = e.downcast_ref::<KitError>() {
         return Some(k.code());
+    }
+    if let Some(m) = e.downcast_ref::<MailboxError>() {
+        return match m.code.as_str() {
+            "mailbox_not_found" => Some("mailbox_not_found"),
+            "unauthorized" => Some("unauthorized"),
+            "kit_invalid" => Some("kit_invalid"),
+            "kit_version_unsupported" => Some("kit_version_unsupported"),
+            _ => None,
+        };
     }
     match e.downcast_ref::<StoreError>() {
         Some(StoreError::WrongPassphrase) => Some("unauthorized"),
