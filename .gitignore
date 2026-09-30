@@ -15,3 +15,7 @@ web/dist/
 
 # Agent worktrees and local tool state
 .claude/
+
+# Playwright output
+web/test-results/
+web/playwright-report/
