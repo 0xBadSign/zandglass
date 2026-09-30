@@ -11,8 +11,8 @@ Live state of the project. The agent updates it at the end of every work unit, n
 | Last updated | 2026-09-30 |
 | Plan version | 2 |
 | Current milestone | M0 Foundations and feasibility (starts 2026-10-01) |
-| Next task | T0.1 Repository scaffold |
-| Blocked / waiting on owner | nothing yet (O-1 and O-4 are due soon; O-5 after the mainnet address exists) |
+| Next task | T0.6 once testnet TAZ arrives (faucet retry about 2026-10-01 06:00 UTC); meanwhile T1.3 and T1.4 |
+| Blocked / waiting on owner | O-5 (0.1–0.2 ZEC to the mainnet float address, by 10-08); O-2 server by 10-12 |
 | Days to deadline | 28 (submissions due 2026-10-28 23:59 UTC; owner submits by 10-27) |
 | Health | on track |
 
@@ -26,7 +26,7 @@ Live state of the project. The agent updates it at the end of every work unit, n
 | O-2 | Server: reuse the existing VPS (install the agent's new SSH public key) or buy a Hetzner CX33 | 2026-10-12 | open |
 | O-3 | (Optional) domain | 2026-10-14 | open |
 | O-4 | (If needed) testnet TAZ to the agent's development address | 2026-10-02 | open (address not generated yet) |
-| O-5 | 0.1–0.2 ZEC to the mainnet demo and evidence wallet (what is left is returned) | 2026-10-08 | open (address not generated yet) |
+| O-5 | 0.1–0.2 ZEC to the mainnet demo and evidence wallet (what is left is returned) | 2026-10-08 | open: address `u1n5kwtcm5ey6t0lkyn674ghr2nqqefh82zg4rtngxkmlh3nd2tm8wpt8uc2cvrawmhhetax2wvfrf7tn50n4p7nm5kl9t8mfjeqtg8sjc` (birthday 3501739) |
 | O-6 | Save a draft (10-25) and SUBMIT (10-27) with texts from `docs/SUBMISSION.md` and the judge code from `.private/`; prize address; repository-public box | 10-25 / 10-27 | open |
 | O-7 | (Optional) video voiceover | 2026-10-24 | open |
 
@@ -41,7 +41,7 @@ Live state of the project. The agent updates it at the end of every work unit, n
 - [x] T0.4 Connectivity: zec.rocks:443 (main, height 3501837) and testnet.zec.rocks:443 (test, 4423651), lightwalletd v0.5.x; drand D-012
 - [ ] T0.5 Wallets and funds (testnet development wallet; mainnet demo and evidence address for O-5)
 - [ ] T0.6 Spike A: vault lifecycle and restore in a third-party wallet
-- [ ] T0.7 Spike B: nested encryption and interoperability (Rust, `tle`+`age`, browser)
+- [x] T0.7 Spike B: nested sealing; Rust, tle+age and tlock-js+age-encryption open each other's kits (scripts/interop-kit.sh)
 - [ ] T0.8 Decisions recorded; M0 exit review
 
 ### M1 Core and CLI (10-04 to 10-10)
@@ -129,6 +129,22 @@ None yet.
 
 ## Session log (newest first)
 
+### 2026-09-30 (3): M0 build start
+- T0.1 scaffold (0ab0ccf), T0.2 toolchain, T0.3 dependencies (D-011), T0.4 connectivity (D-012) done. The GitHub private repo `0xnesQuit/sandglass` was created and pushed (O-1 done).
+- Spike A (Sonnet subagent, merged):
+  - `crates/sandglass-wallet` vault, sync, sweep, restore; the `spike_vault` example;
+  - `info` works on mainnet and testnet;
+  - testnet vault `utest1p2awydq35puydeurknpfd065drawhcrn783zltwqfydge2fh27ht8ysp4rpgfmgxk4zrn9xlxd44v4spv94ytrdudpfwz3cngykytvwq` (birthday 4423551, seed in WSL `~/sandglass-spikeA/vault1`).
+  - Sweep is not yet run with real funds.
+- Spike B (Sonnet subagent, merged):
+  - drand, heir and seal modules; kit vectors;
+  - interoperability in all directions (Rust, `tle`+`age`, tlock-js+age-encryption);
+  - the merge needed bip0039 0.12, hkdf 0.12 and sha2 0.10 because `zcash_primitives` pins `crypto-common =0.2.0-rc.1`.
+- Mainnet demo and evidence wallet created (seed in WSL `~/sandglass-evidence/main-float`); its address was handed to the owner for O-5.
+- The Valar testnet faucet (API, no bot check) returned `global_cap` (retry after about 9 h, around 2026-10-01 06:00 UTC).
+- `check.sh`: 24 tests plus all gates pass on `main`.
+- Next: retry the faucet, then T0.6 (fund, sweep, restore). Meanwhile M1 T1.3 hardening (encrypted seed storage) and T1.4 CLI.
+
 ### 2026-09-30 (2): Plan v2, mainnet first and no on-chain footprint
 - The owner asked for mainnet unless the rules allow testnet. The rules, FAQ, resources and the site's data file say nothing about networks, so all judge-facing parts move to mainnet (D-007).
 - Found the judging criteria in the site's data file (D-006). "Leaks are disqualifying" means the pre-signed design's fingerprints are unacceptable as a default.
@@ -151,4 +167,7 @@ None yet.
 
 ## Known issues and technical debt
 
-None yet.
+- In agent worktrees, git does not work from WSL (the `.git` file holds a Windows path), so the english-only and secrets greps in `check.sh` pass vacuously there. Always run the final `check.sh` on `main`.
+- The `spike_vault` example stores seeds in plaintext (spike only). T1.3 replaces this with age-passphrase encryption.
+- `tlock_age` pulls in its own `age` 0.11 beside `age` 0.12.1 (bytes only cross the boundary).
+- `drand_core` uses `ureq`; a future WASM build of core must avoid its HTTP client.
