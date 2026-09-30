@@ -11,7 +11,7 @@ Live state of the project. The agent updates it at the end of every work unit, n
 | Last updated | 2026-09-30 |
 | Plan version | 2 |
 | Current milestone | M0 Foundations and feasibility (starts 2026-10-01) |
-| Next task | T0.6 once testnet TAZ arrives (faucet retry about 2026-10-01 06:00 UTC); meanwhile T1.3 and T1.4 |
+| Next task | T0.8 M0 exit review; then merge the M1 CLI work (T1.3, T1.4, in progress by a subagent) |
 | Blocked / waiting on owner | O-5 (0.02 ZEC to the mainnet float address, by 10-08) |
 | Days to deadline | 28 (submissions due 2026-10-28 23:59 UTC; owner submits by 10-27) |
 | Health | on track |
@@ -25,7 +25,7 @@ Live state of the project. The agent updates it at the end of every work unit, n
 | O-1 | GitHub access on this PC (`gh auth login`); repository under the owner's account, private until 10-26 | 2026-10-03 | done 2026-09-30: account `0xnesQuit`, private repo `0xnesQuit/sandglass` |
 | O-2 | Server: reuse the existing VPS (install the agent's new SSH public key) or buy a Hetzner CX33 | 2026-10-12 | done 2026-10-01: existing VPS reachable with the deploy key (4 vCPU, 6 GB RAM, 50 GB; details in .private/SERVER.md) |
 | O-3 | (Optional) domain | 2026-10-14 | open |
-| O-4 | (If needed) testnet TAZ to the agent's development address | 2026-10-02 | open (address not generated yet) |
+| O-4 | (If needed) testnet TAZ to the agent's development address | 2026-10-02 | done 2026-09-30: owner sent 1 TAZ |
 | O-5 | 0.02 ZEC (0.01 is enough to start) to the mainnet demo and evidence wallet (what is left is returned) | 2026-10-08 | open: address `u1n5kwtcm5ey6t0lkyn674ghr2nqqefh82zg4rtngxkmlh3nd2tm8wpt8uc2cvrawmhhetax2wvfrf7tn50n4p7nm5kl9t8mfjeqtg8sjc` (birthday 3501739) |
 | O-6 | Save a draft (10-25) and SUBMIT (10-27) with texts from `docs/SUBMISSION.md` and the judge code from `.private/`; prize address; repository-public box | 10-25 / 10-27 | open |
 | O-7 | (Optional) video voiceover | 2026-10-24 | open |
@@ -39,10 +39,10 @@ Live state of the project. The agent updates it at the end of every work unit, n
 - [x] T0.2 Toolchain: Rust 1.98.1, age 1.2.1, tle v1.2.0, Go 1.26, protoc (WSL)
 - [x] T0.3 Dependency decision (D-011)
 - [x] T0.4 Connectivity: zec.rocks:443 (main, height 3501837) and testnet.zec.rocks:443 (test, 4423651), lightwalletd v0.5.x; drand D-012
-- [ ] T0.5 Wallets and funds (testnet development wallet; mainnet demo and evidence address for O-5)
-- [ ] T0.6 Spike A: vault lifecycle and restore in a third-party wallet
+- [x] T0.5 Wallets and funds: 1 TAZ from the owner (faucet), mainnet float address issued (O-5 pending)
+- [x] T0.6 Spike A: fund, flip (standard fields) and restore proven on testnet; third-party wallet restore moves to T1.5
 - [x] T0.7 Spike B: nested sealing; Rust, tle+age and tlock-js+age-encryption open each other's kits (scripts/interop-kit.sh)
-- [ ] T0.8 Decisions recorded; M0 exit review
+- [x] T0.8 Decisions recorded; M0 exit review (all spikes passed; no plan change needed; known issue: re-sync right before building a sweep, since testnet blocks come about every 18 s and a stale tip expired one attempt)
 
 ### M1 Core and CLI (10-04 to 10-10)
 - [ ] T1.1 core::drand
