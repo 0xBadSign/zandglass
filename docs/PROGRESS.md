@@ -35,9 +35,9 @@ Live state of the project. The agent updates it at the end of every work unit, n
 ## Checklist
 
 ### M0 Foundations and feasibility (10-01 to 10-03)
-- [ ] T0.1 Repository scaffold
-- [ ] T0.2 Toolchain (including `tle` and `age` CLIs)
-- [ ] T0.3 Dependency decision (mainnet and testnet, NU7 path)
+- [x] T0.1 Repository scaffold (0ab0ccf)
+- [x] T0.2 Toolchain: Rust 1.98.1, age 1.2.1, tle v1.2.0, Go 1.26, protoc (WSL)
+- [x] T0.3 Dependency decision (D-011)
 - [ ] T0.4 Connectivity (mainnet and testnet lightwalletd, drand)
 - [ ] T0.5 Wallets and funds (testnet development wallet; mainnet demo and evidence address for O-5)
 - [ ] T0.6 Spike A: vault lifecycle and restore in a third-party wallet
@@ -113,6 +113,9 @@ Live state of the project. The agent updates it at the end of every work unit, n
 | D-006 | 2026-09-30 | Judging criteria found in the site's data file: Privacy ("Leaks are disqualifying, not deductions"), Usefulness ("use this on Monday"), Execution ("Working beats ambitious"), Originality ("not repackaged") | Drives D-007, D-009, the privacy review (C-11) and the cut order |
 | D-007 | 2026-09-30 | Every judge-facing part (demo, evidence, video) is on mainnet | The rules say nothing about testnet; the criteria favour real use |
 | D-008 | 2026-09-30 | Heir key = 24 words, HKDF (`sandglass-heir-v1`), X25519 age identity; heir code = the age recipient string | Standard, portable, openable with the reference `age` tool; phrase backup is familiar to crypto users |
+| D-013 | 2026-09-30 | Commits use a repo-local neutral identity (`Sandglass contributors <dev@sandglass.invalid>`) until O-1 gives a GitHub noreply address | C-9: the global git identity carries the owner's real name and email |
+| D-012 | 2026-09-30 | drand quicknet verified: chain `52db9ba7…e971`, genesis 1692803367, period 3, scheme `bls-unchained-g1-rfc9380`, public key `83cf0f28…ece45a` | T0.4 |
+| D-011 | 2026-09-30 | Build on the released cohort (`zcash_client_backend` 0.24.0, `zcash_client_sqlite` 0.22.0, `zcash_primitives` 0.30.1, `zcash_protocol` 0.10.6, `zcash_keys` 0.16.1, `orchard` 0.15.5, `zip321` 0.9.0). Released crates have no NU7 (still `zcash_unstable`); librustzcash main has `BranchId::Nu7 = 0x77190AD9` but no testnet or mainnet height. After testnet NU7 (10-06), if no release carries the height, continue development on mainnet with small amounts; bump before mainnet NU7 (T6.1). | The sealed-vault design builds only ordinary transactions, so NU7 only matters for the wallet's transaction builder |
 | D-010 | 2026-09-30 | Coding subagents run on the Sonnet model; the main agent reviews and integrates | Owner instruction |
 | D-009 | 2026-09-30 | Pre-signed transactions (plan v1) demoted to opt-in "auto-delivery" (S1) | Expiry 0 and old anchors are on-chain fingerprints (leaks disqualify); signatures go stale at network upgrades |
 
