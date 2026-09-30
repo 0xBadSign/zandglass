@@ -11,7 +11,7 @@ Live state of the project. The agent updates it at the end of every work unit, n
 | Last updated | 2026-09-30 |
 | Plan version | 2 |
 | Current milestone | M0 Foundations and feasibility (starts 2026-10-01) |
-| Next task | Merge M2 subagent work (T2.1 keeper, T2.2 heir page); T1.5 mainnet run once O-5 arrives |
+| Next task | T2.3 installments, T2.4 multiple heirs (already supported in core and CLI: verify), then M3 landing, playground and deploy; T1.5 mainnet run when O-5 arrives |
 | Blocked / waiting on owner | O-5 (0.02 ZEC to the mainnet float address, by 10-08) |
 | Days to deadline | 28 (submissions due 2026-10-28 23:59 UTC; owner submits by 10-27) |
 | Health | on track |
@@ -53,8 +53,8 @@ Live state of the project. The agent updates it at the end of every work unit, n
 - [ ] T1.6 CI
 
 ### M2 Keeper, heir page, installments (10-11 to 10-16)
-- [ ] T2.1 Keeper mailbox
-- [ ] T2.2 Heir page (create a key; claim; no secret leaves the page)
+- [x] T2.1 Keeper mailbox (axum + SQLite, token hashes, no IP logs, CLI --mailbox and claim links)
+- [x] T2.2 Heir page: become-an-heir and claim pages; Playwright proves no secret leaves the page; axe clean
 - [ ] T2.3 Installments (split, payee auto-claim, cancel)
 - [ ] T2.4 Multiple heirs (1 to 3)
 

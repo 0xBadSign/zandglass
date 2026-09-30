@@ -46,7 +46,8 @@ if [ "$ONLY" = all ] || [ "$ONLY" = rust ]; then
 fi
 if [ "$ONLY" = all ] || [ "$ONLY" = web ]; then
     if [ -f web/package.json ]; then
-        run web-install bash -c 'cd web && { [ -d node_modules ] || npm ci --silent --no-audit --no-fund; }'
+        # Reinstall when the lockfile changed since the last install.
+        run web-install bash -c 'cd web && { [ node_modules/.package-lock.json -nt package-lock.json ] || npm ci --silent --no-audit --no-fund; }'
         run web-types bash -c 'cd web && npx tsc --noEmit'
         run web-test bash -c 'cd web && npm test --silent'
     fi
