@@ -5,10 +5,12 @@
 
 pub mod drand;
 pub mod heir;
+pub mod kit;
 pub mod seal;
 
 pub use drand::Beacon;
 pub use heir::{HeirCode, HeirError, HeirIdentity};
+pub use kit::{Kit, KitError, Payload};
 pub use seal::{open, seal, SealError};
 
 /// Crate version, for kit metadata and diagnostics.
