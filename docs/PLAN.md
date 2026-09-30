@@ -453,17 +453,17 @@ Rules:
 - **Roles:** the server plays the owner and holds a small **demo float**. The visitor plays the heir. **The heir key is generated in the visitor's browser and never leaves it.**
 - **Session flow (about 5 to 10 minutes):**
   1. "Become an heir": create a heir key in the browser (the phrase can be skipped in the demo) and get the heir code.
-  2. "Start a vault": the server creates a vault funded with 0.001 ZEC from the float (a real mainnet transaction), seals it to the visitor's heir code with a 3, 5 or 10 minute timer, and puts it in a mailbox.
+  2. "Start a vault": the server creates a vault funded with 0.0002 ZEC from the float (a real mainnet transaction), seals it to the visitor's heir code with a 3, 5 or 10 minute timer, and puts it in a mailbox.
   3. The visitor watches the countdown and may press **Flip** (a real mainnet sweep to a new vault; the timer resets) or **Stop flipping**.
   4. After the unlock, the visitor opens the kit in the browser. It is decrypted locally and the vault seed appears. The visitor can:
-     - "Keep it": restore the seed in their own Zcash wallet, and the 0.001 ZEC is theirs;
+     - "Keep it": restore the seed in their own Zcash wallet (at most 5 a day; otherwise the demo returns it);
      - "Send it to my address": the page asks for a unified address and the server sweeps;
      - "Return it": the server sweeps back to the float.
   5. Show the mainnet txids with explorer links.
 - **Caps:**
   - at most 10 concurrent sessions;
   - at most 60 sessions a day;
-  - 0.001 ZEC per session;
+  - 0.0002 ZEC per session, returned to the float by default;
   - the float holds at most what the owner funded (O-5).
 - **Labels:** "Mainnet demo. Here the server plays the owner and holds the demo vault. In real use the owner runs Sandglass on their own device. Your heir key never leaves this browser." This is the main "mock" in the submission.
 - Exactly the same core and wallet code as the CLI.
@@ -561,8 +561,8 @@ The on-chain footprint is **none** (P4). This is verified in T4.1 by comparing o
 ### 7.2 Budget
 
 - Server for 2 months plus an optional domain: about $30–60.
-- **Mainnet demo float and evidence:** 0.1–0.2 ZEC from the owner (O-5).
-  - Playground sessions give away at most 0.001 ZEC each (at most 60 a day).
+- **Mainnet demo float and evidence:** 0.02 ZEC from the owner (O-5); only fees are spent (about 0.0001 ZEC per transaction).
+  - Playground sessions move 0.0002 ZEC and return it to the float by default (at most 60 a day).
   - Evidence transactions cost about 0.0001 ZEC each.
   - What is left is returned to the owner at the end.
 - The agent never purchases anything.
@@ -688,7 +688,7 @@ Each task has acceptance criteria (AC). A task is done only when:
   - `flip`, `cancel <plan>`, `claim <kit|link> [--to <UA>]`, `kit inspect`.
 - **T1.5 End to end, testnet then mainnet (scripted):**
   - `scripts/e2e-testnet.sh`: heir new, plan (2-minute timer), fund, flip (the old kit now opens an empty vault), stop, claim to a third address.
-  - Then `scripts/e2e-mainnet.sh` with the O-5 funds (0.001–0.005 ZEC amounts).
+  - Then `scripts/e2e-mainnet.sh` with the O-5 funds (vaults of about 0.0005 ZEC).
   - AC: testnet and mainnet txids in evidence. **Never cut the mainnet run.**
 - **T1.6 CI:** local `check.sh` is the gate; add GitHub Actions after O-1.
 
@@ -837,7 +837,7 @@ Cut in this order: S6, S5, S4, S3, S2, S1; then T2.4 (keep one heir); then T2.3 
 | O-2 | Provide a server: reuse the existing VPS (install the new SSH public key the agent generates, through the provider console) or buy a Hetzner CX33 | Hosted mainnet demo (M3) | 2026-10-12 |
 | O-3 | (Optional) buy a domain | Clean demo URL; otherwise sslip.io | 2026-10-14 |
 | O-4 | If needed, claim testnet TAZ from faucets to the address the agent provides (the agent never solves CAPTCHAs or bot checks) | Development | 2026-10-02 |
-| O-5 | Send 0.1–0.2 ZEC to the mainnet demo and evidence wallet address the agent provides (what is left is returned at the end) | Mainnet evidence (T1.5), playground float (T3.1), live vault (T3.5) | 2026-10-08 |
+| O-5 | Send 0.02 ZEC (0.01 is enough to start) to the mainnet demo and evidence wallet address the agent provides (what is left is returned at the end) | Mainnet evidence (T1.5), playground float (T3.1), live vault (T3.5) | 2026-10-08 |
 | O-6 | Save a draft (10-25) and press SUBMIT (10-27) on thezecathon.com, pasting the texts from `docs/SUBMISSION.md` and the judge code from `.private/`; give a shielded prize address; tick the repository-public box | Only the owner can submit (C-5) | 10-25 / 10-27 |
 | O-7 | (Optional) record the voiceover for the video from the script | Nicer video | 2026-10-24 |
 
