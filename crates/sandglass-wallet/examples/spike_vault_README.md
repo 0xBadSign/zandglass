@@ -38,6 +38,6 @@ cargo run -p sandglass-wallet --example spike_vault -- new-vault /tmp/vault1
 
 ## Security note (spike only)
 
-The seed is stored in plaintext in `<dir>/seed.txt`. The product stores vault
+In this spike the example writes the seed in plaintext to `<dir>/seed.txt` (the library never does). The product stores vault
 seeds encrypted (plan section 5.6). Keep spike data directories outside the
 repository, and do not use this example with funds you cannot lose.

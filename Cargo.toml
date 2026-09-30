@@ -19,5 +19,9 @@ unsafe_code = "forbid"
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
 
+# Dependencies (scrypt, pairings, proving) are unusably slow unoptimised.
+[profile.dev.package."*"]
+opt-level = 3
+
 [profile.release]
 lto = "thin"

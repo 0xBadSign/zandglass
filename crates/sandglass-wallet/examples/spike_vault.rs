@@ -1,10 +1,11 @@
 //! Feasibility spike for the Sandglass vault wallet. See `spike_vault_README.md`.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Result};
 use sandglass_wallet::{connect, default_url, Balances, Network, Vault};
 use zcash_client_backend::proto::service::{ChainSpec, Empty};
+use zeroize::Zeroizing;
 
 const USAGE: &str = "usage: spike_vault [--network test|main] [--url URL] <command>
 commands:
@@ -13,6 +14,18 @@ commands:
   sync <dir>
   sweep <dir> <to_address>
   restore <dir> <seed-file> <birthday>";
+
+/// Spike only: seeds live in plaintext files. The product encrypts them.
+fn read_seed(path: &Path) -> Result<Zeroizing<String>> {
+    Ok(Zeroizing::new(
+        std::fs::read_to_string(path)?.trim().to_string(),
+    ))
+}
+
+fn open_vault(dir: &str, network: Network) -> Result<Vault> {
+    let dir = PathBuf::from(dir);
+    Vault::open(&dir, network, read_seed(&dir.join("seed.txt"))?)
+}
 
 fn zec(zat: u64) -> String {
     format!("{}.{:08}", zat / 100_000_000, zat % 100_000_000)
@@ -83,22 +96,26 @@ async fn main() -> Result<()> {
         }
         "new-vault" => {
             let mut client = connect(&url).await?;
-            let (mut vault, birthday) =
-                Vault::create(&PathBuf::from(arg(1)?), network, &mut client).await?;
+            let dir = PathBuf::from(arg(1)?);
+            let phrase = Vault::new_seed();
+            let birthday = Vault::new_birthday(&mut client).await?;
+            std::fs::create_dir_all(&dir)?;
+            std::fs::write(dir.join("seed.txt"), phrase.as_bytes())?;
+            let mut vault = Vault::init(&dir, network, &mut client, phrase, birthday).await?;
             println!("vault created in {}", vault.dir().display());
             println!("birthday height: {birthday}");
             println!("address: {}", vault.address()?);
-            println!("zip321:  {}", vault.zip321_uri()?);
+            println!("zip321:  {}", vault.zip321_uri(None)?);
         }
         "sync" => {
             let mut client = connect(&url).await?;
-            let mut vault = Vault::open(&PathBuf::from(arg(1)?), network)?;
+            let mut vault = open_vault(arg(1)?, network)?;
             vault.sync(&mut client).await?;
             print_balances(&vault.balances()?);
         }
         "sweep" => {
             let mut client = connect(&url).await?;
-            let mut vault = Vault::open(&PathBuf::from(arg(1)?), network)?;
+            let mut vault = open_vault(arg(1)?, network)?;
             vault.sync(&mut client).await?;
             print_balances(&vault.balances()?);
             for r in vault.sweep(&mut client, arg(2)?).await? {
@@ -116,14 +133,10 @@ async fn main() -> Result<()> {
         "restore" => {
             let mut client = connect(&url).await?;
             let birthday: u32 = arg(3)?.parse()?;
-            let mut vault = Vault::restore(
-                &PathBuf::from(arg(1)?),
-                network,
-                &mut client,
-                &PathBuf::from(arg(2)?),
-                birthday,
-            )
-            .await?;
+            let dir = PathBuf::from(arg(1)?);
+            let phrase = read_seed(Path::new(arg(2)?))?;
+            let mut vault = Vault::init(&dir, network, &mut client, phrase, birthday).await?;
+            std::fs::write(dir.join("seed.txt"), vault.seed_phrase())?;
             println!("vault restored in {}", vault.dir().display());
             println!("address: {}", vault.address()?);
         }

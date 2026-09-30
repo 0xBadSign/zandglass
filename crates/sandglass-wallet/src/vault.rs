@@ -29,6 +29,7 @@ use zcash_keys::keys::{UnifiedAddressRequest, UnifiedSpendingKey};
 use zcash_primitives::transaction::fees::{zip317, FeeRule};
 use zcash_proofs::prover::LocalTxProver;
 use zcash_protocol::{consensus::Network, ShieldedPool};
+use zeroize::Zeroizing;
 
 use crate::{blockcache::MemBlockCache, lightwalletd::Client};
 
@@ -36,7 +37,6 @@ use crate::{blockcache::MemBlockCache, lightwalletd::Client};
 pub type Db = WalletDb<Connection, Network, SystemClock, OsRng>;
 
 const DB_FILE: &str = "wallet.sqlite";
-const SEED_FILE: &str = "seed.txt";
 const SYNC_BATCH_SIZE: u32 = 1000;
 /// Birthday offset below the chain tip for freshly created vaults.
 pub const NEW_VAULT_BIRTHDAY_LOOKBACK: u32 = 100;
@@ -63,6 +63,11 @@ impl Balances {
     pub fn spendable(&self) -> u64 {
         self.sapling.spendable + self.orchard.spendable + self.ironwood.spendable
     }
+
+    /// Total value across all shielded pools, including unconfirmed funds.
+    pub fn total(&self) -> u64 {
+        self.sapling.total + self.orchard.total + self.ironwood.total
+    }
 }
 
 /// What a sweep produced, for verifying that it looks like an ordinary transaction.
@@ -82,7 +87,7 @@ pub struct Vault {
     network: Network,
     db: Db,
     account: AccountUuid,
-    seed: Mnemonic<English>,
+    seed: Zeroizing<String>,
 }
 
 fn open_db(dir: &Path, network: Network) -> Result<Db> {
@@ -90,6 +95,10 @@ fn open_db(dir: &Path, network: Network) -> Result<Db> {
         .context("opening wallet database")?;
     init_wallet_db(&mut db, None).map_err(|e| anyhow!("wallet migration failed: {e:?}"))?;
     Ok(db)
+}
+
+fn parse_phrase(phrase: &str) -> Result<Mnemonic<English>> {
+    Mnemonic::<English>::from_phrase(phrase.trim()).map_err(|e| anyhow!("invalid seed phrase: {e}"))
 }
 
 fn seed_bytes(mnemonic: &Mnemonic<English>) -> SecretVec<u8> {
@@ -109,52 +118,44 @@ async fn birthday_at(client: &mut Client, height: u32) -> Result<AccountBirthday
         .map_err(|e| anyhow!("invalid birthday tree state: {e:?}"))
 }
 
-fn read_seed_file(path: &Path) -> Result<Mnemonic<English>> {
-    let text = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    Mnemonic::<English>::from_phrase(text.trim())
-        .map_err(|e| anyhow!("invalid mnemonic in {}: {e}", path.display()))
-}
-
 impl Vault {
-    /// Creates a new vault with a fresh 24-word seed and a birthday of
-    /// chain tip minus [`NEW_VAULT_BIRTHDAY_LOOKBACK`].
-    ///
-    /// Spike only: the seed is stored in plaintext in `<dir>/seed.txt`.
-    pub async fn create(dir: &Path, network: Network, client: &mut Client) -> Result<(Self, u32)> {
+    /// Generates a fresh random 24-word seed.
+    pub fn new_seed() -> Zeroizing<String> {
+        Zeroizing::new(Mnemonic::<English>::generate(Count::Words24).into_phrase())
+    }
+
+    /// The chain tip height, for choosing a birthday.
+    pub async fn chain_tip(client: &mut Client) -> Result<u32> {
         let tip = client
             .get_latest_block(zcash_client_backend::proto::service::ChainSpec::default())
             .await
             .context("fetching chain tip")?
             .into_inner()
             .height;
-        let tip = u32::try_from(tip).context("chain tip out of range")?;
-        let birthday = tip.saturating_sub(NEW_VAULT_BIRTHDAY_LOOKBACK).max(1);
-        let mnemonic = Mnemonic::<English>::generate(Count::Words24);
-        let vault = Self::init(dir, network, client, mnemonic, birthday).await?;
-        Ok((vault, birthday))
+        u32::try_from(tip).context("chain tip out of range")
     }
 
-    /// Restores a vault from an existing seed file and birthday height.
-    pub async fn restore(
+    /// The birthday height for a vault created now.
+    pub async fn new_birthday(client: &mut Client) -> Result<u32> {
+        Ok(Self::chain_tip(client)
+            .await?
+            .saturating_sub(NEW_VAULT_BIRTHDAY_LOOKBACK)
+            .max(1))
+    }
+
+    /// Creates the wallet database for `phrase` in `dir` (which must not hold a
+    /// wallet yet). The seed itself is never written here: the caller keeps it
+    /// (the `Store` encrypts it).
+    pub async fn init(
         dir: &Path,
         network: Network,
         client: &mut Client,
-        seed_file: &Path,
-        birthday: u32,
-    ) -> Result<Self> {
-        let mnemonic = read_seed_file(seed_file)?;
-        Self::init(dir, network, client, mnemonic, birthday).await
-    }
-
-    async fn init(
-        dir: &Path,
-        network: Network,
-        client: &mut Client,
-        mnemonic: Mnemonic<English>,
+        phrase: Zeroizing<String>,
         birthday_height: u32,
     ) -> Result<Self> {
+        let mnemonic = parse_phrase(&phrase)?;
         fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
-        if dir.join(DB_FILE).exists() || dir.join(SEED_FILE).exists() {
+        if dir.join(DB_FILE).exists() {
             bail!("{} already contains a wallet", dir.display());
         }
         let birthday = birthday_at(client, birthday_height).await?;
@@ -162,20 +163,18 @@ impl Vault {
         let (account, _usk) = db
             .create_account("vault", &seed_bytes(&mnemonic), &birthday, None)
             .map_err(|e| anyhow!("creating account: {e:?}"))?;
-        fs::write(dir.join(SEED_FILE), mnemonic.phrase())
-            .with_context(|| format!("writing {}", dir.join(SEED_FILE).display()))?;
         Ok(Self {
             dir: dir.to_path_buf(),
             network,
             db,
             account,
-            seed: mnemonic,
+            seed: phrase,
         })
     }
 
-    /// Opens an existing vault directory.
-    pub fn open(dir: &Path, network: Network) -> Result<Self> {
-        let seed = read_seed_file(&dir.join(SEED_FILE))?;
+    /// Opens an existing vault directory with its seed phrase.
+    pub fn open(dir: &Path, network: Network, phrase: Zeroizing<String>) -> Result<Self> {
+        parse_phrase(&phrase)?;
         let db = open_db(dir, network)?;
         let account = db
             .get_account_ids()
@@ -188,8 +187,13 @@ impl Vault {
             network,
             db,
             account,
-            seed,
+            seed: phrase,
         })
+    }
+
+    /// The vault's seed phrase (for sealing into a kit).
+    pub fn seed_phrase(&self) -> &str {
+        &self.seed
     }
 
     /// The vault directory.
@@ -218,12 +222,16 @@ impl Vault {
     }
 
     /// Builds a ZIP 321 payment request URI for this vault's address.
-    pub fn zip321_uri(&mut self) -> Result<String> {
+    pub fn zip321_uri(&mut self, amount_zat: Option<u64>) -> Result<String> {
         let addr: ZcashAddress = self
             .address()?
             .parse()
             .map_err(|e| anyhow!("address parse: {e:?}"))?;
-        let payment = zip321::Payment::new(addr, None, None, None, None, vec![])
+        let amount = amount_zat
+            .map(zcash_protocol::value::Zatoshis::from_u64)
+            .transpose()
+            .map_err(|e| anyhow!("amount: {e:?}"))?;
+        let payment = zip321::Payment::new(addr, amount, None, None, None, vec![])
             .map_err(|e| anyhow!("payment: {e:?}"))?;
         let request = zip321::TransactionRequest::new(vec![payment])
             .map_err(|e| anyhow!("request: {e:?}"))?;
@@ -313,12 +321,9 @@ impl Vault {
         )
         .map_err(|e| anyhow!("proposal failed: {e:?}"))?;
 
-        let usk = UnifiedSpendingKey::from_seed(
-            &self.network,
-            &self.seed.to_seed(""),
-            zip32::AccountId::ZERO,
-        )
-        .map_err(|e| anyhow!("deriving spending key: {e:?}"))?;
+        let seed = Zeroizing::new(parse_phrase(&self.seed)?.to_seed(""));
+        let usk = UnifiedSpendingKey::from_seed(&self.network, &seed[..], zip32::AccountId::ZERO)
+            .map_err(|e| anyhow!("deriving spending key: {e:?}"))?;
         let prover = LocalTxProver::bundled();
 
         let txids = create_proposed_transactions::<
