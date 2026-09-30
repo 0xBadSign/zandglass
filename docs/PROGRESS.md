@@ -12,7 +12,7 @@ Live state of the project. The agent updates it at the end of every work unit, n
 | Plan version | 2 |
 | Current milestone | M0 Foundations and feasibility (starts 2026-10-01) |
 | Next task | T0.6 once testnet TAZ arrives (faucet retry about 2026-10-01 06:00 UTC); meanwhile T1.3 and T1.4 |
-| Blocked / waiting on owner | O-5 (0.1–0.2 ZEC to the mainnet float address, by 10-08); O-2 server by 10-12 |
+| Blocked / waiting on owner | O-5 (0.1–0.2 ZEC to the mainnet float address, by 10-08) |
 | Days to deadline | 28 (submissions due 2026-10-28 23:59 UTC; owner submits by 10-27) |
 | Health | on track |
 
@@ -23,7 +23,7 @@ Live state of the project. The agent updates it at the end of every work unit, n
 | ID | Action | Due | Status |
 |---|---|---|---|
 | O-1 | GitHub access on this PC (`gh auth login`); repository under the owner's account, private until 10-26 | 2026-10-03 | done 2026-09-30: account `0xnesQuit`, private repo `0xnesQuit/sandglass` |
-| O-2 | Server: reuse the existing VPS (install the agent's new SSH public key) or buy a Hetzner CX33 | 2026-10-12 | open |
+| O-2 | Server: reuse the existing VPS (install the agent's new SSH public key) or buy a Hetzner CX33 | 2026-10-12 | done 2026-10-01: existing VPS reachable with the deploy key (4 vCPU, 6 GB RAM, 50 GB; details in .private/SERVER.md) |
 | O-3 | (Optional) domain | 2026-10-14 | open |
 | O-4 | (If needed) testnet TAZ to the agent's development address | 2026-10-02 | open (address not generated yet) |
 | O-5 | 0.1–0.2 ZEC to the mainnet demo and evidence wallet (what is left is returned) | 2026-10-08 | open: address `u1n5kwtcm5ey6t0lkyn674ghr2nqqefh82zg4rtngxkmlh3nd2tm8wpt8uc2cvrawmhhetax2wvfrf7tn50n4p7nm5kl9t8mfjeqtg8sjc` (birthday 3501739) |
