@@ -5,51 +5,13 @@
  * the reference CLIs and the Rust core (set KIT_OUT to write it to a file).
  */
 import { readFileSync, writeFileSync } from 'node:fs';
-import { bech32 } from '@scure/base';
-import { hkdf } from '@noble/hashes/hkdf.js';
-import { sha256 } from '@noble/hashes/sha2.js';
-import { mnemonicToSeedSync, validateMnemonic } from '@scure/bip39';
-import { wordlist } from '@scure/bip39/wordlists/english.js';
+import { identityFromPhrase } from './lib/heir';
+import { read, recordedClient } from './test-helpers';
 import { Decrypter, Encrypter, identityToRecipient } from 'age-encryption';
-import { quicknetClient, type ChainClient, type ChainInfo } from 'drand-client';
+import { quicknetClient, type ChainClient } from 'drand-client';
 import { Buffer, timelockDecrypt, timelockEncrypt } from 'tlock-js';
 import { describe, expect, it } from 'vitest';
 
-const VECTORS = new URL('../../crates/sandglass-core/tests/vectors/', import.meta.url);
-const read = (name: string): string => readFileSync(new URL(name, VECTORS), 'utf8');
-
-const QUICKNET_INFO: ChainInfo = {
-  public_key:
-    '83cf0f2896adee7eb8b5f01fcad3912212c437e0073e911fb90022d3e760183c8c4b450b6a0a6c3ac6a5776a2d1064510d1fec758c921cc22b0e17e63aaf4bcb5ed66304de9cf809bd274ca73bab4af5a6e9c76a4bc09e76eae8991ef5ece45a',
-  period: 3,
-  genesis_time: 1692803367,
-  hash: '52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971',
-  groupHash: 'f477d5c89f21a17c863a7f937c6a6d15859414d2be09cd448d4279af331c5d3e',
-  schemeID: 'bls-unchained-g1-rfc9380',
-  metadata: { beaconID: 'quicknet' },
-};
-
-/** A chain client that serves only the recorded beacon, so the test runs offline. */
-function recordedClient(): ChainClient {
-  const beacon = JSON.parse(read('beacon.json')) as { round: number };
-  return {
-    options: { disableBeaconVerification: true, noCache: true },
-    latest: async () => beacon as never,
-    get: async (round: number) => {
-      if (round !== beacon.round) throw new Error(`no recorded beacon for round ${round}`);
-      return beacon as never;
-    },
-    chain: () => ({ baseUrl: 'recorded', info: async () => QUICKNET_INFO }),
-  };
-}
-
-/** phrase -> BIP 39 seed -> HKDF-SHA256("sandglass-heir-v1") -> AGE-SECRET-KEY-1... */
-function identityFromPhrase(phrase: string): string {
-  if (!validateMnemonic(phrase, wordlist)) throw new Error('invalid phrase');
-  const seed = mnemonicToSeedSync(phrase, '');
-  const secret = hkdf(sha256, seed, undefined, new TextEncoder().encode('sandglass-heir-v1'), 32);
-  return bech32.encode('age-secret-key-', bech32.toWords(secret), 1023).toUpperCase();
-}
 
 async function openKit(kit: string, identity: string, client: ChainClient): Promise<string> {
   const inner = await timelockDecrypt(kit, client);
