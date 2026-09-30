@@ -6,6 +6,7 @@
 pub mod drand;
 pub mod heir;
 pub mod kit;
+pub mod mailbox;
 pub mod seal;
 
 pub use drand::Beacon;

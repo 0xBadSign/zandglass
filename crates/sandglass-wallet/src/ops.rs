@@ -9,6 +9,7 @@ use rand::{rngs::OsRng, RngCore};
 use sandglass_core::drand;
 use sandglass_core::heir::HeirCode;
 use sandglass_core::kit::{BuildParams, Kind, Payload};
+use sandglass_core::mailbox::{normalize_base, ClaimLink, MailboxClient};
 use sandglass_core::Kit;
 use zeroize::Zeroizing;
 
@@ -231,6 +232,31 @@ fn make_kit(
     )?)
 }
 
+/// Uploads `kit` to the plan's mailbox, replacing the previous kit. Does
+/// nothing when the plan has no mailbox.
+pub fn upload_kit(plan: &Plan, kit: &Kit) -> Result<()> {
+    if let (Some(url), Some(id), Some(token)) = (
+        &plan.mailbox_url,
+        &plan.mailbox_id,
+        &plan.mailbox_write_token,
+    ) {
+        MailboxClient::new(url).put(id, token, &kit.to_json()?)?;
+    }
+    Ok(())
+}
+
+/// Deletes the plan's mailbox. Does nothing when the plan has none.
+pub fn delete_mailbox(plan: &Plan) -> Result<()> {
+    if let (Some(url), Some(id), Some(token)) = (
+        &plan.mailbox_url,
+        &plan.mailbox_id,
+        &plan.mailbox_write_token,
+    ) {
+        MailboxClient::new(url).delete(id, token)?;
+    }
+    Ok(())
+}
+
 /// Inputs for [`create_plan`].
 pub struct NewPlan {
     /// 1 to 3 heir codes.
@@ -255,6 +281,9 @@ pub struct PlanCreated {
     pub address: String,
     /// The ZIP 321 funding request.
     pub uri: String,
+    /// The link to give to the heir, when the plan has a mailbox. The read
+    /// token is not stored anywhere, so this is the only time it is shown.
+    pub claim_link: Option<ClaimLink>,
 }
 
 /// Creates a legacy plan with its first vault (epoch 1) and kit.
@@ -275,6 +304,23 @@ pub async fn create_plan(
     if let Some(a) = new.amount {
         check_cap(network, a, accept_unaudited)?;
     }
+    // Create the mailbox first so a failure leaves no key material behind.
+    let mailbox_url = match &new.mailbox_url {
+        Some(u) => {
+            let u = normalize_base(u);
+            if !(u.starts_with("http://") || u.starts_with("https://")) {
+                return Err(anyhow!(
+                    "the mailbox URL must start with http:// or https://"
+                ));
+            }
+            Some(u)
+        }
+        None => None,
+    };
+    let mailbox = match &mailbox_url {
+        Some(u) => Some(MailboxClient::new(u).create()?),
+        None => None,
+    };
     let now = now();
     let id = random_id();
     let phrase = Vault::new_seed();
@@ -294,7 +340,9 @@ pub async fn create_plan(
         epoch: 1,
         status: PlanStatus::Active,
         created: now,
-        mailbox_url: new.mailbox_url,
+        mailbox_url,
+        mailbox_id: mailbox.as_ref().map(|m| m.id.clone()),
+        mailbox_write_token: mailbox.as_ref().map(|m| m.write_token.clone()),
         epochs: vec![EpochRecord {
             epoch: 1,
             dir: rel,
@@ -306,14 +354,26 @@ pub async fn create_plan(
     };
     let kit = make_kit(&plan, 1, vault.seed_phrase(), birthday, unlock_round, now)?;
     let kit_path = write_kit_file(kit_dir, &format!("{}-e1.sandglass", plan.short_id()), &kit)?;
+    if let Err(e) = upload_kit(&plan, &kit) {
+        // Nothing was funded: drop the unused vault, kit and mailbox.
+        let _ = fs::remove_file(&kit_path);
+        let _ = fs::remove_dir_all(store.path(&Store::vault_rel_dir(&plan.id, 1)));
+        let _ = delete_mailbox(&plan);
+        return Err(e);
+    }
     store.put_plan(&plan)?;
     let address = vault.address()?;
     let uri = vault.zip321_uri(new.amount)?;
+    let claim_link = match (&plan.mailbox_url, &mailbox) {
+        (Some(u), Some(m)) => Some(ClaimLink::new(u, m)),
+        _ => None,
+    };
     Ok(PlanCreated {
         plan,
         kit_path,
         address,
         uri,
+        claim_link,
     })
 }
 
@@ -327,6 +387,8 @@ pub struct FlipReport {
     pub sweeps: Vec<SweepReport>,
     /// Zatoshi that were in the old vault.
     pub moved: u64,
+    /// Set when the plan has a mailbox and the new kit could not be uploaded.
+    pub mailbox_error: Option<String>,
 }
 
 /// The owner's check-in: sweep the current vault into a new one and seal a
@@ -394,11 +456,18 @@ pub async fn flip(
         created: now,
     });
     store.put_plan(&plan)?;
+    // The funds have moved, so a failed upload is reported, not fatal: the
+    // mailbox still holds the old kit, which now opens an empty vault.
+    let mailbox_error = match upload_kit(&plan, &kit) {
+        Ok(()) => None,
+        Err(e) => Some(format!("{e:#}")),
+    };
     Ok(FlipReport {
         plan,
         kit_path,
         sweeps,
         moved,
+        mailbox_error,
     })
 }
 
@@ -410,6 +479,8 @@ pub struct CancelReport {
     pub sweeps: Vec<SweepReport>,
     /// Zatoshi that were in the vault.
     pub moved: u64,
+    /// Set when the plan has a mailbox and it could not be deleted.
+    pub mailbox_error: Option<String>,
 }
 
 /// Sweeps the current vault to `to_address` and marks the plan cancelled.
@@ -444,10 +515,14 @@ pub async fn cancel(
     };
     plan.status = PlanStatus::Cancelled;
     store.put_plan(&plan)?;
+    // Funds are already safe; a failed delete is reported, not fatal. The
+    // keeper removes the mailbox by itself after 180 days.
+    let mailbox_error = delete_mailbox(&plan).err().map(|e| format!("{e:#}"));
     Ok(CancelReport {
         plan,
         sweeps,
         moved,
+        mailbox_error,
     })
 }
 
