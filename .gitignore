@@ -12,3 +12,6 @@ web/dist/
 *.sqlite-journal
 *.sqlite-wal
 *.sqlite-shm
+
+# Agent worktrees and local tool state
+.claude/
