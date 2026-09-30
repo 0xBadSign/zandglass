@@ -1,0 +1,18 @@
+[package]
+name = "sandglass-cli"
+description = "The sandglass command line: create vaults, flip, claim."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "sandglass"
+path = "src/main.rs"
+
+[dependencies]
+sandglass-core = { path = "../sandglass-core" }
+sandglass-wallet = { path = "../sandglass-wallet" }
+
+[lints]
+workspace = true

@@ -1,0 +1,14 @@
+# Secrets and owner-only notes: never committed.
+.private/
+
+# Build output
+target/
+node_modules/
+web/dist/
+*.log
+
+# Local wallet data from manual runs
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm

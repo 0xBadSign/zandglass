@@ -1,0 +1,18 @@
+{
+  "name": "sandglass-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sandglass landing page, playground and heir page.",
+  "license": "MIT OR Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0",
+    "vite": "^7.0.0",
+    "vitest": "^3.2.0"
+  }
+}

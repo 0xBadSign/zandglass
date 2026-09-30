@@ -1,0 +1,13 @@
+[package]
+name = "sandglass-wallet"
+description = "Sandglass vault manager: light-client Zcash wallet for time-locked vaults."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+sandglass-core = { path = "../sandglass-core" }
+
+[lints]
+workspace = true

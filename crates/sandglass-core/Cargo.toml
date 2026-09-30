@@ -1,0 +1,12 @@
+[package]
+name = "sandglass-core"
+description = "Sandglass core: drand rounds, sealed kits, heir keys."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true
