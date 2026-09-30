@@ -12,7 +12,7 @@ Live state of the project. The agent updates it at the end of every work unit, n
 | Plan version | 2 |
 | Current milestone | M0 Foundations and feasibility (starts 2026-10-01) |
 | Next task | T0.6 once testnet TAZ arrives (faucet retry about 2026-10-01 06:00 UTC); meanwhile T1.3 and T1.4 |
-| Blocked / waiting on owner | O-5 (0.1–0.2 ZEC to the mainnet float address, by 10-08) |
+| Blocked / waiting on owner | O-5 (0.02 ZEC to the mainnet float address, by 10-08) |
 | Days to deadline | 28 (submissions due 2026-10-28 23:59 UTC; owner submits by 10-27) |
 | Health | on track |
 
