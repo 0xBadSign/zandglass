@@ -69,7 +69,7 @@ Live state of the project. The agent updates it at the end of every work unit, n
 - [x] T4.1 Adversarial security and privacy review: no critical; 2 high (flip seed deletion on ambiguous broadcast) and 9 others fixed; PRIVACY.md corrected
 - [x] T4.2 Docs set (README, HOW_IT_WORKS, PRIVACY, KIT_FORMAT, KEEPER_API, THIRD_PARTY); plan-vs-code gaps listed in the session log
 - [ ] T4.3 Video (2:00 or less)
-- [ ] T4.4 docs/SUBMISSION.md
+- [x] T4.4 docs/SUBMISSION.md drafted (1,832 of 2,000 characters; placeholders for demo URL, video URL, judge code)
 - [ ] T4.5 Release v0.1.0
 - [ ] T4.6 Owner draft saved (O-6)
 
