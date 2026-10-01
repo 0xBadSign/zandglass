@@ -429,9 +429,11 @@ function shortTxid(txid: string): string {
 function txLink(t: { kind: string; txid: string; explorer: string }, full = false): HTMLElement {
   const href = safeHref(t.explorer);
   const text = full ? t.txid : `${t.kind} ${shortTxid(t.txid)}`;
-  return href
-    ? h('a', { href, rel: 'noreferrer noopener', target: '_blank', class: 'txlink' }, text, h('span', { class: 'sr-only' }, ' (opens in a new tab)'))
-    : h('code', {}, text);
+  const link = href
+    ? h('a', { href, rel: 'noreferrer noopener', target: '_blank', class: 'txlink', title: t.txid }, text, h('span', { class: 'sr-only' }, ' (opens in a new tab)'))
+    : h('code', { title: t.txid }, text);
+  if (full) return link;
+  return h('span', { class: 'tx-item' }, link, copyButton('Copy', () => t.txid, 'btn-quiet tx-copy'));
 }
 
 function paintTimeline(): void {
@@ -462,7 +464,11 @@ function paintButtons(): void {
   let hint = '';
   if (!snap || snap.state === 'funding') hint = 'You can flip once the funding has confirmed on the network.';
   else if (snap.state === 'flipping') hint = 'Flipping: moving the funds to a new vault and sealing a new kit.';
-  else if (snap.state === 'sealed' && !snap.confirmed) hint = 'Waiting for the funding to confirm on the network. This can take a few minutes.';
+  else if (snap.state === 'sealed' && !snap.confirmed)
+    hint =
+      snap.txs.some((t) => t.kind === 'flip')
+        ? 'Flipped. Waiting for the moved funds to confirm on the network (about a minute); you can flip again after that.'
+        : 'Waiting for the funding to confirm on the network (about a minute).';
   else if (stopFlip) hint = 'You stopped flipping, so the sand will run out at the time shown above.';
   else if (snap.state === 'sealed') hint = 'Flip any time before the sand runs out to reset the timer. Or stop flipping and watch it run out.';
   flipHint.textContent = hint;
@@ -486,8 +492,14 @@ function paintCountdown(): void {
     return;
   }
   const left = (Date.parse(snap.unlock_time) - Date.now()) / 1000;
-  countdownEl.textContent =
-    left > 0 ? `Unlocks in ${formatCountdown(left)}` : 'The time has passed. Waiting for the server to confirm...';
+  if (left > 0) {
+    countdownEl.replaceChildren(
+      h('span', { class: 'cd-label' }, 'Unlocks in '),
+      h('span', { class: 'cd-time' }, formatCountdown(left)),
+    );
+  } else {
+    countdownEl.textContent = 'The time has passed. Waiting for the server to confirm...';
+  }
 }
 
 function applySnapshot(s: SessionSnapshot): void {
@@ -596,15 +608,15 @@ function sessionView(): HTMLElement {
       ` Timer: ${created?.minutes ?? ''} minutes. Amount: ${formatZec(created?.amount_zat ?? 0, net.test ? 'TAZ' : 'ZEC')}.`,
     ),
     h('div', { class: 'timer-row' }, glassBox, h('div', {}, countdownEl, messageEl)),
+    h(
+      'p',
+      { class: 'keep-open small' },
+      'Keep this page open: reloading forgets your heir key, and you could no longer open the kit.',
+    ),
     h('div', { class: 'actions' }, flipBtn, stopBtn),
     flipHint,
     h('h3', {}, 'What is happening'),
     timelineBox,
-    h(
-      'p',
-      { class: 'muted small' },
-      'Reloading this page forgets your heir key, and you could no longer open the kit. Keep it open until you are done.',
-    ),
   );
 }
 

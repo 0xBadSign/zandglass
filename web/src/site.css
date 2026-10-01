@@ -798,3 +798,50 @@ section > .section-title + .muted {
     display: none;
   }
 }
+
+/* playground: countdown, keep-open note, tx copy */
+
+.countdown .cd-label {
+  display: block;
+  font: 500 0.72rem/1.4 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--gold);
+  text-shadow: none;
+}
+
+.countdown .cd-time {
+  display: block;
+  white-space: nowrap;
+}
+
+.keep-open {
+  display: flex;
+  gap: 0.55rem;
+  align-items: center;
+  color: var(--warn);
+  margin: 0.2rem 0 0.4rem;
+}
+
+.keep-open::before {
+  content: '';
+  flex: none;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--warn);
+  box-shadow: 0 0 8px var(--warn);
+}
+
+.tx-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin-right: 0.6rem;
+}
+
+.tx-copy {
+  min-height: 0;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.74rem;
+}
