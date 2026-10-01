@@ -54,6 +54,7 @@ sequenceDiagram
 | Chain observers | Ordinary shielded transactions (funding, flips, claim) built by standard wallet code: default expiry (target + 40), default anchor, ZIP 317 fee | That a plan exists, who the heir is, amounts, unlock times, any link between vault epochs |
 | drand | That someone fetched a public beacon | Anything about a kit |
 | Keeper (optional) | That a mailbox exists, update times (flip times), the public part of each kit | Owner or heir identity (no accounts, no request logs), amounts, addresses, kit contents. It holds no key that opens a kit |
+| CDN in front of the keeper (Cloudflare on zandglass.cash) | What the keeper sees plus IP addresses, so it could link the owner's uploads to the heir's fetches of one mailbox | Kit contents, amounts, addresses. Run your own keeper or hand over kit files to avoid it |
 | lightwalletd | The usual light-client metadata (IP, sync timing) | Keys, balances (scanning is local) |
 | Heir, after the unlock | The current vault's seed, so its balance | Where earlier vaults sent their funds (`OvkPolicy::Discard`) |
 | Someone who steals a kit | Nothing, before or after the unlock (the heir key is also needed) | |
