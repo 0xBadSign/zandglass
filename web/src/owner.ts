@@ -52,6 +52,14 @@ interface Created {
   address: string;
   uri: string;
   claim_link: string | null;
+  required_zat?: number;
+}
+interface SplitDone {
+  plan: PlanSum;
+  txid: string;
+  lines: { index: number; unlock_time: number; kit_file: string }[];
+  links_file: string | null;
+  links: string | null;
 }
 
 class ApiErr extends Error {
@@ -121,6 +129,8 @@ let selected = '';
 let busy = '';
 let created: Created | null = null;
 let showNew = false;
+let newKind: 'legacy' | 'installments' = 'legacy';
+let splitDone: SplitDone | null = null;
 let fundFor = '';
 let fund: { address: string; uri: string } | null = null;
 let cancelFor = '';
@@ -197,32 +207,62 @@ function cd(label: string, time: string): void {
   stageTime.replaceChildren(h('span', { class: 'cd-label' }, label), h('span', { class: 'cd-time' }, time));
 }
 
+/** The next unlock of a plan: the kit for legacy plans, the next installment otherwise. */
+function nextUnlock(p: PlanSum): { at: number; from: number; label: string } | null {
+  if (p.kind === 'installments') {
+    const s = p.installments;
+    if (!s || !s.split || !s.unlocks.length) return null;
+    const now = nowSec();
+    const i = s.unlocks.findIndex((u) => u > now);
+    const k = i < 0 ? s.unlocks.length - 1 : i;
+    const at = s.unlocks[k] ?? 0;
+    const from = k > 0 ? (s.unlocks[k - 1] ?? at - p.period_secs) : at - p.period_secs;
+    return { at, from, label: `Installment ${k + 1} of ${s.count}` };
+  }
+  if (!p.unlock_time) return null;
+  return { at: p.unlock_time, from: p.epoch_created ?? p.unlock_time - p.period_secs, label: `Plan ${p.short_id}` };
+}
+
 function paintStage(): void {
   if (state) {
     stageNet.textContent = state.network === 'test' ? 'Testnet' : 'Mainnet';
     stageNet.className = state.network === 'test' ? 'badge test' : 'badge';
   }
   const p = state?.plans.find((x) => x.id === selected);
-  if (!p || p.status !== 'active' || !p.unlock_time) {
+  const next = p && p.status === 'active' ? nextUnlock(p) : null;
+  if (!p || !next) {
     glass.set(0);
     glass.setFlowing(false);
     cd('Unlocks in', '--d --h');
     stageCaption.textContent =
       mode === 'remote'
         ? 'The owner panel runs on your own computer.'
-        : state?.store === 'open'
-          ? 'Create a plan to set the sand running.'
-          : 'Unlock your store to see your plans.';
+        : p?.kind === 'installments' && p.status === 'active'
+          ? 'Fund the plan, then start the schedule.'
+          : state?.store === 'open'
+            ? 'Create a plan to set the sand running.'
+            : 'Unlock your store to see your plans.';
     vaultRow.replaceChildren(h('li', { class: 'none' }, 'No vault yet'));
     return;
   }
-  const start = p.epoch_created ?? p.unlock_time - p.period_secs;
-  const total = Math.max(1, p.unlock_time - start);
-  const left = p.unlock_time - nowSec();
-  glass.set(Math.min(1, Math.max(0, 1 - left / total)));
+  const left = next.at - nowSec();
+  glass.set(Math.min(1, Math.max(0, 1 - left / Math.max(1, next.at - next.from))));
   glass.setFlowing(left > 0);
-  if (left > 0) cd(`Plan ${p.short_id} unlocks in`, formatCountdown(left));
-  else cd(`Plan ${p.short_id}`, 'Unlocked');
+  cd(left > 0 ? `${next.label} unlocks in` : next.label, left > 0 ? formatCountdown(left) : 'Unlocked');
+  if (p.kind === 'installments' && p.installments) {
+    stageCaption.textContent = left > 0 ? 'Each installment opens for the payee on its date. Cancel takes back what has not opened.' : 'Every installment is open for the payee.';
+    const now = nowSec();
+    const all = p.installments.unlocks;
+    const nextIdx = all.findIndex((x) => x > now);
+    const items: HTMLElement[] = all
+      .slice(0, 8)
+      .map((u, i) =>
+        h('li', { class: u <= now ? 'old' : i === nextIdx ? 'cur' : '' }, h('span', { class: 'v-n' }, `#${i + 1}`), h('span', { class: 'v-s' }, u <= now ? 'open' : 'sealed')),
+      );
+    if (all.length > 8) items.push(h('li', { class: 'none' }, `+${all.length - 8} more`));
+    vaultRow.replaceChildren(...items);
+    return;
+  }
   stageCaption.textContent =
     left > 0 ? 'Flip before the sand runs out to keep the funds yours.' : 'The sand has run out: your heirs can open the kit now. Flip at once if the funds are still there.';
   const n = Math.max(1, p.epoch);
@@ -231,12 +271,7 @@ function paintStage(): void {
     ...Array.from({ length: shown }, (_, i) => {
       const e = n - shown + i + 1;
       const cur = e === n;
-      return h(
-        'li',
-        { class: cur ? 'cur' : 'old' },
-        h('span', { class: 'v-n' }, `#${e}`),
-        h('span', { class: 'v-s' }, cur ? 'funds' : 'empty'),
-      );
+      return h('li', { class: cur ? 'cur' : 'old' }, h('span', { class: 'v-n' }, `#${e}`), h('span', { class: 'v-s' }, cur ? 'funds' : 'empty'));
     }),
   );
 }
@@ -244,6 +279,7 @@ function paintStage(): void {
 window.setInterval(() => {
   paintStage();
   document.querySelectorAll<HTMLElement>('[data-unlock]').forEach((el) => {
+    if (!Number(el.dataset.unlock)) return;
     const left = Number(el.dataset.unlock) - nowSec();
     el.textContent = left > 0 ? formatCountdown(left) : 'Unlocked';
     el.classList.toggle('late', left <= 0);
@@ -313,13 +349,24 @@ function planCard(p: PlanSum): HTMLElement {
     h('span', { class: 'plan-id' }, p.kind === 'installments' ? 'Installments' : 'Legacy', ' · ', h('code', {}, p.short_id)),
     h('span', { class: active ? 'badge' : 'badge test' }, active ? 'Active' : 'Cancelled'),
   );
+  const inst = p.kind === 'installments' ? p.installments : null;
+  const next = active ? nextUnlock(p) : null;
   const stats = h(
     'dl',
     { class: 'plan-stats' },
-    h('div', {}, h('dt', {}, 'Unlocks in'), h('dd', { 'data-unlock': String(p.unlock_time ?? 0), class: 'plan-left' }, p.unlock_time ? formatCountdown(p.unlock_time - nowSec()) : '-')),
+    h(
+      'div',
+      {},
+      h('dt', {}, inst ? 'Next installment' : 'Unlocks in'),
+      h('dd', { 'data-unlock': String(next?.at ?? 0), class: 'plan-left' }, next ? formatCountdown(next.at - nowSec()) : inst && !inst.split ? 'Not started' : '-'),
+    ),
     h('div', {}, h('dt', {}, 'Balance'), h('dd', {}, p.balance ? zec(p.balance.total_zat) : 'Press Sync', p.balance && p.balance.spendable_zat < p.balance.total_zat ? h('span', { class: 'confirming' }, 'confirming') : null)),
-    h('div', {}, h('dt', {}, 'Flip every'), h('dd', {}, periodText(p.period_secs))),
-    h('div', {}, h('dt', {}, 'Heirs · vault'), h('dd', {}, `${p.heirs} · #${p.epoch}`)),
+    inst
+      ? h('div', {}, h('dt', {}, 'Schedule'), h('dd', {}, `${inst.count} × ${zec(inst.amount_zat)}`))
+      : h('div', {}, h('dt', {}, 'Flip every'), h('dd', {}, periodText(p.period_secs))),
+    inst
+      ? h('div', {}, h('dt', {}, 'Every'), h('dd', {}, periodText(p.period_secs)))
+      : h('div', {}, h('dt', {}, 'Heirs · vault'), h('dd', {}, `${p.heirs} · #${p.epoch}`)),
   );
   const parts: Child[] = [head, stats];
   if (p.pending) parts.push(notice('warn', 'A flip is not settled yet', 'Press Sync: it checks whether the last flip reached the network.'));
@@ -330,7 +377,81 @@ function planCard(p: PlanSum): HTMLElement {
   if (active && confirming) {
     parts.push(notice('info', 'Funds are confirming', 'New funds can be flipped once they have a few confirmations on the network (about 10 to 15 minutes). Press Sync to check.'));
   }
-  if (active) {
+  if (active && inst) {
+    const startBtn = inst.split
+      ? null
+      : h(
+          'button',
+          {
+            type: 'button',
+            class: 'btn-primary',
+            disabled: busy || confirming ? true : null,
+            onclick: () =>
+              void act(`Starting the schedule of plan ${p.short_id}: one transaction into ${inst.count} installment vaults...`, async () => {
+                splitDone = await api<SplitDone>('POST', `/api/plans/${p.id}/split`);
+                setState(await api<UiState>('GET', '/api/state'));
+              }),
+          },
+          'Start the schedule',
+        );
+    const fundBtn = inst.split
+      ? null
+      : h(
+          'button',
+          {
+            type: 'button',
+            class: 'btn',
+            disabled: busy ? true : null,
+            onclick: () =>
+              void act('Loading the funding address...', async () => {
+                if (fundFor === p.id) {
+                  fundFor = '';
+                  fund = null;
+                  return;
+                }
+                fund = await api<{ address: string; uri: string }>('GET', `/api/plans/${p.id}/receive`);
+                fundFor = p.id;
+              }),
+          },
+          fundFor === p.id ? 'Hide funding QR' : 'Add funds',
+        );
+    const kitsBtn = inst.split
+      ? h(
+          'button',
+          {
+            type: 'button',
+            class: 'btn',
+            disabled: busy ? true : null,
+            onclick: () =>
+              void act('Reading the kits...', async () => {
+                const k = await api<{ files: { file_name: string; text: string }[] }>('GET', `/api/plans/${p.id}/kits`);
+                for (const f of k.files) download(f.file_name, f.text, f.file_name.endsWith('.txt') ? 'text/plain' : 'application/json');
+              }),
+          },
+          p.mailbox ? 'Download claim links and kits' : 'Download kits',
+        )
+      : null;
+    const calBtn = inst.split
+      ? h(
+          'button',
+          {
+            type: 'button',
+            class: 'btn',
+            disabled: busy ? true : null,
+            onclick: () =>
+              void act('Making the calendar file...', async () => {
+                const c = await api<{ file_name: string; text: string }>('GET', `/api/plans/${p.id}/calendar`);
+                download(c.file_name, c.text, 'text/calendar');
+              }),
+          },
+          'Calendar',
+        )
+      : null;
+    const cancelBtn = h('button', { type: 'button', class: 'btn-quiet', disabled: busy ? true : null, onclick: () => ((cancelFor = cancelFor === p.id ? '' : p.id), render()) }, 'Cancel plan');
+    parts.push(h('div', { class: 'actions' }, startBtn, fundBtn, kitsBtn, calBtn, cancelBtn));
+    if (!inst.split) parts.push(h('p', { class: 'muted small' }, 'Fund the plan with the amount in the QR request. When the funds have confirmed, start the schedule: one ordinary transaction fills one vault per installment and seals one kit for each.'));
+  }
+  if (active && !inst) {
     const flipBtn = h(
       'button',
       {
@@ -405,6 +526,8 @@ function planCard(p: PlanSum): HTMLElement {
       'Cancel plan',
     );
     parts.push(h('div', { class: 'actions' }, flipBtn, fundBtn, kitBtn, calBtn, cancelBtn));
+  }
+  if (active) {
     if (fundFor === p.id && fund) {
       const f = fund;
       parts.push(
@@ -470,10 +593,34 @@ const PERIODS: [string, string][] = [
   ['365d', '1 year'],
 ];
 
-function newPlanForm(): HTMLElement {
-  const heirs = [0, 1, 2].map((i) =>
-    h('input', { type: 'text', id: `heir${i}`, placeholder: 'age1...', autocomplete: 'off', spellcheck: 'false', 'aria-label': `Heir code ${i + 1}` }),
+function kindSwitch(): HTMLElement {
+  const btn = (k: 'legacy' | 'installments', title: string, sub: string) =>
+    h(
+      'button',
+      { type: 'button', class: `kind${newKind === k ? ' on' : ''}`, 'aria-pressed': String(newKind === k), onclick: () => ((newKind = k), render()) },
+      h('strong', {}, title),
+      h('span', {}, sub),
+    );
+  return h(
+    'div',
+    { class: 'kind-switch', role: 'group', 'aria-label': 'Plan type' },
+    btn('legacy', 'Inheritance', 'Your heirs get the vault if you stop flipping.'),
+    btn('installments', 'Scheduled payments', 'An allowance: one installment unlocks per period; cancel any time.'),
   );
+}
+
+function codeInputs(word: string): HTMLInputElement[] {
+  return [0, 1, 2].map((i) =>
+    h('input', { type: 'text', id: `code${i}`, placeholder: 'age1...', autocomplete: 'off', spellcheck: 'false', 'aria-label': `${word} code ${i + 1}` }),
+  );
+}
+
+function newPlanForm(): HTMLElement {
+  return newKind === 'legacy' ? legacyForm() : installmentsForm();
+}
+
+function legacyForm(): HTMLElement {
+  const heirs = codeInputs('Heir');
   const every = h('select', { id: 'every' }, ...PERIODS.map(([v, t]) => h('option', { value: v, selected: v === '90d' ? true : null }, t)), h('option', { value: '10m' }, '10 minutes (try it out)'));
   const message = h('textarea', { id: 'message', rows: '3', placeholder: 'Optional. Sealed into the kit; only your heirs can read it, after the unlock.' });
   const link = h('input', { type: 'checkbox', id: 'claimlink', checked: true });
@@ -482,7 +629,8 @@ function newPlanForm(): HTMLElement {
   return h(
     'section',
     { class: 'card', id: 'new-plan' },
-    h('h2', { tabindex: '-1' }, 'New inheritance plan'),
+    h('h2', { tabindex: '-1' }, 'New plan'),
+    kindSwitch(),
     h('p', {}, 'Your heirs first make a key on the ', h('a', { href: 'https://zandglass.cash/heir', target: '_blank', rel: 'noreferrer noopener' }, 'Become an heir page'), ' and send you their public heir code.'),
     h(
       'form',
@@ -523,30 +671,130 @@ function newPlanForm(): HTMLElement {
   );
 }
 
+const INTERVALS: [string, string][] = [
+  ['7d', 'Every week'],
+  ['14d', 'Every two weeks'],
+  ['30d', 'Every 30 days'],
+  ['90d', 'Every 90 days'],
+  ['5m', 'Every 5 minutes (try it out)'],
+];
+
+function installmentsForm(): HTMLElement {
+  const payees = codeInputs('Payee');
+  const amount = h('input', { type: 'text', id: 'inst-amount', inputmode: 'decimal', placeholder: 'For example 0.05' });
+  const every = h('select', { id: 'inst-every' }, ...INTERVALS.map(([v, t]) => h('option', { value: v, selected: v === '30d' ? true : null }, t)));
+  const count = h('input', { type: 'number', id: 'inst-count', min: '1', max: '120', value: '12' });
+  const start = h('input', { type: 'text', id: 'inst-start', placeholder: 'Optional: 2026-12-01T09:00:00Z, or a delay such as 1d' });
+  const message = h('textarea', { id: 'inst-message', rows: '3', placeholder: 'Optional. Sealed into every kit for the payee.' });
+  const link = h('input', { type: 'checkbox', id: 'inst-claimlink', checked: true });
+  const total = h('p', { class: 'muted small', 'aria-live': 'polite' });
+  const paintTotal = (): void => {
+    const a = Number(amount.value.replace(',', '.'));
+    const n = Number(count.value);
+    total.textContent = a > 0 && n > 0 ? `The payee receives ${n} × ${a} ${unit()}; you fund about ${(n * (a + 0.0001) + 0.0002).toFixed(4)} ${unit()} including network fees.` : '';
+  };
+  amount.addEventListener('input', paintTotal);
+  count.addEventListener('input', paintTotal);
+  const err = h('p', { class: 'field-error', role: 'alert' });
+  return h(
+    'section',
+    { class: 'card', id: 'new-plan' },
+    h('h2', { tabindex: '-1' }, 'New plan'),
+    kindSwitch(),
+    h('p', {}, 'An allowance, a gift over time, or a salary: each installment is its own vault, sealed to the payee and to its date. The payee needs a key from the ', h('a', { href: 'https://zandglass.cash/heir', target: '_blank', rel: 'noreferrer noopener' }, 'Become an heir page'), '.'),
+    h(
+      'form',
+      {
+        novalidate: true,
+        onsubmit: (e: Event) => {
+          e.preventDefault();
+          const codes = payees.map((x) => x.value.trim()).filter(Boolean);
+          if (!codes.length) {
+            err.textContent = 'Add at least one payee code.';
+            return;
+          }
+          if (!amount.value.trim()) {
+            err.textContent = 'Enter the amount per installment.';
+            return;
+          }
+          void act('Creating the funding vault...', async () => {
+            created = await api<Created>('POST', '/api/installments', {
+              payees: codes,
+              amount: amount.value.trim().replace(',', '.'),
+              every: every.value,
+              count: Number(count.value),
+              start: start.value.trim() || null,
+              message: message.value,
+              claim_link: link.checked,
+            });
+            showNew = false;
+            setState(await api<UiState>('GET', '/api/state'));
+            selected = created.plan.id;
+          });
+        },
+      },
+      h('fieldset', { class: 'heir-fields' }, h('legend', {}, 'Payee codes (one is enough; up to three, any of them can claim)'), ...payees),
+      h('div', { class: 'form-row' }, h('div', {}, h('label', { for: 'inst-amount' }, `Each installment (${unit()})`), amount), h('div', {}, h('label', { for: 'inst-count' }, 'Number of installments'), count)),
+      h('label', { for: 'inst-every' }, 'How often'),
+      every,
+      h('label', { for: 'inst-start' }, 'First installment'),
+      start,
+      total,
+      h('label', { for: 'inst-message' }, 'A message for the payee'),
+      message,
+      h('label', { class: 'check' }, link, h('span', {}, 'Put each kit in a blind mailbox at ', h('strong', {}, 'zandglass.cash'), ' and make a file of claim links for the payee.')),
+      err,
+      h('div', { class: 'actions' }, h('button', { type: 'submit', class: 'btn-primary', disabled: busy ? true : null }, 'Create the schedule')),
+    ),
+  );
+}
+
 function createdCard(c: Created): HTMLElement {
+  const inst = c.plan.kind === 'installments';
   return h(
     'section',
     { class: 'card created-card' },
     h('h2', { tabindex: '-1', id: 'created-title' }, `Plan ${c.plan.short_id} is ready`),
-    h('p', {}, '1. Fund the vault: scan the QR code with any Zcash wallet.'),
+    h('p', {}, inst && c.required_zat ? `1. Fund the plan with ${zec(c.required_zat)}: scan the QR code with any Zcash wallet.` : '1. Fund the vault: scan the QR code with any Zcash wallet.'),
     h(
       'div',
       { class: 'fund-box' },
       h('div', { class: 'qr-tile' }, qrSvg(c.uri, 'QR code of the funding request')),
       h('div', {}, h('code', { class: 'code-box' }, c.address), h('div', { class: 'actions' }, copyButton('Copy address', () => c.address), copyButton('Copy payment request', () => c.uri))),
     ),
-    c.claim_link
+    inst
+      ? h('p', {}, '2. When the funds have confirmed, press "Start the schedule" on the plan. It seals one kit per installment and, if you chose the mailbox, gives you a file of claim links for the payee.')
+      : c.claim_link
+        ? h(
+            'div',
+            {},
+            h('p', {}, '2. Send this claim link to your heir now. It is shown only once:'),
+            h('code', { class: 'code-box' }, c.claim_link),
+            h('div', { class: 'actions' }, copyButton('Copy claim link', () => c.claim_link ?? '', 'btn-primary')),
+            h('p', { class: 'muted small' }, 'The link opens nothing by itself: your heir also needs their own 24 words, and must wait for the unlock time.'),
+          )
+        : h('p', {}, '2. Download the kit file below and give it to your heirs.'),
+    inst ? null : h('p', {}, '3. Add the flip reminders to your calendar, and flip before each unlock.'),
+    h('div', { class: 'actions' }, h('button', { type: 'button', class: 'btn', onclick: () => ((created = null), render()) }, 'Done')),
+  );
+}
+
+function splitCard(s: SplitDone): HTMLElement {
+  return h(
+    'section',
+    { class: 'card created-card' },
+    h('h2', { tabindex: '-1', id: 'split-title' }, `The schedule of plan ${s.plan.short_id} has started`),
+    h('p', {}, `One ordinary transaction filled ${s.lines.length} installment vaults. Transaction ${s.txid}`),
+    h('ol', { class: 'inst-list' }, ...s.lines.map((l) => h('li', {}, h('span', {}, `Installment ${l.index}`), h('span', { class: 'muted' }, `unlocks ${new Date(l.unlock_time * 1000).toLocaleString()}`)))),
+    s.links && s.links_file
       ? h(
           'div',
           {},
-          h('p', {}, '2. Send this claim link to your heir now. It is shown only once:'),
-          h('code', { class: 'code-box' }, c.claim_link),
-          h('div', { class: 'actions' }, copyButton('Copy claim link', () => c.claim_link ?? '', 'btn-primary')),
-          h('p', { class: 'muted small' }, 'The link opens nothing by itself: your heir also needs their own 24 words, and must wait for the unlock time.'),
+          h('p', {}, 'Send the payee this file of claim links. Each link opens nothing before its date, and nothing without the payee’s own words.'),
+          h('div', { class: 'actions' }, h('button', { type: 'button', class: 'btn-primary', onclick: () => download(s.links_file ?? 'claim-links.txt', s.links ?? '', 'text/plain') }, 'Download the claim links')),
         )
-      : h('p', {}, '2. Download the kit file below and give it to your heirs.'),
-    h('p', {}, '3. Add the flip reminders to your calendar, and flip before each unlock.'),
-    h('div', { class: 'actions' }, h('button', { type: 'button', class: 'btn', onclick: () => ((created = null), render()) }, 'Done')),
+      : h('p', {}, 'Download the kits from the plan and give them to the payee.'),
+    h('div', { class: 'actions' }, h('button', { type: 'button', class: 'btn', onclick: () => ((splitDone = null), render()) }, 'Done')),
   );
 }
 
@@ -626,6 +874,7 @@ function render(): void {
     ),
   );
   if (created) flow.append(createdCard(created));
+  if (splitDone) flow.append(splitCard(splitDone));
   if (showNew || state.plans.length === 0) flow.append(newPlanForm());
   if (state.plans.length) flow.append(h('h2', { class: 'plans-title' }, 'Your plans'), ...state.plans.map(planCard));
 }

@@ -120,7 +120,7 @@ test('owner: create a plan and show the funding QR and the claim link once', asy
     },
   });
   await page.goto(`/owner#t=${TOKEN}`);
-  await page.getByRole('heading', { name: 'New inheritance plan' }).waitFor();
+  await page.getByRole('heading', { name: 'New plan', exact: true }).waitFor();
   await page.getByLabel('Heir code 1').fill('age1exampleheir');
   await page.getByLabel('Flip at least every').selectOption('180d');
   await page.getByRole('button', { name: 'Create the plan' }).click();
@@ -128,4 +128,50 @@ test('owner: create a plan and show the funding QR and the claim link once', asy
   await expect(page.locator('.created-card .qr-tile svg')).toBeVisible();
   await expect(page.locator('.created-card')).toContainText('https://zandglass.cash/claim#m=abc&r=def');
   expect(body).toMatchObject({ heirs: ['age1exampleheir'], every: '180d', claim_link: true });
+});
+
+test('owner: create a scheduled-payments plan and start the schedule', async ({ page }) => {
+  let body: Record<string, unknown> = {};
+  let split = false;
+  const instPlan = (s: boolean) =>
+    plan({
+      kind: 'installments',
+      period_secs: 30 * 86400,
+      installments: { count: 3, amount_zat: 5_000_000, split: s, unlocks: s ? [now + 30 * 86400, now + 60 * 86400, now + 90 * 86400] : [] },
+    });
+  await mockApi(page, {
+    'GET /api/state': (r) => json(state({ plans: [instPlan(split)] }))(r),
+    'POST /api/installments': (r) => {
+      body = JSON.parse(r.request().postData() ?? '{}') as Record<string, unknown>;
+      return json({ plan: instPlan(false), address: 'u1fundingaddress', uri: 'zcash:u1fundingaddress?amount=0.1503', required_zat: 15_030_000, claim_link: null })(r);
+    },
+    'POST /api/plans/0123456789abcdef0123456789abcdef/split': (r) => {
+      split = true;
+      return json({
+        plan: instPlan(true),
+        txid: 'ef'.repeat(32),
+        lines: [1, 2, 3].map((i) => ({ index: i, unlock_time: now + i * 30 * 86400, kit_file: `01234567-i${i}of3.zandglass` })),
+        links_file: '01234567-claim-links.txt',
+        links: 'installment 1: https://zandglass.cash/claim#m=a&r=b\n',
+      })(r);
+    },
+  });
+  await page.goto(`/owner#t=${TOKEN}`);
+  await page.getByRole('button', { name: 'New plan' }).click();
+  await page.getByRole('button', { name: /Scheduled payments/ }).click();
+  await page.getByLabel('Payee code 1').fill('age1examplepayee');
+  await page.getByLabel(/Each installment/).fill('0.05');
+  await page.getByLabel('Number of installments').fill('3');
+  await expect(page.getByText(/The payee receives 3 × 0.05 ZEC/)).toBeVisible();
+  await page.getByRole('button', { name: 'Create the schedule' }).click();
+  await expect(page.locator('.created-card')).toContainText('Fund the plan with 0.1503 ZEC');
+  expect(body).toMatchObject({ payees: ['age1examplepayee'], amount: '0.05', every: '30d', count: 3, claim_link: true });
+  await page.getByRole('button', { name: 'Done' }).click();
+
+  await page.getByRole('button', { name: 'Start the schedule' }).click();
+  await expect(page.locator('#split-title')).toContainText('has started');
+  await expect(page.locator('.inst-list li')).toHaveCount(3);
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Download the claim links' }).click()]);
+  expect(dl.suggestedFilename()).toBe('01234567-claim-links.txt');
+  await expect(page.locator('.plan-card')).toContainText('3 × 0.05 ZEC');
 });

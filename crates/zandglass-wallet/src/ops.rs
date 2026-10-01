@@ -789,7 +789,10 @@ pub async fn cancel(
     to_address: &str,
 ) -> Result<CancelReport> {
     let mut plan = store.find_plan(Some(plan_id))?;
-    if plan.status == PlanStatus::Cancelled {
+    // Cancelling again sweeps funds that reached a cancelled plan's vault
+    // later (for example a late payment); with nothing there it is an error.
+    let already = plan.status == PlanStatus::Cancelled;
+    if already && plan.kind == "installments" {
         return Err(anyhow!("plan {} is already cancelled", plan.short_id()));
     }
     zcash_keys::address::Address::decode(&network, to_address).ok_or_else(|| {
@@ -819,6 +822,9 @@ pub async fn cancel(
             // A light client does not see unmined transactions: right after
             // a flip the new vault looks empty although the funds are on
             // their way. Cancelling then would strand them in a cancelled plan.
+            if already {
+                return Err(anyhow!("plan {} is already cancelled", plan.short_id()));
+            }
             if flip_may_be_unconfirmed(&plan, &rec, now()) {
                 return Err(coded(
                     "insufficient_funds",

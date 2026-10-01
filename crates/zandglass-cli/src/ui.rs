@@ -74,6 +74,9 @@ enum Job {
     Unlock(Zeroizing<String>),
     Lock,
     Create(CreateReq),
+    CreateInstallments(InstallmentsReq),
+    Split(String),
+    Kits(String),
     Sync,
     Flip(String),
     Cancel(String, String),
@@ -95,6 +98,20 @@ struct CreateReq {
     #[serde(default)]
     claim_link: bool,
     amount: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct InstallmentsReq {
+    payees: Vec<String>,
+    /// ZEC per installment, as text (for example "0.05").
+    amount: String,
+    every: String,
+    count: u32,
+    /// RFC 3339 time, or a delay after the split (for example "1d").
+    start: Option<String>,
+    message: Option<String>,
+    #[serde(default)]
+    claim_link: bool,
 }
 
 #[derive(Deserialize)]
@@ -192,6 +209,9 @@ fn app(state: Arc<AppState>) -> Router {
         .route("/api/lock", post(api_lock))
         .route("/api/plans", post(api_create))
         .route("/api/sync", post(api_sync))
+        .route("/api/installments", post(api_installments))
+        .route("/api/plans/{id}/split", post(api_split))
+        .route("/api/plans/{id}/kits", get(api_kits))
         .route("/api/plans/{id}/flip", post(api_flip))
         .route("/api/plans/{id}/cancel", post(api_cancel))
         .route("/api/plans/{id}/receive", get(api_receive))
@@ -348,6 +368,21 @@ async fn api_create(State(s): State<Arc<AppState>>, Json(r): Json<CreateReq>) ->
     run_job(&s, Job::Create(r)).await
 }
 
+async fn api_installments(
+    State(s): State<Arc<AppState>>,
+    Json(r): Json<InstallmentsReq>,
+) -> Response {
+    run_job(&s, Job::CreateInstallments(r)).await
+}
+
+async fn api_split(State(s): State<Arc<AppState>>, UrlPath(id): UrlPath<String>) -> Response {
+    run_job(&s, Job::Split(id)).await
+}
+
+async fn api_kits(State(s): State<Arc<AppState>>, UrlPath(id): UrlPath<String>) -> Response {
+    run_job(&s, Job::Kits(id)).await
+}
+
 async fn api_sync(State(s): State<Arc<AppState>>) -> Response {
     run_job(&s, Job::Sync).await
 }
@@ -484,6 +519,96 @@ impl Worker {
                     "uri": c.uri,
                     "claim_link": c.claim_link.map(|l| l.to_string()),
                 }))
+            }
+            Job::CreateInstallments(r) => {
+                let store = self.store()?;
+                let amount_zat = ops::parse_zec(&r.amount)?;
+                let every_secs = ops::parse_duration(&r.every)?;
+                let (start_at, start_after_secs) =
+                    match r.start.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                        Some(s) => installments::parse_start(s)?,
+                        None => (None, every_secs),
+                    };
+                installments::validate(&r.payees, amount_zat, r.count, start_at)?;
+                let mut client = self.client().await?;
+                let c = installments::create_installments(
+                    store,
+                    network,
+                    &mut client,
+                    installments::NewInstallments {
+                        payees: r.payees,
+                        amount_zat,
+                        every_secs,
+                        count: r.count,
+                        start_at,
+                        start_after_secs,
+                        message: r.message.filter(|m| !m.trim().is_empty()),
+                        mailbox_url: r.claim_link.then(|| PUBLIC_KEEPER.to_string()),
+                        out_dir: Some(self.kit_dir().display().to_string()),
+                    },
+                    self.cfg.accept_unaudited,
+                )
+                .await?;
+                Ok(json!({
+                    "plan": summary(store, network, &c.plan),
+                    "address": c.address,
+                    "uri": c.uri,
+                    "required_zat": c.required,
+                    "claim_link": Value::Null,
+                }))
+            }
+            Job::Split(id) => {
+                let store = self.store()?;
+                let plan = installments::require_installment_plan(store, Some(id.as_str()))?;
+                let mut client = self.client().await?;
+                let r = installments::split(
+                    store,
+                    network,
+                    &mut client,
+                    &plan.id,
+                    &self.kit_dir(),
+                    self.cfg.accept_unaudited,
+                )
+                .await?;
+                let links = r
+                    .links_path
+                    .as_ref()
+                    .and_then(|p| std::fs::read_to_string(p).ok());
+                Ok(json!({
+                    "plan": summary(store, network, &r.plan),
+                    "txid": r.tx.txid,
+                    "lines": r.lines.iter().map(|l| json!({
+                        "index": l.index,
+                        "unlock_time": l.unlock_time,
+                        "kit_file": l.kit_file,
+                    })).collect::<Vec<_>>(),
+                    "links_file": r.plan.installments.as_ref().map(|_| format!("{}-claim-links.txt", r.plan.short_id())),
+                    "links": links,
+                }))
+            }
+            Job::Kits(id) => {
+                let store = self.store()?;
+                let plan = installments::require_installment_plan(store, Some(id.as_str()))?;
+                let set = plan
+                    .installments
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("not an installment plan"))?;
+                let mut files = Vec::new();
+                for item in &set.items {
+                    if let Ok(text) = std::fs::read_to_string(self.kit_dir().join(&item.kit_file)) {
+                        files.push(json!({ "file_name": item.kit_file, "text": text }));
+                    }
+                }
+                let links_name = format!("{}-claim-links.txt", plan.short_id());
+                if let Ok(text) = std::fs::read_to_string(self.kit_dir().join(&links_name)) {
+                    files.push(json!({ "file_name": links_name, "text": text }));
+                }
+                if files.is_empty() {
+                    return Err(anyhow!(
+                        "no kit files yet: the kits are written when the funding vault is split"
+                    ));
+                }
+                Ok(json!({ "files": files }))
             }
             Job::Sync => {
                 let store = self.store()?;

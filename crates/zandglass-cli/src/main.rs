@@ -87,7 +87,8 @@ enum Cmd {
         #[arg(long, default_value = ".")]
         out: PathBuf,
     },
-    /// Sweep a plan's funds to an address and cancel the plan.
+    /// Sweep a plan's funds to an address and cancel the plan. Run it again
+    /// to sweep funds that reached a cancelled plan later.
     Cancel {
         /// Plan id (prefix).
         plan: String,

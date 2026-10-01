@@ -43,9 +43,9 @@ try {
     await page.fill('#pass1', pass);
     await page.getByRole('button', { name: 'Unlock' }).click();
   }
-  await page.getByRole('heading', { name: 'New inheritance plan' }).waitFor({ timeout: 120_000 });
+  await page.getByRole('heading', { name: 'New plan', exact: true }).waitFor({ timeout: 120_000 });
   await shot(page, 'new-plan');
-  await page.fill('#heir0', HEIR);
+  await page.fill('#code0', HEIR);
   await page.selectOption('#every', '10m');
   await page.fill('#amount', '0.001');
   await page.fill('#message', 'Owner panel live check.');
