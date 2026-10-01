@@ -43,6 +43,8 @@ Time-locked inheritance and scheduled payments for shielded Zcash, built for the
 - Windows 11 with Git Bash and PowerShell. Rust, Docker and the web build run in WSL Ubuntu. Set `CARGO_TARGET_DIR=$HOME/.cache/sandglass-target` in WSL.
 - Run Python from script files only; heredocs piped to `python` hang on this machine.
 - Keep `node_modules` owned by one OS (prefer WSL); native build tools break across operating systems.
+- Disk: C: is small. All agents use the SAME `CARGO_TARGET_DIR` (`$HOME/.cache/sandglass-target`; cargo locks it). Never create per-agent target dirs (they filled the disk on 2026-10-01). After big deletions run `wsl -u root -- fstrim -v /`. Remove merged agent worktrees (`git worktree remove`).
+- Limit build parallelism with `CARGO_BUILD_JOBS=4`: WSL has 7 GB of RAM and crashed once under parallel builds.
 
 ## Commits
 End every commit message with:
