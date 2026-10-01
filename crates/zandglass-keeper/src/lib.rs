@@ -598,6 +598,10 @@ async fn security_headers(req: Request, next: Next) -> Response {
     );
     if api {
         h.insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    } else if !h.contains_key(CACHE_CONTROL) {
+        // Proxies and CDNs must serve pages exactly as sent: no injected
+        // scripts (such as automatic web analytics), no rewriting.
+        h.insert(CACHE_CONTROL, HeaderValue::from_static("no-transform"));
     }
     res
 }

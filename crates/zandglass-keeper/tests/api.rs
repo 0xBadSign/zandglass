@@ -334,8 +334,8 @@ fn security_headers_on_static_files() {
         .starts_with("default-src 'none'; script-src 'self'"));
     assert_eq!(h["referrer-policy"], "no-referrer");
     assert_eq!(h["x-content-type-options"], "nosniff");
-    // Static files are not API responses.
-    assert!(h.get("cache-control").is_none_or(|v| v != "no-store"));
+    // Static files are not API responses, and must not be rewritten by a CDN.
+    assert_eq!(h["cache-control"], "no-transform");
 }
 
 #[test]
