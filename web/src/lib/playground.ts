@@ -3,6 +3,8 @@
  * fetch wrapper. Nothing here touches the DOM or stores anything.
  */
 
+import { acceptLocalKeeper } from './local-url';
+
 export type SessionState =
   | 'funding'
   | 'sealed'
@@ -111,17 +113,17 @@ export function isTransient(e: unknown): boolean {
 
 /* ------------------------------------------------------------ api */
 
-/** API base: same origin, or `?api=<url>` for local testing (http/https only). */
+/**
+ * API base: same origin, or `?api=<url>` for local testing. The override is
+ * honoured only for `http://127.0.0.1:*` and `http://localhost:*`; anything
+ * else is ignored with a console warning.
+ */
 export function apiBase(search: string, origin: string): string {
   const raw = new URLSearchParams(search).get('api');
   if (raw) {
-    try {
+    if (acceptLocalKeeper(raw, '?api=') !== null) {
       const u = new URL(raw);
-      if (u.protocol === 'https:' || u.protocol === 'http:') {
-        return `${u.origin}${u.pathname.replace(/\/+$/, '')}`;
-      }
-    } catch {
-      // fall through to the default
+      return `${u.origin}${u.pathname.replace(/\/+$/, '')}`;
     }
   }
   return origin;

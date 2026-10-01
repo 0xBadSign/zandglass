@@ -6,7 +6,7 @@
 
 pub mod playground;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -15,8 +15,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result};
 use axum::body::Body;
 use axum::extract::{ConnectInfo, Path as UrlPath, Request, State};
-use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
-use axum::http::{HeaderMap, Method, StatusCode};
+use axum::http::header::{AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE, REFERRER_POLICY};
+use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
@@ -33,14 +33,42 @@ use tower_http::services::ServeDir;
 /// Mailboxes not updated for this long are deleted.
 pub const RETENTION_SECS: u64 = 180 * 86_400;
 
+/// Mailboxes the whole keeper may hold by default.
+pub const DEFAULT_MAX_MAILBOXES: u64 = 50_000;
+/// Mailboxes the whole keeper creates per hour by default.
+pub const DEFAULT_MAX_CREATES_PER_HOUR: usize = 2_000;
+
 /// Runtime configuration.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct Config {
     /// Trust `X-Forwarded-For` (only behind a reverse proxy you control).
     pub trust_proxy: bool,
     /// Directory of static files served at `/`.
     pub web_dir: Option<PathBuf>,
+    /// Most mailboxes the keeper holds at once; creation fails with
+    /// `rate_limited` beyond that.
+    pub max_mailboxes: u64,
+    /// Most mailboxes created per hour across all clients.
+    pub max_creates_per_hour: usize,
 }
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            trust_proxy: false,
+            web_dir: None,
+            max_mailboxes: DEFAULT_MAX_MAILBOXES,
+            max_creates_per_hour: DEFAULT_MAX_CREATES_PER_HOUR,
+        }
+    }
+}
+
+/// The Content-Security-Policy of every response. Identical to
+/// `web/vite.config.ts`.
+pub const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; \
+font-src 'self'; img-src 'self' data:; connect-src 'self' https://api.drand.sh \
+https://api2.drand.sh https://drand.cloudflare.com; base-uri 'none'; form-action 'none'; \
+frame-ancestors 'none'";
 
 fn unix_now() -> u64 {
     SystemTime::now()
@@ -66,10 +94,14 @@ pub struct Db {
 impl Db {
     /// Opens (and if needed creates) the database at `path`.
     pub fn open(path: &Path) -> Result<Self> {
+        // Created 0600; the WAL files inherit that mode.
+        sandglass_wallet::fsutil::touch_private(path)?;
         let conn = rusqlite::Connection::open(path)
             .with_context(|| format!("opening {}", path.display()))?;
+        // Deleted mailboxes must not linger in free pages.
         conn.execute_batch(
-            "PRAGMA journal_mode = WAL;
+            "PRAGMA secure_delete = ON;
+             PRAGMA journal_mode = WAL;
              CREATE TABLE IF NOT EXISTS mailboxes (
                  id TEXT PRIMARY KEY,
                  write_hash BLOB NOT NULL,
@@ -126,6 +158,21 @@ impl Db {
             })?)
     }
 
+    fn count(&self) -> Result<u64> {
+        let n: i64 = self
+            .conn()
+            .query_row("SELECT COUNT(*) FROM mailboxes", [], |r| r.get(0))?;
+        Ok(u64::try_from(n).unwrap_or(0))
+    }
+
+    /// Whether `PRAGMA secure_delete` is on for this connection.
+    pub fn secure_delete_enabled(&self) -> bool {
+        self.conn()
+            .query_row("PRAGMA secure_delete", [], |r| r.get::<_, i64>(0))
+            .map(|v| v != 0)
+            .unwrap_or(false)
+    }
+
     fn delete(&self, id: &str) -> Result<()> {
         self.conn()
             .execute("DELETE FROM mailboxes WHERE id = ?1", [id])?;
@@ -154,20 +201,34 @@ struct Bucket {
     last: Instant,
 }
 
+/// Most client buckets kept in memory.
+const MAX_BUCKETS: usize = 50_000;
+
 /// In-memory token bucket per client address. Never persisted or logged.
 struct Limiter {
     capacity: f64,
     per_sec: f64,
+    max_entries: usize,
     buckets: Mutex<HashMap<IpAddr, Bucket>>,
 }
 
 impl Limiter {
     fn new(capacity: f64, per_sec: f64) -> Self {
+        Self::with_max_entries(capacity, per_sec, MAX_BUCKETS)
+    }
+
+    fn with_max_entries(capacity: f64, per_sec: f64, max_entries: usize) -> Self {
         Self {
             capacity,
             per_sec,
+            max_entries,
             buckets: Mutex::new(HashMap::new()),
         }
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.buckets.lock().unwrap_or_else(|p| p.into_inner()).len()
     }
 
     fn allow(&self, ip: IpAddr) -> bool {
@@ -182,10 +243,19 @@ impl Limiter {
         };
         let now = Instant::now();
         let mut map = self.buckets.lock().unwrap_or_else(|p| p.into_inner());
-        if map.len() > 50_000 {
+        if map.len() >= self.max_entries && !map.contains_key(&key) {
             map.retain(|_, b| now.duration_since(b.last) < Duration::from_secs(3600));
-            if map.len() > 50_000 {
-                map.clear();
+            if map.len() >= self.max_entries {
+                // Evict the oldest entries (a tenth, at least one) instead of
+                // forgetting everyone: a flood of new addresses must not
+                // reset the limits of the clients already being limited.
+                let mut by_age: Vec<(Instant, IpAddr)> =
+                    map.iter().map(|(k, b)| (b.last, *k)).collect();
+                by_age.sort_unstable_by_key(|(last, _)| *last);
+                let drop_n = (self.max_entries / 10).max(1);
+                for (_, k) in by_age.into_iter().take(drop_n) {
+                    map.remove(&k);
+                }
             }
         }
         let b = map.entry(key).or_insert(Bucket {
@@ -210,6 +280,8 @@ pub struct AppState {
     config: Config,
     general: Limiter,
     creation: Limiter,
+    /// When the mailboxes created in the last hour were created.
+    recent_creations: Mutex<VecDeque<Instant>>,
     playground: OnceLock<Arc<playground::Playground>>,
 }
 
@@ -224,7 +296,28 @@ impl AppState {
             general: Limiter::new(60.0, 2.0),
             // 10 new mailboxes in a burst, then 1 per minute.
             creation: Limiter::new(10.0, 1.0 / 60.0),
+            recent_creations: Mutex::new(VecDeque::new()),
         })
+    }
+
+    /// Books one mailbox creation against the global hourly cap.
+    fn allow_creation(&self) -> bool {
+        let now = Instant::now();
+        let mut q = self
+            .recent_creations
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        while q
+            .front()
+            .is_some_and(|t| now.duration_since(*t) >= Duration::from_secs(3600))
+        {
+            q.pop_front();
+        }
+        if q.len() >= self.config.max_creates_per_hour {
+            return false;
+        }
+        q.push_back(now);
+        true
     }
 
     /// The database, for maintenance and tests.
@@ -343,6 +436,16 @@ async fn health() -> Json<serde_json::Value> {
 }
 
 async fn create_mailbox(State(state): State<Arc<AppState>>) -> Result<Response, ApiError> {
+    let full = || {
+        ApiError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "rate_limited",
+            "The keeper cannot take new mailboxes right now. Try again later.",
+        )
+    };
+    if state.db.count()? >= state.config.max_mailboxes || !state.allow_creation() {
+        return Err(full());
+    }
     let id = random_hex(16);
     let write_token = random_hex(32);
     let read_token = random_hex(32);
@@ -380,24 +483,43 @@ async fn put_kit(
             "The kit is not valid UTF-8 JSON.",
         )
     })?;
-    // Public part only: format, version, drand chain, round and time.
-    if let Err(e) = Kit::from_json(text) {
-        let (status, code, message) = match e {
-            sandglass_core::KitError::VersionUnsupported(_) => (
-                StatusCode::BAD_REQUEST,
-                "kit_version_unsupported",
-                "This kit has a version the keeper does not accept.",
-            ),
-            _ => (
-                StatusCode::BAD_REQUEST,
-                "kit_invalid",
-                "This is not a valid Sandglass kit.",
-            ),
-        };
-        return Err(ApiError::new(status, code, message));
-    }
-    state.db.put_kit(&id, text, unix_now())?;
+    let stored = canonical_kit(text)?;
+    state.db.put_kit(&id, &stored, unix_now())?;
     Ok(Json(json!({ "ok": true })))
+}
+
+/// The top-level fields of a kit. Anything else is refused, so the mailbox
+/// cannot be used to park arbitrary data.
+const KIT_FIELDS: [&str; 10] = [
+    "format", "version", "kind", "network", "created", "plan", "epoch", "sequence", "unlock",
+    "sealed",
+];
+
+/// Validates a kit and returns its canonical re-serialisation, which is what
+/// the keeper stores (never the submitted text). Public part only: format,
+/// version, drand chain, round and time.
+fn canonical_kit(text: &str) -> Result<String, ApiError> {
+    let invalid = || {
+        ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "kit_invalid",
+            "This is not a valid Sandglass kit.",
+        )
+    };
+    let kit = Kit::from_json(text).map_err(|e| match e {
+        sandglass_core::KitError::VersionUnsupported(_) => ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "kit_version_unsupported",
+            "This kit has a version the keeper does not accept.",
+        ),
+        _ => invalid(),
+    })?;
+    let value: serde_json::Value = serde_json::from_str(text).map_err(|_| invalid())?;
+    let fields = value.as_object().ok_or_else(invalid)?;
+    if fields.keys().any(|k| !KIT_FIELDS.contains(&k.as_str())) {
+        return Err(invalid());
+    }
+    kit.to_json().map_err(|_| invalid())
 }
 
 async fn get_kit(
@@ -458,6 +580,28 @@ async fn rate_limit(State(state): State<Arc<AppState>>, req: Request, next: Next
     next.run(req).await
 }
 
+/// Adds the security headers to every response: the CSP, no referrer, no
+/// MIME sniffing, and `Cache-Control: no-store` on the API (tokens and kits
+/// must never sit in a shared cache).
+async fn security_headers(req: Request, next: Next) -> Response {
+    let api = req.uri().path().starts_with("/v1/");
+    let mut res = next.run(req).await;
+    let h = res.headers_mut();
+    h.insert(
+        HeaderName::from_static("content-security-policy"),
+        HeaderValue::from_static(CSP),
+    );
+    h.insert(REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
+    h.insert(
+        HeaderName::from_static("x-content-type-options"),
+        HeaderValue::from_static("nosniff"),
+    );
+    if api {
+        h.insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    }
+    res
+}
+
 async fn unknown() -> ApiError {
     ApiError::new(
         StatusCode::NOT_FOUND,
@@ -497,6 +641,8 @@ pub fn app(state: Arc<AppState>) -> Router {
                 .allow_methods([Method::GET, Method::POST])
                 .allow_headers([AUTHORIZATION, CONTENT_TYPE]),
         )
+        // Outermost: also covers rate-limit rejections and CORS preflights.
+        .layer(middleware::from_fn(security_headers))
         .with_state(state)
 }
 
@@ -542,4 +688,29 @@ pub fn spawn_background(db_path: &Path, config: Config) -> Result<(SocketAddr, A
         .recv_timeout(Duration::from_secs(10))
         .context("the keeper did not start")?;
     Ok((addr, state))
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ip(n: u32) -> IpAddr {
+        IpAddr::V4(std::net::Ipv4Addr::from(n))
+    }
+
+    #[test]
+    fn full_limiter_evicts_the_oldest_not_everyone() {
+        let l = Limiter::with_max_entries(1.0, 0.0, 10);
+        // A client that is being limited: its bucket is empty.
+        assert!(l.allow(ip(1)));
+        assert!(!l.allow(ip(1)));
+        // A flood of fresh addresses fills the table and overflows it.
+        for n in 2..40 {
+            l.allow(ip(n));
+        }
+        assert!(l.len() <= 10, "the table stays capped, got {}", l.len());
+        // The limited client was oldest and may be evicted, but the table was
+        // not wiped: the newest addresses are still tracked and limited.
+        assert!(!l.allow(ip(39)));
+        assert!(l.len() > 1);
+    }
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   ApiError,
   apiBase,
@@ -104,11 +104,25 @@ describe('request', () => {
 });
 
 describe('api base and poll', () => {
-  it('defaults to the page origin and accepts ?api for http(s) only', () => {
+  it('defaults to the page origin and accepts ?api for local http only', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     expect(apiBase('', 'https://a.example')).toBe('https://a.example');
     expect(apiBase('?api=http://localhost:8787/', 'https://a.example')).toBe('http://localhost:8787');
-    expect(apiBase('?api=javascript:alert(1)', 'https://a.example')).toBe('https://a.example');
-    expect(apiBase('?api=nonsense', 'https://a.example')).toBe('https://a.example');
+    expect(apiBase('?api=http://127.0.0.1:8787', 'https://a.example')).toBe('http://127.0.0.1:8787');
+    expect(warn).not.toHaveBeenCalled();
+    for (const bad of [
+      'javascript:alert(1)',
+      'nonsense',
+      'https://evil.example',
+      'http://evil.example',
+      'http://localhost.evil.example',
+      'http://127.0.0.1.evil.example',
+      'https://localhost:8787',
+    ]) {
+      expect(apiBase(`?api=${bad}`, 'https://a.example')).toBe('https://a.example');
+    }
+    expect(warn).toHaveBeenCalledTimes(7);
+    warn.mockRestore();
   });
   it('polls every 3 s unless a sane override is given', () => {
     expect(pollMs('')).toBe(3000);

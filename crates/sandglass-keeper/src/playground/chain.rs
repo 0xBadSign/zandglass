@@ -44,9 +44,15 @@ pub trait Chain: Send + Sync {
     /// The float's own address (where returned funds go).
     async fn float_address(&self) -> Result<String>;
     /// Creates the wallet of one session epoch and stores its seed
-    /// (encrypted) on the server. Replaces an unfunded leftover of an
-    /// earlier attempt.
+    /// (encrypted) on the server. It refuses an epoch that already has a
+    /// vault: a sweep to an earlier attempt may have reached the network
+    /// without the caller learning of it, so such a vault is never deleted
+    /// or reused (see [`Chain::next_free_epoch`]).
     async fn create_vault(&self, session: &str, epoch: u32) -> Result<NewVault>;
+    /// The lowest epoch number `>= from` that has no vault yet. Every flip
+    /// attempt uses a fresh epoch, so an earlier attempt's vault keeps
+    /// whatever it received.
+    async fn next_free_epoch(&self, session: &str, from: u32) -> Result<u32>;
     /// Sends `amount_zat` from the float to `to` with an ordinary transaction.
     async fn fund(&self, to: &str, amount_zat: u64) -> Result<String>;
     /// Syncs a session vault and reads its balance.
@@ -78,6 +84,7 @@ struct MockState {
     calls: Vec<String>,
     /// Make the next `n` sweeps fail with this message.
     fail_sweeps: Vec<String>,
+    lose_reply_sweeps: Vec<String>,
     fail_funds: Vec<String>,
     forgotten: Vec<String>,
 }
@@ -133,6 +140,12 @@ impl MockChain {
     /// Makes the next sweep fail with `message`.
     pub fn fail_next_sweep(&self, message: &str) {
         self.s().fail_sweeps.push(message.to_string());
+    }
+
+    /// Makes the next sweep move the funds but fail with `message`, like a
+    /// broadcast that the node accepted and whose reply was lost.
+    pub fn lose_reply_of_next_sweep(&self, message: &str) {
+        self.s().lose_reply_sweeps.push(message.to_string());
     }
 
     /// Makes the next funding fail with `message`.
@@ -191,6 +204,9 @@ impl Chain for MockChain {
 
     async fn create_vault(&self, session: &str, epoch: u32) -> Result<NewVault> {
         let mut s = self.s();
+        if s.vaults.contains_key(&(session.to_string(), epoch)) {
+            return Err(anyhow!("epoch {epoch} already has a vault"));
+        }
         let address = format!("mock-vault-{session}-{epoch}");
         s.addresses
             .insert(address.clone(), (session.to_string(), epoch));
@@ -202,6 +218,15 @@ impl Chain for MockChain {
             birthday: 1,
             address,
         })
+    }
+
+    async fn next_free_epoch(&self, session: &str, from: u32) -> Result<u32> {
+        let s = self.s();
+        let mut e = from;
+        while s.vaults.contains_key(&(session.to_string(), e)) {
+            e += 1;
+        }
+        Ok(e)
     }
 
     async fn fund(&self, to: &str, amount_zat: u64) -> Result<String> {
@@ -241,6 +266,11 @@ impl Chain for MockChain {
     async fn sweep(&self, session: &str, epoch: u32, to: &str) -> Result<String> {
         let mut s = self.s();
         s.calls.push(format!("sweep:{session}:{epoch}:{to}"));
+        let lose_reply = if s.lose_reply_sweeps.is_empty() {
+            None
+        } else {
+            Some(s.lose_reply_sweeps.remove(0))
+        };
         if !s.fail_sweeps.is_empty() {
             let msg = s.fail_sweeps.remove(0);
             return Err(anyhow!(msg));
@@ -270,6 +300,10 @@ impl Chain for MockChain {
             }
         }
         s.next_tx += 1;
+        if let Some(msg) = lose_reply {
+            // The node took the transaction but the reply never arrived.
+            return Err(anyhow!(msg));
+        }
         Ok(fake_txid(s.next_tx))
     }
 

@@ -198,7 +198,16 @@ impl Playground {
             self.fail(s, "The heir code is no longer valid.", now);
             return;
         };
-        let new_epoch = s.epoch + 1;
+        // Each attempt gets an epoch of its own: an earlier attempt's sweep
+        // may have reached the network without the reply arriving.
+        let new_epoch = match self.chain.next_free_epoch(&s.id, s.epoch + 1).await {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("playground: choosing a flip epoch failed: {e:#}");
+                self.flip_failed(s);
+                return;
+            }
+        };
         let attempt = self
             .build_kit(&s.id, new_epoch, &heir, s.minutes, now)
             .await;

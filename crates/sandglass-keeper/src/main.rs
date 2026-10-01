@@ -4,7 +4,9 @@
 //! Configuration comes from the environment:
 //! `SANDGLASS_LISTEN` (default `127.0.0.1:8787`), `SANDGLASS_DB` (default
 //! `./keeper.sqlite`), `SANDGLASS_TRUST_PROXY=1` (use `X-Forwarded-For` for
-//! rate limiting) and `SANDGLASS_WEB_DIR` (static files served at `/`).
+//! rate limiting), `SANDGLASS_WEB_DIR` (static files served at `/`),
+//! `SANDGLASS_MAX_MAILBOXES` (default 50000) and
+//! `SANDGLASS_MAX_CREATES_PER_HOUR` (default 2000, all clients together).
 //! The playground is enabled by `SANDGLASS_PLAYGROUND_NETWORK`; see
 //! `docs/PLAYGROUND_API.md` for its variables.
 
@@ -22,9 +24,24 @@ async fn main() -> Result<()> {
         .parse()
         .context("SANDGLASS_LISTEN must look like 127.0.0.1:8787")?;
     let db_path = std::env::var("SANDGLASS_DB").unwrap_or_else(|_| "./keeper.sqlite".into());
+    let number = |name: &str| -> Result<Option<u64>> {
+        std::env::var(name)
+            .ok()
+            .map(|v| {
+                v.parse()
+                    .with_context(|| format!("{name} must be a number"))
+            })
+            .transpose()
+    };
+    let defaults = Config::default();
     let config = Config {
         trust_proxy: std::env::var("SANDGLASS_TRUST_PROXY").is_ok_and(|v| v == "1"),
         web_dir: std::env::var_os("SANDGLASS_WEB_DIR").map(PathBuf::from),
+        max_mailboxes: number("SANDGLASS_MAX_MAILBOXES")?.unwrap_or(defaults.max_mailboxes),
+        max_creates_per_hour: number("SANDGLASS_MAX_CREATES_PER_HOUR")?
+            .map_or(defaults.max_creates_per_hour, |n| {
+                usize::try_from(n).unwrap_or(usize::MAX)
+            }),
     };
     let db = Db::open(&PathBuf::from(db_path))?;
     let state = AppState::new(db, config);

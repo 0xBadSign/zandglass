@@ -194,7 +194,7 @@ pub(crate) fn write_kit_file(dir: &Path, name: &str, kit: &Kit) -> Result<PathBu
     if path.exists() {
         return Err(anyhow!("{} already exists", path.display()));
     }
-    fs::write(&path, kit.to_json()?).with_context(|| format!("writing {}", path.display()))?;
+    crate::fsutil::write_new_private(&path, kit.to_json()?.as_bytes())?;
     Ok(path)
 }
 
@@ -271,6 +271,57 @@ pub fn delete_mailbox(plan: &Plan) -> Result<()> {
     Ok(())
 }
 
+/// Accepts `https://` URLs, and `http://` only for the local machine
+/// (`localhost`, `127.0.0.1`, `[::1]`): kit uploads, claim links and
+/// lightwalletd traffic must not cross the network in clear text.
+pub fn require_secure_url(url: &str, what: &str) -> Result<()> {
+    let lower = url.trim().to_ascii_lowercase();
+    if lower.starts_with("https://") {
+        return Ok(());
+    }
+    if let Some(rest) = lower.strip_prefix("http://") {
+        let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+        let host = if let Some(v6) = authority.strip_prefix('[') {
+            v6.split(']').next().map(|h| format!("[{h}]"))
+        } else {
+            authority.rsplit('@').next().and_then(|a| {
+                // `user@host` is not a local address in disguise.
+                if authority.contains('@') {
+                    None
+                } else {
+                    a.split(':').next().map(str::to_string)
+                }
+            })
+        };
+        if matches!(host.as_deref(), Some("localhost" | "127.0.0.1" | "[::1]")) {
+            return Ok(());
+        }
+        return Err(anyhow!(
+            "the {what} URL uses plain http://, which would send data unencrypted. Use https:// (http:// is only accepted for localhost)."
+        ));
+    }
+    Err(anyhow!("the {what} URL must start with https://"))
+}
+
+/// Refuses a transparent destination unless `allow_transparent` is set:
+/// sending there moves the funds out of the shielded pool and makes the
+/// amount and the address public on chain.
+pub fn check_destination(network: Network, address: &str, allow_transparent: bool) -> Result<()> {
+    use zcash_keys::address::Address;
+    match Address::decode(&network, address) {
+        Some(Address::Sapling(_)) | Some(Address::Unified(_)) | None => Ok(()),
+        Some(_) if allow_transparent => {
+            eprintln!(
+                "WARNING: {address} is a transparent address; the amount and the address will be public on chain."
+            );
+            Ok(())
+        }
+        Some(_) => Err(anyhow!(
+            "{address} is a transparent address. Sending there makes the amount and the address public on chain. Use a shielded address, or pass --allow-transparent to do it anyway."
+        )),
+    }
+}
+
 /// Checks that there are 1 to 3 valid, distinct heir (or payee) codes.
 pub fn check_heirs(heirs: &[String]) -> Result<()> {
     let max = sandglass_core::seal::MAX_HEIRS;
@@ -340,11 +391,7 @@ pub async fn create_plan(
     let mailbox_url = match &new.mailbox_url {
         Some(u) => {
             let u = normalize_base(u);
-            if !(u.starts_with("http://") || u.starts_with("https://")) {
-                return Err(anyhow!(
-                    "the mailbox URL must start with http:// or https://"
-                ));
-            }
+            require_secure_url(&u, "mailbox")?;
             Some(u)
         }
         None => None,
@@ -384,6 +431,7 @@ pub async fn create_plan(
             created: now,
         }],
         installments: None,
+        pending: None,
     };
     let kit = make_kit(
         &plan,
@@ -430,6 +478,9 @@ pub struct FlipReport {
     pub moved: u64,
     /// Set when the plan has a mailbox and the new kit could not be uploaded.
     pub mailbox_error: Option<String>,
+    /// True when no new sweep happened: an earlier flip's pending epoch was
+    /// found to hold the funds and was adopted.
+    pub adopted: bool,
 }
 
 /// The owner's check-in: sweep the current vault into a new one and seal a
@@ -452,6 +503,13 @@ pub async fn flip(
             plan.short_id()
         ));
     }
+    // A previous flip may have swept without learning the outcome: settle
+    // that epoch first, and never create a second one on top of it.
+    match resolve_pending(store, network, client, &mut plan, Some(kit_dir)).await? {
+        PendingOutcome::Adopted(report) => return Ok(*report),
+        PendingOutcome::Waiting(msg) => return Err(anyhow!(msg)),
+        PendingOutcome::None | PendingOutcome::Discarded => {}
+    }
     let old = plan.current()?.clone();
     let mut old_vault = open_vault(store, network, &old)?;
     let balances = sync_and_require_funds(&mut old_vault, client).await?;
@@ -464,45 +522,56 @@ pub async fn flip(
     let birthday = Vault::new_birthday(client).await?;
     let rel = Store::vault_rel_dir(&plan.id, epoch);
     let unlock_round = drand::unlock_round(now + plan.period_secs);
-    // Everything the heirs and the owner need is written before any funds move.
-    store.write_seed(&rel, &phrase)?;
-    let mut new_vault = Vault::init(&store.path(&rel), network, client, phrase, birthday).await?;
-    let kit = make_kit(
-        &plan,
+    let record = EpochRecord {
         epoch,
-        new_vault.seed_phrase(),
-        birthday,
-        unlock_round,
-        None,
-        now,
-    )?;
-    let kit_path = write_kit_file(
-        kit_dir,
-        &format!("{}-e{epoch}.sandglass", plan.short_id()),
-        &kit,
-    )?;
-    let address = new_vault.address()?;
-    drop(new_vault);
-
-    let sweeps = match old_vault.sweep(client, &address).await {
-        Ok(s) => s,
-        Err(e) => {
-            // Nothing moved: drop the unused epoch and its kit.
-            let _ = fs::remove_file(&kit_path);
-            let _ = fs::remove_dir_all(store.path(&rel));
-            return Err(e);
-        }
-    };
-
-    plan.epoch = epoch;
-    plan.epochs.push(EpochRecord {
-        epoch,
-        dir: rel,
+        dir: rel.clone(),
         birthday_height: birthday,
         unlock_round,
         unlock_time: drand::round_time(unlock_round),
         created: now,
-    });
+    };
+    // Everything the heirs and the owner need is written before any funds
+    // move, and the epoch is recorded as pending: from here on it is only
+    // deleted when the sweep provably never reached the network.
+    store.write_seed(&rel, &phrase)?;
+    plan.pending = Some(record.clone());
+    store.put_plan(&plan)?;
+    let mut created_kit: Option<PathBuf> = None;
+    let prepared: Result<(Kit, PathBuf, String)> = async {
+        let mut new_vault =
+            Vault::init(&store.path(&rel), network, client, phrase, birthday).await?;
+        let kit = make_kit(
+            &plan,
+            epoch,
+            new_vault.seed_phrase(),
+            birthday,
+            unlock_round,
+            None,
+            now,
+        )?;
+        let kit_path = write_kit_file(kit_dir, &kit_file_name(&plan, epoch), &kit)?;
+        created_kit = Some(kit_path.clone());
+        let address = new_vault.address()?;
+        Ok((kit, kit_path, address))
+    }
+    .await;
+    let (kit, kit_path, address) = match prepared {
+        Ok(p) => p,
+        Err(e) => {
+            // Nothing was sent yet: drop the unused epoch.
+            abandon_pending(store, &mut plan, created_kit.as_deref());
+            return Err(e);
+        }
+    };
+
+    let sweeps = match old_vault.sweep(client, &address).await {
+        Ok(s) => s,
+        Err(e) => return Err(settle_failed_sweep(store, &mut plan, Some(&kit_path), e)),
+    };
+
+    plan.epoch = epoch;
+    plan.epochs.push(record);
+    plan.pending = None;
     store.put_plan(&plan)?;
     // The funds have moved, so a failed upload is reported, not fatal: the
     // mailbox still holds the old kit, which now opens an empty vault.
@@ -516,7 +585,172 @@ pub async fn flip(
         sweeps,
         moved,
         mailbox_error,
+        adopted: false,
     })
+}
+
+fn kit_file_name(plan: &Plan, epoch: u32) -> String {
+    format!("{}-e{epoch}.sandglass", plan.short_id())
+}
+
+/// Whether a sweep error proves that nothing reached the network: the
+/// proposal or the transaction could not be built, or the node explicitly
+/// rejected the broadcast. Anything else (a timeout or a dropped connection
+/// during `SendTransaction`) may have happened after the node accepted the
+/// transaction, so the funds may already be in the new vault.
+pub(crate) fn definitely_unsent(e: &anyhow::Error) -> bool {
+    let msg = format!("{e:#}");
+    msg.contains("proposal failed")
+        || msg.contains("building transaction failed")
+        || msg.contains("broadcast rejected")
+}
+
+/// Drops a pending epoch that never received funds: its vault directory, its
+/// kit file (only when this call created it) and the plan's pending record.
+fn abandon_pending(store: &Store, plan: &mut Plan, kit_path: Option<&Path>) {
+    if let Some(p) = plan.pending.take() {
+        let _ = fs::remove_dir_all(store.path(&p.dir));
+        if let Some(k) = kit_path {
+            let _ = fs::remove_file(k);
+        }
+        let _ = store.put_plan(plan);
+    }
+}
+
+/// Handles a failed sweep. A definite pre-broadcast failure cleans the new
+/// epoch up and returns the original error. Any other failure keeps the new
+/// epoch (recorded as pending in the plan) and says what to do.
+pub(crate) fn settle_failed_sweep(
+    store: &Store,
+    plan: &mut Plan,
+    kit_path: Option<&Path>,
+    e: anyhow::Error,
+) -> anyhow::Error {
+    if definitely_unsent(&e) {
+        abandon_pending(store, plan, kit_path);
+        return e;
+    }
+    let epoch = plan.pending.as_ref().map_or(0, |p| p.epoch);
+    anyhow!(
+        "the sweep to the new vault (epoch {epoch}) may or may not have been broadcast ({e:#}). \
+         The new vault and its kit were kept. Run `sandglass sync` or `sandglass status --sync` \
+         to check: if the funds arrived, the new vault is adopted automatically, \
+         and `sandglass flip` will not start another sweep until this one is settled."
+    )
+}
+
+/// What [`resolve_pending`] found.
+pub enum PendingOutcome {
+    /// The plan has no pending epoch.
+    None,
+    /// The funds are in the pending epoch, which is now the current one.
+    Adopted(Box<FlipReport>),
+    /// The sweep never happened (the old vault is spendable again after the
+    /// transaction expired); the pending epoch was removed.
+    Discarded,
+    /// The outcome is not known yet; the message says what to do.
+    Waiting(String),
+}
+
+/// What to do with a pending epoch, given what the two vaults show.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum PendingDecision {
+    Adopt,
+    Discard,
+    Wait,
+}
+
+/// A pending sweep is only declared dead after the default transaction
+/// expiry (40 blocks, under an hour) has certainly passed.
+const PENDING_DEAD_AFTER_SECS: u64 = 2 * 3600;
+
+pub(crate) fn decide_pending(
+    new_total: u64,
+    old_total: u64,
+    old_spendable: u64,
+    age_secs: u64,
+) -> PendingDecision {
+    if new_total > 0 {
+        PendingDecision::Adopt
+    } else if old_total > 0 && old_spendable >= old_total && age_secs > PENDING_DEAD_AFTER_SECS {
+        PendingDecision::Discard
+    } else {
+        PendingDecision::Wait
+    }
+}
+
+/// Settles a pending epoch left by a flip whose sweep outcome was unknown.
+/// Funds in the pending vault adopt it (the kit is rebuilt and uploaded);
+/// funds back in the old vault long after the attempt discard it; anything
+/// else waits. With `kit_dir`, a missing kit file is rewritten there.
+pub async fn resolve_pending(
+    store: &Store,
+    network: Network,
+    client: &mut Client,
+    plan: &mut Plan,
+    kit_dir: Option<&Path>,
+) -> Result<PendingOutcome> {
+    let Some(pend) = plan.pending.clone() else {
+        return Ok(PendingOutcome::None);
+    };
+    let mut new_vault = open_vault(store, network, &pend)?;
+    new_vault.sync(client).await?;
+    let nb = new_vault.balances()?;
+    let new_total = total(&nb);
+    let (old_total, old_spendable) = if new_total == 0 {
+        let mut old_vault = open_vault(store, network, plan.current()?)?;
+        old_vault.sync(client).await?;
+        let ob = old_vault.balances()?;
+        (total(&ob), ob.spendable())
+    } else {
+        (0, 0)
+    };
+    let age = now().saturating_sub(pend.created);
+    match decide_pending(new_total, old_total, old_spendable, age) {
+        PendingDecision::Adopt => {
+            plan.epoch = pend.epoch;
+            plan.epochs.push(pend.clone());
+            plan.pending = None;
+            store.put_plan(plan)?;
+            let kit = make_kit(
+                plan,
+                pend.epoch,
+                new_vault.seed_phrase(),
+                pend.birthday_height,
+                pend.unlock_round,
+                None,
+                pend.created,
+            )?;
+            let name = kit_file_name(plan, pend.epoch);
+            let dir = kit_dir.unwrap_or_else(|| Path::new("."));
+            let kit_path = dir.join(&name);
+            if kit_dir.is_some() && !kit_path.exists() {
+                write_kit_file(dir, &name, &kit)?;
+            }
+            let mailbox_error = match upload_kit(plan, &kit) {
+                Ok(()) => None,
+                Err(e) => Some(format!("{e:#}")),
+            };
+            Ok(PendingOutcome::Adopted(Box::new(FlipReport {
+                plan: plan.clone(),
+                kit_path,
+                sweeps: Vec::new(),
+                moved: new_total,
+                mailbox_error,
+                adopted: true,
+            })))
+        }
+        PendingDecision::Discard => {
+            let kit_path = kit_dir.map(|d| d.join(kit_file_name(plan, pend.epoch)));
+            abandon_pending(store, plan, kit_path.as_deref());
+            Ok(PendingOutcome::Discarded)
+        }
+        PendingDecision::Wait => Ok(PendingOutcome::Waiting(format!(
+            "A previous flip (epoch {}) is not settled: neither vault shows the funds as moved yet. \
+             Wait a few blocks, then run `sandglass sync`; do not flip again until it is settled.",
+            pend.epoch
+        ))),
+    }
 }
 
 /// What [`cancel`] did.
@@ -555,6 +789,12 @@ pub async fn cancel(
     if plan.kind == "installments" {
         return crate::installments::cancel_installments(store, network, client, plan, to_address)
             .await;
+    }
+    // Funds may sit in an epoch whose flip outcome was never learned.
+    if let PendingOutcome::Waiting(msg) =
+        resolve_pending(store, network, client, &mut plan, None).await?
+    {
+        return Err(anyhow!(msg));
     }
     let rec = plan.current()?.clone();
     let mut vault = open_vault(store, network, &rec)?;
@@ -612,6 +852,151 @@ pub async fn claim_sweep(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const ID: &str = "0123456789abcdef0123456789abcdef";
+
+    /// A store with a plan whose epoch 2 is pending, plus the files a flip
+    /// writes before it sweeps.
+    fn pending_fixture() -> (tempfile::TempDir, Store, Plan, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::init_with(&dir.path().join("s"), "x", 10).unwrap();
+        let rec = |epoch| EpochRecord {
+            epoch,
+            dir: Store::vault_rel_dir(ID, epoch),
+            birthday_height: 5,
+            unlock_round: 9,
+            unlock_time: 10,
+            created: 1,
+        };
+        let plan = Plan {
+            id: ID.into(),
+            kind: "legacy".into(),
+            network: "test".into(),
+            heirs: vec![],
+            period_secs: 180,
+            message: None,
+            epoch: 1,
+            status: PlanStatus::Active,
+            created: 1,
+            mailbox_url: None,
+            mailbox_id: None,
+            mailbox_write_token: None,
+            epochs: vec![rec(1)],
+            installments: None,
+            pending: Some(rec(2)),
+        };
+        store.put_plan(&plan).unwrap();
+        store.write_seed(&rec(2).dir, "seed words").unwrap();
+        let kit = dir.path().join("kit-e2.sandglass");
+        fs::write(&kit, "{}").unwrap();
+        (dir, store, plan, kit)
+    }
+
+    #[test]
+    fn plain_http_is_only_for_localhost() {
+        for ok in [
+            "https://keeper.example",
+            "HTTPS://keeper.example/x",
+            "http://localhost:8787",
+            "http://127.0.0.1:8787/",
+            "http://[::1]:8787",
+        ] {
+            assert!(require_secure_url(ok, "keeper").is_ok(), "{ok}");
+        }
+        for bad in [
+            "http://keeper.example",
+            "http://127.0.0.1.evil.example",
+            "http://localhost.evil.example",
+            "http://localhost@evil.example",
+            "http://10.0.0.5:8787",
+            "ftp://x",
+            "keeper.example",
+        ] {
+            assert!(require_secure_url(bad, "keeper").is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn transparent_destinations_need_a_flag() {
+        let net = Network::MainNetwork;
+        use zcash_address::ToAddress;
+        let t = zcash_address::ZcashAddress::from_transparent_p2pkh(
+            zcash_protocol::consensus::NetworkType::Main,
+            [7; 20],
+        )
+        .encode();
+        assert!(check_destination(net, &t, false).is_err());
+        assert!(check_destination(net, &t, true).is_ok());
+        // Anything that does not decode is left to the later validation.
+        assert!(check_destination(net, "not an address", false).is_ok());
+    }
+
+    #[test]
+    fn only_definite_errors_are_unsent() {
+        assert!(definitely_unsent(&anyhow!("proposal failed: x")));
+        assert!(definitely_unsent(&anyhow!(
+            "building transaction failed: x"
+        )));
+        assert!(definitely_unsent(&anyhow!("broadcast rejected (-1): bad")));
+        // Ambiguous: the node may have accepted the transaction.
+        let timeout = anyhow!("deadline has elapsed").context("SendTransaction RPC");
+        assert!(!definitely_unsent(&timeout));
+        assert!(!definitely_unsent(&anyhow!("connection reset by peer")));
+        assert!(!definitely_unsent(&anyhow!("reading transaction: x")));
+    }
+
+    #[test]
+    fn rejected_sweep_cleans_up_the_new_epoch() {
+        let (_d, store, mut plan, kit) = pending_fixture();
+        let seed_dir = store.path(&Store::vault_rel_dir(ID, 2));
+        let e = settle_failed_sweep(
+            &store,
+            &mut plan,
+            Some(&kit),
+            anyhow!("broadcast rejected (-26): bad-txns"),
+        );
+        assert!(format!("{e:#}").contains("broadcast rejected"));
+        assert!(!seed_dir.exists());
+        assert!(!kit.exists());
+        assert!(plan.pending.is_none());
+        assert!(store.find_plan(Some(ID)).unwrap().pending.is_none());
+    }
+
+    #[test]
+    fn ambiguous_sweep_keeps_the_new_epoch_pending() {
+        let (_d, store, mut plan, kit) = pending_fixture();
+        let seed_dir = store.path(&Store::vault_rel_dir(ID, 2));
+        let e = settle_failed_sweep(
+            &store,
+            &mut plan,
+            Some(&kit),
+            anyhow!("deadline has elapsed").context("SendTransaction RPC"),
+        );
+        let msg = format!("{e:#}");
+        assert!(msg.contains("may or may not"), "{msg}");
+        assert!(msg.contains("sandglass sync"), "{msg}");
+        assert!(seed_dir.join("seed.age").exists());
+        assert!(kit.exists());
+        assert_eq!(plan.pending.as_ref().unwrap().epoch, 2);
+        // The pending record survives on disk for the next flip or status.
+        assert_eq!(store.find_plan(Some(ID)).unwrap().pending.unwrap().epoch, 2);
+    }
+
+    #[test]
+    fn pending_epoch_decisions() {
+        use PendingDecision::*;
+        // Funds in the new vault: adopt, whatever the old one shows.
+        assert_eq!(decide_pending(5, 0, 0, 0), Adopt);
+        // Old vault spendable again, but too soon to call the tx dead.
+        assert_eq!(decide_pending(0, 5, 5, 60), Wait);
+        assert_eq!(
+            decide_pending(0, 5, 5, PENDING_DEAD_AFTER_SECS + 1),
+            Discard
+        );
+        // Old vault locked by a pending spend, or empty: keep waiting.
+        assert_eq!(decide_pending(0, 5, 0, 99_999), Wait);
+        assert_eq!(decide_pending(0, 0, 0, 99_999), Wait);
+    }
 
     #[test]
     fn durations() {

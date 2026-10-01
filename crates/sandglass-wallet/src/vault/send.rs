@@ -18,7 +18,7 @@ use zcash_client_backend::{
 use zcash_keys::keys::UnifiedSpendingKey;
 use zcash_primitives::transaction::fees::FeeRule;
 use zcash_proofs::prover::LocalTxProver;
-use zcash_protocol::{value::Zatoshis, ShieldedPool};
+use zcash_protocol::value::Zatoshis;
 use zeroize::Zeroizing;
 
 use super::{parse_phrase, SweepReport, Vault};
@@ -61,7 +61,7 @@ impl Vault {
             amount,
             None,
             None,
-            ShieldedPool::Orchard,
+            super::fallback_change_pool(&self.network, target_height),
             None,
             None,
         )

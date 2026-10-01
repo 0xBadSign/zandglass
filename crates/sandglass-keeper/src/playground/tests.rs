@@ -208,6 +208,44 @@ async fn failed_flip_leaves_the_vault_untouched() {
 }
 
 #[tokio::test]
+async fn retried_flip_never_reuses_an_attempted_epoch() {
+    let r = rig(|_| {});
+    let t = now();
+    let id = to_sealed(&r, t).await;
+    r.pg.begin_flip(&id).ok().unwrap();
+    // The node accepts the sweep to epoch 2 but the reply is lost.
+    r.chain.lose_reply_of_next_sweep("deadline has elapsed");
+    r.pg.tick(t + 20).await;
+    let s = r.pg.sessions().get(&id).unwrap().unwrap();
+    assert_eq!((s.state, s.epoch), (S::Flipping, 1));
+    assert_eq!(r.chain.vault(&id, 2), Some((50_000, 50_000)));
+
+    // The retry must not touch epoch 2: it creates epoch 3 instead.
+    r.pg.tick(t + 21).await;
+    assert_eq!(r.chain.vault(&id, 2), Some((50_000, 50_000)));
+    let calls = r.chain.calls();
+    assert!(calls.contains(&format!("create:{id}:2")));
+    assert!(calls.contains(&format!("create:{id}:3")));
+    assert_eq!(
+        calls
+            .iter()
+            .filter(|c| c.as_str() == format!("create:{id}:2"))
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn create_vault_refuses_an_existing_epoch() {
+    let chain = MockChain::new();
+    chain.create_vault("s", 1).await.unwrap();
+    chain.fund("mock-vault-s-1", 10).await.unwrap();
+    assert!(chain.create_vault("s", 1).await.is_err());
+    assert_eq!(chain.vault("s", 1), Some((10, 10)));
+    assert_eq!(chain.next_free_epoch("s", 1).await.unwrap(), 2);
+}
+
+#[tokio::test]
 async fn auto_return_thirty_minutes_after_unlock() {
     let r = rig(|_| {});
     let t = now();

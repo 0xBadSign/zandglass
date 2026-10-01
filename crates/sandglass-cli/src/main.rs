@@ -45,6 +45,10 @@ struct Cli {
     /// Allow plans above the 0.25 ZEC mainnet cap (the software is unaudited).
     #[arg(long, global = true)]
     accept_unaudited: bool,
+    /// Allow `--to` to be a transparent address. That makes the amount and the
+    /// address public on chain, so it is refused by default.
+    #[arg(long, global = true)]
+    allow_transparent: bool,
     #[command(subcommand)]
     cmd: Cmd,
 }
@@ -258,6 +262,7 @@ async fn lightd(cli: &Cli, network: Network) -> Result<Client> {
         .server
         .clone()
         .unwrap_or_else(|| default_url(network).to_string());
+    ops::require_secure_url(&url, "lightwalletd server")?;
     connect(&url).await
 }
 
@@ -539,6 +544,8 @@ async fn run(cli: Cli) -> Result<()> {
                     }
                     continue;
                 }
+                let mut plan = plan;
+                settle_pending(&store, network, &mut client, &mut plan).await?;
                 let mut vault = ops::open_vault(&store, network, plan.current()?)?;
                 vault.sync(&mut client).await?;
                 let b = vault.balances()?;
@@ -562,10 +569,19 @@ async fn run(cli: Cli) -> Result<()> {
             if plans.is_empty() {
                 println!("No plans yet. Create one with `sandglass plan legacy`.");
             }
-            for plan in plans {
+            for mut plan in plans {
                 if plan.kind == "installments" {
                     installments_status(&store, network, &plan, client.as_mut()).await?;
                     continue;
+                }
+                if plan.pending.is_some() {
+                    match client.as_mut() {
+                        Some(c) => settle_pending(&store, network, c, &mut plan).await?,
+                        None => println!(
+                            "Plan {}: a flip is not settled yet. Run `sandglass status --sync` to check it.",
+                            plan.short_id()
+                        ),
+                    }
                 }
                 let rec = plan.current()?;
                 println!(
@@ -630,12 +646,21 @@ async fn run(cli: Cli) -> Result<()> {
             )
             .await?;
             let unlock = r.plan.current()?.unlock_time;
-            println!(
-                "Flipped plan {} to epoch {}: moved {} ZEC into a new vault.",
-                r.plan.short_id(),
-                r.plan.epoch,
-                zec(r.moved)
-            );
+            if r.adopted {
+                println!(
+                    "An earlier flip of plan {} had already moved {} ZEC into epoch {}. That epoch is now the current one; nothing was swept again.",
+                    r.plan.short_id(),
+                    zec(r.moved),
+                    r.plan.epoch
+                );
+            } else {
+                println!(
+                    "Flipped plan {} to epoch {}: moved {} ZEC into a new vault.",
+                    r.plan.short_id(),
+                    r.plan.epoch,
+                    zec(r.moved)
+                );
+            }
             print_txids(&r.sweeps);
             println!("New kit: {}", r.kit_path.display());
             println!(
@@ -656,6 +681,7 @@ async fn run(cli: Cli) -> Result<()> {
             }
         }
         Cmd::Cancel { plan, to } => {
+            ops::check_destination(network, to, cli.allow_transparent)?;
             warn_unaudited(network);
             let store = open_store(&cli, network)?;
             let mut client = lightd(&cli, network).await?;
@@ -733,6 +759,47 @@ async fn run(cli: Cli) -> Result<()> {
     Ok(())
 }
 
+/// Checks a flip whose sweep outcome was unknown. When the funds are in the
+/// new epoch it becomes the current one; the plan is updated in place.
+async fn settle_pending(
+    store: &Store,
+    network: Network,
+    client: &mut Client,
+    plan: &mut sandglass_wallet::Plan,
+) -> Result<()> {
+    if plan.pending.is_none() {
+        return Ok(());
+    }
+    match ops::resolve_pending(store, network, client, plan, None).await? {
+        ops::PendingOutcome::Adopted(r) => {
+            println!(
+                "Plan {}: the earlier flip went through. {} ZEC is in epoch {}, which is now current.",
+                plan.short_id(),
+                zec(r.moved),
+                plan.epoch
+            );
+            match (&plan.mailbox_url, &r.mailbox_error) {
+                (Some(_), None) => println!("The new kit was uploaded to your keeper mailbox."),
+                (Some(_), Some(e)) => eprintln!(
+                    "WARNING: the new kit could not be uploaded to the keeper ({e}). Give your heirs the kit file written at flip time (epoch {}) or run `sandglass flip` again later.",
+                    plan.epoch
+                ),
+                (None, _) => println!(
+                    "Give your heirs the kit file written at flip time (epoch {}) in place of the old one.",
+                    plan.epoch
+                ),
+            }
+        }
+        ops::PendingOutcome::Discarded => println!(
+            "Plan {}: the earlier flip never reached the network; the unused epoch was removed. Run `sandglass flip` again.",
+            plan.short_id()
+        ),
+        ops::PendingOutcome::Waiting(msg) => println!("Plan {}: {msg}", plan.short_id()),
+        ops::PendingOutcome::None => {}
+    }
+    Ok(())
+}
+
 fn inspect(file: &Path) -> Result<()> {
     let kit = read_kit(file)?;
     let unlock = kit.unlock_time();
@@ -757,17 +824,36 @@ fn inspect(file: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Writes a secret to a new file, created with owner-only permissions from
+/// the start (no write-then-chmod window). Refuses to overwrite.
 fn write_secret_file(path: &Path, text: &str) -> Result<()> {
     if path.exists() {
         return Err(anyhow!("{} already exists", path.display()));
     }
-    std::fs::write(path, text).with_context(|| format!("writing {}", path.display()))?;
-    #[cfg(unix)]
+    sandglass_wallet::fsutil::write_new_private(path, text.as_bytes())
+}
+
+/// Hides read tokens (`r=...` in a claim link) in text that may be shown or
+/// logged. The token opens the mailbox's kit, so it must not end up in error
+/// output.
+fn redact_tokens(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(pos) = ["&r=", "#r=", "?r="]
+        .iter()
+        .filter_map(|p| rest.find(p))
+        .min()
     {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+        let (head, tail) = rest.split_at(pos + 3);
+        out.push_str(head);
+        out.push_str("<redacted>");
+        let end = tail
+            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-'))
+            .unwrap_or(tail.len());
+        rest = &tail[end..];
     }
-    Ok(())
+    out.push_str(rest);
+    out
 }
 
 /// Claim links and kit paths found in a text file (other words are ignored).
@@ -785,6 +871,7 @@ fn read_links_file(path: &Path) -> Result<Vec<String>> {
 fn load_kit(source: &str) -> Result<Kit> {
     match ClaimLink::parse(source) {
         Some(link) if !Path::new(source).exists() => {
+            ops::require_secure_url(&link.base, "keeper")?;
             let text = MailboxClient::new(&link.base).get(&link.id, &link.read_token)?;
             Ok(Kit::from_json(&text)?)
         }
@@ -826,9 +913,10 @@ async fn claim_all(
             Ok(()) => {}
             Err(e) if watch => {
                 failed += 1;
+                let text = redact_tokens(&format!("{source}: {e:#}"));
                 match error_code(&e) {
-                    Some(code) => eprintln!("error[{code}]: {source}: {e:#}"),
-                    None => eprintln!("error: {source}: {e:#}"),
+                    Some(code) => eprintln!("error[{code}]: {text}"),
+                    None => eprintln!("error: {text}"),
                 }
             }
             Err(e) => return Err(e),
@@ -923,6 +1011,9 @@ async fn claim(
     wait: bool,
 ) -> Result<()> {
     let kit_net = ops::wallet_network(kit.network);
+    if let Some(addr) = to {
+        ops::check_destination(kit_net, addr, cli.allow_transparent)?;
+    }
     if let Some(n) = cli.network {
         let asked = match n {
             Net::Main => kit::Network::Main,
@@ -1000,41 +1091,54 @@ async fn claim(
         }
         Some(addr) => {
             let mut client = lightd(cli, kit_net).await?;
-            let work = std::env::temp_dir().join(format!(
-                "sandglass-claim-{}-{}",
-                &payload.plan[..8],
-                now()
-            ));
+            // A private (0700) directory with a random name; it is removed
+            // when `tmp` drops, also when Ctrl-C interrupts the claim.
+            let tmp = tempfile::Builder::new()
+                .prefix("sandglass-claim-")
+                .tempdir()
+                .context("creating a temporary wallet directory")?;
+            let work = tmp.path().join("wallet");
             // When the caller is waiting, the unlock can come before the funds
             // are spendable (the owner's split still confirming): keep trying.
             let started = now();
-            let (sweeps, moved) = loop {
-                let attempt = ops::claim_sweep(
-                    kit_net,
-                    &mut client,
-                    Zeroizing::new(payload.vault_seed.clone()),
-                    payload.birthday_height,
-                    addr,
-                    &work,
-                )
-                .await;
-                match attempt {
-                    Ok(r) => break r,
-                    Err(e) if wait => {
-                        let patience = match error_code(&e) {
-                            Some("insufficient_funds") => 1800,
-                            Some("vault_empty") => 120,
-                            _ => 0,
-                        };
-                        if patience == 0 || now().saturating_sub(started) >= patience {
-                            return Err(e);
+            let sweep_loop = async {
+                loop {
+                    let attempt = ops::claim_sweep(
+                        kit_net,
+                        &mut client,
+                        Zeroizing::new(payload.vault_seed.clone()),
+                        payload.birthday_height,
+                        addr,
+                        &work,
+                    )
+                    .await;
+                    match attempt {
+                        Ok(r) => return Ok(r),
+                        Err(e) if wait => {
+                            let patience = match error_code(&e) {
+                                Some("insufficient_funds") => 1800,
+                                Some("vault_empty") => 120,
+                                _ => 0,
+                            };
+                            if patience == 0 || now().saturating_sub(started) >= patience {
+                                return Err(e);
+                            }
+                            println!(
+                                "The funds are not spendable yet ({e}); trying again in 20 s ..."
+                            );
+                            tokio::time::sleep(Duration::from_secs(20)).await;
                         }
-                        println!("The funds are not spendable yet ({e}); trying again in 20 s ...");
-                        tokio::time::sleep(Duration::from_secs(20)).await;
+                        Err(e) => return Err(e),
                     }
-                    Err(e) => return Err(e),
                 }
             };
+            let (sweeps, moved) = tokio::select! {
+                r = sweep_loop => r?,
+                _ = tokio::signal::ctrl_c() => {
+                    return Err(anyhow!("interrupted; the temporary wallet was removed"));
+                }
+            };
+            drop(tmp);
             let fee: u64 = sweeps.iter().filter_map(|s| s.fee).sum();
             println!(
                 "Moved {} ZEC to {addr} (the vault held {} ZEC; network fee {} ZEC).",
@@ -1076,11 +1180,29 @@ async fn main() -> ExitCode {
     match run(cli).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
+            let text = redact_tokens(&format!("{e:#}"));
             match error_code(&e) {
-                Some(code) => eprintln!("error[{code}]: {e:#}"),
-                None => eprintln!("error: {e:#}"),
+                Some(code) => eprintln!("error[{code}]: {text}"),
+                None => eprintln!("error: {text}"),
             }
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::redact_tokens;
+
+    #[test]
+    fn read_tokens_are_redacted() {
+        let t = "abcd1234";
+        let link = format!("https://k.example/claim.html#m=abc&r={t}");
+        let shown = redact_tokens(&format!("error: {link}: not found"));
+        assert!(!shown.contains(t), "{shown}");
+        assert!(shown.contains("#m=abc&r=<redacted>: not found"), "{shown}");
+        let two = redact_tokens(&format!("{link} and {link}"));
+        assert!(!two.contains(t));
+        assert_eq!(redact_tokens("nothing here"), "nothing here");
     }
 }

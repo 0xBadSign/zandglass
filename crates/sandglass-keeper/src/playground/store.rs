@@ -148,9 +148,11 @@ pub fn day_of(t: u64) -> u64 {
 impl SessionDb {
     /// Opens (and if needed creates) the database.
     pub fn open(path: &Path) -> Result<Self> {
+        sandglass_wallet::fsutil::touch_private(path)?;
         let conn = Connection::open(path).with_context(|| format!("opening {}", path.display()))?;
         conn.execute_batch(
-            "PRAGMA journal_mode = WAL;
+            "PRAGMA secure_delete = ON;
+             PRAGMA journal_mode = WAL;
              CREATE TABLE IF NOT EXISTS sessions (
                  id TEXT PRIMARY KEY,
                  token_hash BLOB NOT NULL,

@@ -7,7 +7,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use sandglass_core::drand;
 use sandglass_core::kit::Sequence;
 use sandglass_core::mailbox::{normalize_base, ClaimLink, MailboxClient};
@@ -158,11 +158,7 @@ pub async fn create_installments(
     let mailbox_url = match &new.mailbox_url {
         Some(u) => {
             let u = normalize_base(u);
-            if !(u.starts_with("http://") || u.starts_with("https://")) {
-                return Err(anyhow!(
-                    "the mailbox URL must start with http:// or https://"
-                ));
-            }
+            crate::ops::require_secure_url(&u, "mailbox")?;
             Some(u)
         }
         None => None,
@@ -207,6 +203,7 @@ pub async fn create_installments(
             split_txid: None,
             items: Vec::new(),
         }),
+        pending: None,
     };
     store.put_plan(&plan)?;
     let address = vault.address()?;
@@ -416,10 +413,7 @@ pub async fn split(
         Ok(r) => r,
         Err(e) => {
             let msg = format!("{e:#}");
-            let definitely_unsent = msg.contains("proposal failed")
-                || msg.contains("building transaction failed")
-                || msg.contains("broadcast rejected");
-            if definitely_unsent {
+            if crate::ops::definitely_unsent(&e) {
                 cleanup(&items, &written);
                 return Err(e);
             }
@@ -470,7 +464,7 @@ pub async fn split(
             ));
         }
         let path = kit_dir.join(&links_name);
-        fs::write(&path, text).with_context(|| format!("writing {}", path.display()))?;
+        crate::fsutil::write_private_atomic(&path, text.as_bytes())?;
         Some(path)
     } else {
         None
