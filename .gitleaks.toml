@@ -1,0 +1,8 @@
+# gitleaks configuration: the default rules, plus an allowlist for the
+# committed TEST ONLY vectors (a public test identity that protects nothing).
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test-only vectors"
+paths = ['''(^|/)tests/vectors/TEST_ONLY_[^/]*$''']
