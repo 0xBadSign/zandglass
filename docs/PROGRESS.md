@@ -171,6 +171,6 @@ None yet.
 - The `spike_vault` example stores seeds in plaintext (spike only). T1.3 replaces this with age-passphrase encryption.
 - `tlock_age` pulls in its own `age` 0.11 beside `age` 0.12.1 (bytes only cross the boundary).
 - `drand_core` uses `ureq`; a future WASM build of core must avoid its HTTP client.
-- Claim to verify before submission: the landing page says claims are restored in third-party wallets. A real restore in Zkool or Zodl must be done and logged in evidence (T1.5), or the sentence must change.
+- Verified 2026-10-01: third-party restore (zcash-devtool) logged in evidence.
 - 2026-10-01: the docs agent found 16 places where the plan and the code differ. Open follow-ups: installments and `claim --watch` (T2.3 agent running); Tor is not implemented (`--server` exists instead of `--lightwalletd`); `sync_required` is unused; the keeper also sees plan id, epoch and creation time (now in PRIVACY R2); claim link path unified on `claim.html` (2026-10-01); the R5 pool-transition note needs review in T4.1.
 - 2026-10-01: disk incident. C: had 1.4 GB free because of per-agent cargo target dirs (66 GB). They were deleted, the vhdx trimmed (37 GB free), and CLAUDE.md now requires one shared target dir.
