@@ -68,7 +68,7 @@ jobs:
           cp target/${{ matrix.target }}/release/zandglass dist/${{ matrix.name }}/
           cp README.md LICENSE-MIT LICENSE-APACHE dist/${{ matrix.name }}/
           tar -C dist -czf dist/${{ matrix.name }}.tar.gz ${{ matrix.name }}
-          shasum -a 256 dist/${{ matrix.name }}.tar.gz > dist/${{ matrix.name }}.tar.gz.sha256
+          (cd dist && shasum -a 256 ${{ matrix.name }}.tar.gz > ${{ matrix.name }}.tar.gz.sha256)
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
