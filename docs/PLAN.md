@@ -4,7 +4,7 @@
 
 **Plan version:** 2 (2026-09-30). Version 1 was built on pre-signed transactions; see 4.6 and D-009 for why that changed. **Executor:** a coding agent (plus subagents) following this document without asking the owner, except for the owner actions in section 14.
 
-**One-line pitch:** Shielded Zcash has no timelocks, so there is no private way to pass it on. Sandglass gives every vault a time-locked recovery path: your heir can open it only after you stop checking in, and nothing about it ever appears on chain.
+**One-line pitch:** Shielded Zcash has no timelocks, so there is no private way to pass it on. Sandglass gives every vault a time-locked recovery path: your heir can open it only after you stop checking in, and nothing on chain reveals the plan, the heir or the amounts.
 
 ---
 

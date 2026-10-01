@@ -129,7 +129,7 @@ main.append(
         { class: 'lead' },
         'Shielded Zcash has no timelocks, so there is no private way to pass it on. ' +
           'Sandglass gives your vault a time-locked recovery path: your heir can open it only after you stop checking in ' +
-          '— and nothing about it ever appears on chain.',
+          '— and nothing on chain reveals the plan, the heir or the amounts.',
       ),
       h(
         'div',
@@ -142,7 +142,7 @@ main.append(
         { class: 'trust' },
         h('li', {}, 'No custody'),
         h('li', {}, 'No smart contract'),
-        h('li', {}, 'Nothing on chain'),
+        h('li', {}, 'No plan on chain'),
       ),
     ),
     h('div', { class: 'hero-art' }, heroGlass),
@@ -158,7 +158,7 @@ main.append(
       h(
         'p',
         { class: 'muted' },
-        'A full inheritance, end to end on Zcash testnet. Each step is an ordinary shielded transaction: standard expiry, standard fee, nothing to fingerprint.',
+        'A full inheritance, end to end on Zcash testnet. Each step is an ordinary shielded transaction: standard expiry, standard fee, no Sandglass-specific fields.',
       ),
     ),
     h(
@@ -230,7 +230,7 @@ function liveCard(v: LiveVault): HTMLElement {
     const left = (v.unlockMs - Date.now()) / 1000;
     if (left > 0) {
       count.textContent = formatCountdown(left);
-      note.textContent = 'Until the heir can open this vault. Nobody can open it earlier.';
+      note.textContent = 'Until the heir can open this vault. No heir or third party can open it earlier.';
     } else {
       count.textContent = v.claimTx ? 'Claimed' : 'The sand has run out';
       note.textContent = v.claimTx

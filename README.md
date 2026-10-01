@@ -1,6 +1,6 @@
 # Sandglass
 
-**Time-locked inheritance for shielded Zcash.** Shielded Zcash has no timelocks, so there is no private way to pass it on. Sandglass gives a vault a time-locked recovery path: your heir can open it only after you stop checking in, and nothing about it ever appears on chain.
+**Time-locked inheritance for shielded Zcash.** Shielded Zcash has no timelocks, so there is no private way to pass it on. Sandglass gives a vault a time-locked recovery path: your heir can open it only after you stop checking in, and nothing on chain reveals the plan, the heir or the amounts.
 
 > **Unaudited software.** Sandglass has not been audited. On mainnet the CLI prints a warning and refuses to flip a vault that holds more than 0.25 ZEC unless you pass `--accept-unaudited`. Do not use it with funds you cannot afford to lose. Built for the Zecathon hackathon (build window 2026-09-28 to 2026-10-28).
 

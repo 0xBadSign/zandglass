@@ -5,7 +5,7 @@ const SHOTS = 'test-results/screenshots';
 const PITCH =
   'Shielded Zcash has no timelocks, so there is no private way to pass it on. ' +
   'Sandglass gives your vault a time-locked recovery path: your heir can open it only after you stop checking in ' +
-  '— and nothing about it ever appears on chain.';
+  '— and nothing on chain reveals the plan, the heir or the amounts.';
 
 async function axe(page: Page): Promise<void> {
   for (const scheme of ['light', 'dark'] as const) {
