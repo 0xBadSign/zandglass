@@ -644,7 +644,11 @@ function resultView(r: OpenedPayload): HTMLElement {
     ),
   ];
   if (payload?.message) {
-    parts.push(h('h3', {}, 'A message from the owner'), h('blockquote', { class: 'message' }, payload.message));
+    parts.push(
+      h('h3', {}, 'The message in the kit'),
+      h('blockquote', { class: 'message' }, payload.message),
+      h('p', { class: 'muted small' }, 'Anyone who knows your heir code can make a kit, so treat this message with care: never send your words or money because a message asks for it.'),
+    );
   }
   parts.push(
     h('h3', {}, r.kind === 'json' ? 'Vault seed (24 words)' : 'Contents'),
@@ -660,7 +664,7 @@ function resultView(r: OpenedPayload): HTMLElement {
   }
   parts.push(h('h3', {}, 'Restore it in a wallet'), restoreGuide(payload));
   if (hints.length) {
-    parts.push(h('h3', {}, 'Notes from the owner'), h('ul', { class: 'checklist' }, ...hints.map((x) => h('li', {}, x))));
+    parts.push(h('h3', {}, 'Notes in the kit'), h('ul', { class: 'checklist' }, ...hints.map((x) => h('li', {}, x))));
   }
   parts.push(
     h(

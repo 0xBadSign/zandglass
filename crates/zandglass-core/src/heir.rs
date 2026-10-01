@@ -109,7 +109,12 @@ pub fn identity_from_phrase(phrase: &str) -> Result<HeirIdentity, HeirError> {
         )));
     }
     let mnemonic = Mnemonic::<bip0039::English>::from_phrase(phrase.trim())
-        .map_err(|e| HeirError::InvalidPhrase(e.to_string()))?;
+        // Never echo the error text: it can contain a mistyped word of the phrase.
+        .map_err(|_| {
+            HeirError::InvalidPhrase(
+                "a word is not in the BIP 39 English list, or the checksum does not match".into(),
+            )
+        })?;
     let mut seed = mnemonic.to_seed("");
     let mut secret = [0u8; 32];
     let expanded = Hkdf::<Sha256>::new(None, &seed).expand(HKDF_INFO, &mut secret);

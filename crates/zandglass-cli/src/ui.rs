@@ -442,8 +442,21 @@ fn worker(cfg: UiConfig, mut rx: mpsc::Receiver<(Job, oneshot::Sender<JobResult>
         store: None,
         last_use: std::time::Instant::now(),
     };
-    while let Some((job, reply)) = rx.blocking_recv() {
-        // An unlocked store left alone locks itself.
+    loop {
+        // An unlocked store left alone locks itself as soon as the idle time
+        // is over, not only at the next request: the decrypted store (and the
+        // passphrase in it) leaves memory.
+        let wait = IDLE_LOCK.saturating_sub(w.last_use.elapsed());
+        let next = rt.block_on(async { tokio::time::timeout(wait, rx.recv()).await });
+        let (job, reply) = match next {
+            Ok(Some(msg)) => msg,
+            Ok(None) => break,
+            Err(_) => {
+                w.store = None;
+                w.last_use = std::time::Instant::now();
+                continue;
+            }
+        };
         if w.last_use.elapsed() > IDLE_LOCK {
             w.store = None;
         }

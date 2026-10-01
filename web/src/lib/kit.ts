@@ -152,7 +152,20 @@ export async function openKit(
     if (/no identity matched|recipient/i.test(msg)) throw new WrongHeirKeyError();
     throw new KitDamagedError();
   }
-  return parsePayload(text);
+  const opened = parsePayload(text);
+  // The sealed payload must describe the same plan as the public part
+  // (the Rust reader checks the same), so a kit cannot be relabelled.
+  if (opened.kind === 'json' && kit.meta) {
+    const p = opened.payload;
+    if (
+      (p.network !== undefined && p.network !== kit.meta.network) ||
+      (p.plan !== undefined && kit.meta.plan !== null && p.plan !== kit.meta.plan) ||
+      (p.epoch !== undefined && kit.meta.epoch !== null && p.epoch !== kit.meta.epoch)
+    ) {
+      throw new KitDamagedError('the sealed payload does not match the kit');
+    }
+  }
+  return opened;
 }
 
 export function parsePayload(text: string): OpenedPayload {

@@ -1142,7 +1142,10 @@ async fn claim(
         payload.plan, payload.epoch, payload.network
     );
     if let Some(m) = &payload.message {
-        println!("Message from the owner: {m}");
+        println!(
+            "Message in the kit (anyone who knows your heir code can write one; never send words or money because it asks): {}",
+            printable(m)
+        );
     }
     match to {
         None => {
@@ -1154,7 +1157,7 @@ async fn claim(
             println!("Network: {}", payload.network);
             println!("\nTo restore the funds:");
             for h in &payload.restore_hints {
-                println!("  - {h}");
+                println!("  - {}", printable(h));
             }
         }
         Some(addr) => {
@@ -1220,6 +1223,14 @@ async fn claim(
     Ok(())
 }
 
+/// Text from outside (a kit, a server) without control characters, so it
+/// cannot move the cursor, recolour or rewrite the terminal.
+fn printable(text: &str) -> String {
+    text.chars()
+        .map(|c| if c.is_control() && c != '\n' { ' ' } else { c })
+        .collect()
+}
+
 fn error_code(e: &anyhow::Error) -> Option<&'static str> {
     if let Some(c) = e.downcast_ref::<CodedError>() {
         return Some(c.code);
@@ -1256,7 +1267,7 @@ async fn main() -> ExitCode {
     match run(cli).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            let text = redact_tokens(&format!("{e:#}"));
+            let text = printable(&redact_tokens(&format!("{e:#}")));
             match error_code(&e) {
                 Some(code) => eprintln!("error[{code}]: {text}"),
                 None => eprintln!("error: {text}"),
@@ -1273,7 +1284,13 @@ async fn main() -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::redact_tokens;
+    use super::{printable, redact_tokens};
+
+    #[test]
+    fn control_characters_are_removed() {
+        let raw = "ok\u{1b}[2J\u{7}done\nnext";
+        assert_eq!(printable(raw), "ok [2J done\nnext");
+    }
 
     #[test]
     fn read_tokens_are_redacted() {

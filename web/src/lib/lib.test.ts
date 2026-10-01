@@ -105,3 +105,21 @@ describe('relay client', () => {
     await expect(relayClient(['https://a.test'], down).get(1)).rejects.toThrow(NetworkError);
   });
 });
+
+describe('relay client verification', () => {
+  const beacon = recordedBeacon();
+
+  it('skips a relay whose beacon does not verify', async () => {
+    const bad = { ...beacon, signature: beacon.signature.replace(/^ab/, 'cd') };
+    const f = (async (u: string) =>
+      new Response(JSON.stringify(u.startsWith('https://evil.test') ? bad : beacon), { status: 200 })) as unknown as typeof fetch;
+    const c = relayClient(['https://evil.test', 'https://good.test'], f);
+    expect(await c.get(beacon.round)).toEqual(beacon);
+  });
+
+  it('fails when no relay sends a valid beacon', async () => {
+    const bad = { ...beacon, signature: beacon.signature.replace(/^ab/, 'cd') };
+    const f = (async () => new Response(JSON.stringify(bad), { status: 200 })) as unknown as typeof fetch;
+    await expect(relayClient(['https://evil.test'], f).get(beacon.round)).rejects.toThrow(NetworkError);
+  });
+});

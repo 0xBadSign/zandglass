@@ -1,5 +1,5 @@
 /** drand quicknet access for the browser: relay fallback, no third parties. */
-import type { ChainClient, ChainInfo } from 'drand-client';
+import { fetchBeacon, type ChainClient, type ChainInfo } from 'drand-client';
 import { QUICKNET } from '../drand';
 
 export const RELAYS = [
@@ -56,11 +56,29 @@ async function fetchJson(url: string, timeoutMs: number, fetchFn: typeof fetch):
   }
 }
 
+/** Checks a relay's beacon against the pinned quicknet public key. */
+async function verified(beacon: unknown, round: number): Promise<unknown> {
+  const one: ChainClient = {
+    options: { disableBeaconVerification: false, noCache: true },
+    latest: async () => {
+      throw new Error('latest is not supported');
+    },
+    get: async () => beacon as never,
+    chain: () => ({ baseUrl: '', info: async () => QUICKNET_INFO }),
+  } as ChainClient;
+  try {
+    await fetchBeacon(one, round);
+  } catch {
+    throw new Error('the relay sent a beacon that does not verify');
+  }
+  return beacon;
+}
+
 /**
  * A quicknet chain client that asks every relay at once and takes the first
- * good answer, so one slow or unreachable relay does not stall the claim. The
- * chain info is pinned, so only `/public/<round>` is fetched. The beacon
- * signature is the decryption key, so a forged beacon simply fails to open the kit.
+ * answer whose BLS signature verifies against the pinned public key, so one
+ * slow, broken or lying relay can neither stall nor spoil the claim. (A
+ * forged beacon could never open a kit early: the signature is the key.)
  */
 export function relayClient(
   relays: readonly string[] = RELAYS,
@@ -74,10 +92,12 @@ export function relayClient(
     try {
       const beacon = await Promise.any(
         relays.map((relay) =>
-          fetchJson(`${relay}/${QUICKNET.chainHash}/public/${round}`, timeoutMs, fetchFn).catch((e: unknown) => {
-            if (e instanceof BeaconNotReadyError) notReady = true;
-            throw e;
-          }),
+          fetchJson(`${relay}/${QUICKNET.chainHash}/public/${round}`, timeoutMs, fetchFn)
+            .then((b) => verified(b, round))
+            .catch((e: unknown) => {
+              if (e instanceof BeaconNotReadyError) notReady = true;
+              throw e;
+            }),
         ),
       );
       cache.set(round, beacon);
