@@ -78,7 +78,7 @@ test('owner: unlock, see a plan, flip, download the calendar file', async ({ pag
   await page.goto(`/owner#t=${TOKEN}`);
   // The session key leaves the address bar at once.
   await expect(page).toHaveURL(/\/owner$/);
-  await page.getByLabel('Passphrase').fill('correct horse battery');
+  await page.getByLabel('Your passphrase').fill('correct horse battery');
   await page.getByRole('button', { name: 'Unlock' }).click();
   const card = page.locator('.plan-card');
   await expect(card).toContainText('01234567');
@@ -174,4 +174,24 @@ test('owner: create a scheduled-payments plan and start the schedule', async ({ 
   const [dl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Download the claim links' }).click()]);
   expect(dl.suggestedFilename()).toBe('01234567-claim-links.txt');
   await expect(page.locator('.plan-card')).toContainText('3 × 0.05 ZEC');
+});
+
+test('owner: a custom flip period is sent as a duration', async ({ page }) => {
+  let body: Record<string, unknown> = {};
+  await mockApi(page, {
+    'GET /api/state': json(state({ plans: [] })),
+    'POST /api/plans': (r) => {
+      body = JSON.parse(r.request().postData() ?? '{}') as Record<string, unknown>;
+      return json({ plan: plan(), address: 'u1x', uri: 'zcash:u1x', claim_link: null })(r);
+    },
+  });
+  await page.goto(`/owner#t=${TOKEN}`);
+  await page.getByLabel('Heir code 1').fill('age1exampleheir');
+  await expect(page.getByLabel('Custom amount of time')).toBeHidden();
+  await page.getByLabel('Flip at least every').selectOption('custom');
+  await page.getByLabel('Custom amount of time').fill('2');
+  await page.getByLabel('Unit').selectOption('mo');
+  await page.getByRole('button', { name: 'Create the plan' }).click();
+  await expect(page.locator('#created-title')).toBeVisible();
+  expect(body).toMatchObject({ every: '60d' });
 });

@@ -336,7 +336,7 @@ function passForm(kind: 'init' | 'unlock'): HTMLElement {
       'p',
       {},
       kind === 'init'
-        ? 'The store keeps your vault seeds on this computer, encrypted with a passphrase. If you lose the passphrase you lose access to the vaults, but your heirs are not affected: their kits hold the seeds too.'
+        ? 'First time here: choose a new passphrase. Nobody gives it to you; you make it up now and type it again whenever you open the panel. It encrypts your vault seeds on this computer. If you lose it you lose access to the vaults, but your heirs are not affected: their kits hold the seeds too.'
         : 'Your vault seeds are encrypted on this computer. The passphrase stays here; it is never sent anywhere else.',
     ),
     h(
@@ -355,7 +355,7 @@ function passForm(kind: 'init' | 'unlock'): HTMLElement {
           });
         },
       },
-      h('label', { for: 'pass1' }, 'Passphrase'),
+      h('label', { for: 'pass1' }, kind === 'init' ? 'Choose a new passphrase (at least 10 characters)' : 'Your passphrase'),
       p1,
       kind === 'init' ? h('label', { for: 'pass2' }, 'Repeat the passphrase') : null,
       kind === 'init' ? p2 : null,
@@ -619,6 +619,43 @@ function planCard(p: PlanSum): HTMLElement {
   );
 }
 
+/**
+ * A period picker: common choices, plus "Custom" with a number and a unit.
+ * `value()` returns a duration the CLI understands (for example 45d or 12h),
+ * or null when the custom number is missing or not a whole number above 0.
+ */
+function periodPicker(id: string, choices: [string, string][], selected: string): { el: HTMLElement; select: HTMLSelectElement; value: () => string | null } {
+  const select = h(
+    'select',
+    { id },
+    ...choices.map(([v, label]) => h('option', { value: v, selected: v === selected ? true : null }, label)),
+    h('option', { value: 'custom' }, 'Custom...'),
+  );
+  const num = h('input', { type: 'number', id: `${id}-n`, min: '1', step: '1', value: '45', 'aria-label': 'Custom amount of time' });
+  const unit = h(
+    'select',
+    { id: `${id}-u`, 'aria-label': 'Unit' },
+    h('option', { value: 'm' }, 'minutes'),
+    h('option', { value: 'h' }, 'hours'),
+    h('option', { value: 'd', selected: true }, 'days'),
+    h('option', { value: 'w' }, 'weeks'),
+    h('option', { value: 'mo' }, 'months (30 days)'),
+  );
+  const custom = h('div', { class: 'custom-period' }, num, unit);
+  const paint = (): void => {
+    custom.hidden = select.value !== 'custom';
+  };
+  select.addEventListener('change', paint);
+  paint();
+  const value = (): string | null => {
+    if (select.value !== 'custom') return select.value;
+    const n = Number(num.value);
+    if (!Number.isInteger(n) || n < 1) return null;
+    return unit.value === 'mo' ? `${n * 30}d` : `${n}${unit.value}`;
+  };
+  return { el: h('div', {}, select, custom), select, value };
+}
+
 const PERIODS: [string, string][] = [
   ['30d', '30 days'],
   ['90d', '90 days'],
@@ -654,7 +691,7 @@ function newPlanForm(): HTMLElement {
 
 function legacyForm(): HTMLElement {
   const heirs = codeInputs('Heir');
-  const every = h('select', { id: 'every' }, ...PERIODS.map(([v, t]) => h('option', { value: v, selected: v === '90d' ? true : null }, t)), h('option', { value: '10m' }, '10 minutes (try it out)'));
+  const every = periodPicker('every', [...PERIODS, ['10m', '10 minutes (try it out)']], '90d');
   const message = h('textarea', { id: 'message', rows: '3', placeholder: 'Optional. Sealed into the kit; only your heirs can read it, after the unlock.' });
   const link = h('input', { type: 'checkbox', id: 'claimlink', checked: true });
   const amount = h('input', { type: 'text', id: 'amount', inputmode: 'decimal', placeholder: 'Optional, for example 0.1' });
@@ -676,10 +713,15 @@ function legacyForm(): HTMLElement {
             err.textContent = 'Add at least one heir code.';
             return;
           }
+          const period = every.value();
+          if (!period) {
+            err.textContent = 'Enter a whole number for the custom period.';
+            return;
+          }
           void act('Creating a fresh vault and sealing the kit...', async () => {
             created = await api<Created>('POST', '/api/plans', {
               heirs: codes,
-              every: every.value,
+              every: period,
               message: message.value,
               claim_link: link.checked,
               amount: amount.value.trim() || null,
@@ -692,7 +734,7 @@ function legacyForm(): HTMLElement {
       },
       h('fieldset', { class: 'heir-fields' }, h('legend', {}, 'Heir codes (one is enough; up to three, any of them can claim)'), ...heirs),
       h('label', { for: 'every' }, 'Flip at least every'),
-      every,
+      every.el,
       h('label', { for: 'amount' }, 'Amount to request in the funding QR (ZEC)'),
       amount,
       h('label', { for: 'message' }, 'A message for your heirs'),
@@ -715,7 +757,7 @@ const INTERVALS: [string, string][] = [
 function installmentsForm(): HTMLElement {
   const payees = codeInputs('Payee');
   const amount = h('input', { type: 'text', id: 'inst-amount', inputmode: 'decimal', placeholder: 'For example 0.05' });
-  const every = h('select', { id: 'inst-every' }, ...INTERVALS.map(([v, t]) => h('option', { value: v, selected: v === '30d' ? true : null }, t)));
+  const every = periodPicker('inst-every', INTERVALS, '30d');
   const count = h('input', { type: 'number', id: 'inst-count', min: '1', max: '120', value: '12' });
   const start = h('input', { type: 'text', id: 'inst-start', placeholder: 'Optional: 2026-12-01T09:00:00Z, or a delay such as 1d' });
   const message = h('textarea', { id: 'inst-message', rows: '3', placeholder: 'Optional. Sealed into every kit for the payee.' });
@@ -750,11 +792,16 @@ function installmentsForm(): HTMLElement {
             err.textContent = 'Enter the amount per installment.';
             return;
           }
+          const interval = every.value();
+          if (!interval) {
+            err.textContent = 'Enter a whole number for the custom interval.';
+            return;
+          }
           void act('Creating the funding vault...', async () => {
             created = await api<Created>('POST', '/api/installments', {
               payees: codes,
               amount: amount.value.trim().replace(',', '.'),
-              every: every.value,
+              every: interval,
               count: Number(count.value),
               start: start.value.trim() || null,
               message: message.value,
@@ -769,7 +816,7 @@ function installmentsForm(): HTMLElement {
       h('fieldset', { class: 'heir-fields' }, h('legend', {}, 'Payee codes (one is enough; up to three, any of them can claim)'), ...payees),
       h('div', { class: 'form-row' }, h('div', {}, h('label', { for: 'inst-amount' }, `Each installment (${unit()})`), amount), h('div', {}, h('label', { for: 'inst-count' }, 'Number of installments'), count)),
       h('label', { for: 'inst-every' }, 'How often'),
-      every,
+      every.el,
       h('label', { for: 'inst-start' }, 'First installment'),
       start,
       total,

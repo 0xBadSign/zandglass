@@ -1296,3 +1296,14 @@ label.check input {
 .created-card p {
   overflow-wrap: anywhere;
 }
+
+.custom-period {
+  display: grid;
+  grid-template-columns: 8rem 1fr;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.custom-period[hidden] {
+  display: none;
+}
