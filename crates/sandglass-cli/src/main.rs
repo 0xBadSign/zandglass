@@ -95,7 +95,7 @@ enum Cmd {
     /// Heir or payee side: open unlocked kits and move the funds.
     Claim {
         /// `*.sandglass` kit files, or claim links the owner sent you
-        /// (`https://.../claim.html#m=...&r=...`). Several are fine (installments).
+        /// (`https://.../claim#m=...&r=...`). Several are fine (installments).
         kits: Vec<String>,
         /// A text file with claim links or kit paths (the owner's
         /// `<plan>-claim-links.txt` works as it is).

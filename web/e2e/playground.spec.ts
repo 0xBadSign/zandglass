@@ -108,7 +108,7 @@ async function setup(page: Page, opts: Partial<Mock> = {}): Promise<{ mock: Mock
     balance_zat: 20000,
     confirmed: polls >= 3,
     txs,
-    claim_link: `${ORIGIN}/claim.html#m=mbx1&r=readtok`,
+    claim_link: `${ORIGIN}/claim#m=mbx1&r=readtok`,
     message: `mock state ${mock.state}`,
     error: null,
   });
@@ -143,7 +143,7 @@ async function setup(page: Page, opts: Partial<Mock> = {}): Promise<{ mock: Mock
       json(201, {
         id: 'sess1',
         token: 'sess-token',
-        claim_link: `${ORIGIN}/claim.html#m=mbx1&r=readtok`,
+        claim_link: `${ORIGIN}/claim#m=mbx1&r=readtok`,
         network: 'main',
         amount_zat: 20000,
         minutes,
@@ -213,7 +213,7 @@ function expectNoLeak(seen: Seen[], mock: Mock, secrets: string[]): void {
 }
 
 async function toHeir(page: Page): Promise<void> {
-  await page.goto('/playground.html?poll=300');
+  await page.goto('/playground?poll=300');
   await expect(page.getByRole('heading', { name: '1. Enter the judge code' })).toBeVisible();
   await page.getByLabel('Judge code').fill(JUDGE);
   await page.getByRole('button', { name: 'Continue' }).click();
@@ -244,7 +244,7 @@ async function toOpened(page: Page, mock: Mock): Promise<string> {
 
 test('playground: full judge flow with a flip, in-browser open and return', async ({ page }, info) => {
   const { mock, seen } = await setup(page);
-  await page.goto('/playground.html?poll=300');
+  await page.goto('/playground?poll=300');
 
   // Step 1: the label says what this is, the code is only in sessionStorage.
   await expect(page.locator('.demo-banner')).toContainText('Mainnet demo');
@@ -355,7 +355,7 @@ test('playground: keep it shows restore guidance', async ({ page }) => {
 
 test('playground: error codes are shown in plain English', async ({ page }) => {
   const { mock } = await setup(page);
-  await page.goto('/playground.html?poll=300');
+  await page.goto('/playground?poll=300');
   await page.getByLabel('Judge code').fill('WRONG');
   await page.getByRole('button', { name: 'Continue' }).click();
   await page.getByRole('button', { name: 'Create my heir key' }).click();
@@ -385,13 +385,13 @@ test('playground: error codes are shown in plain English', async ({ page }) => {
 
 test('playground: closed playground and unreachable server are explained', async ({ page }) => {
   await setup(page, { statusEnabled: false });
-  await page.goto('/playground.html');
+  await page.goto('/playground');
   await expect(page.getByText('The playground is closed right now')).toBeVisible();
   await axe(page);
 
   const other = await page.context().newPage();
   await other.route('**/v1/playground/status', (r) => r.abort('connectionrefused'));
-  await other.goto('/playground.html');
+  await other.goto('/playground');
   await expect(other.getByText('Cannot reach the playground server')).toBeVisible();
 });
 

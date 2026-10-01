@@ -101,7 +101,7 @@ if (SEGMENTS.includes('landing')) {
 
 if (SEGMENTS.includes('heir')) {
   await clip('heir', async (page, mark) => {
-    await page.goto(`${BASE}/heir.html`);
+    await page.goto(`${BASE}/heir`);
     await page.getByRole('heading', { name: 'Become an heir' }).waitFor();
     await sleep(2500);
     mark('heir_start');
@@ -141,7 +141,7 @@ if (SEGMENTS.includes('playground')) {
         /* not JSON */
       }
     });
-    await page.goto(`${BASE}/playground.html`);
+    await page.goto(`${BASE}/playground`);
     await page.getByRole('heading', { name: '1. Enter the judge code' }).waitFor();
     await sleep(2500);
     mark('judge_code');
@@ -228,7 +228,7 @@ if (SEGMENTS.includes('playground')) {
 
 // Text cards: rendered with the site's own CSS and fonts, screenshotted as PNG.
 if (SEGMENTS.includes('cards')) {
-  const idx = await (await fetch(`${BASE}/index.html`)).text();
+  const idx = await (await fetch(`${BASE}/`)).text();
   const css = [...idx.matchAll(/href="([^"]+\.css)"/g)].map((m) => `<link rel="stylesheet" href="${m[1]}">`).join('');
   const cards = {
     title: `<p class="k">SANDGLASS</p><h1>Pass on your shielded ZEC. <em>Privately.</em></h1><p class="s">Time-locked inheritance for Zcash. A dead man's switch with nothing on chain.</p>`,

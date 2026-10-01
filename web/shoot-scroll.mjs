@@ -13,7 +13,7 @@ const browser = await chromium.launch();
 try {
   const ctx = await browser.newContext({ viewport: { width, height }, colorScheme: 'dark' });
   const page = await ctx.newPage();
-  await page.goto(`http://127.0.0.1:4181/${name}.html`);
+  await page.goto(`http://127.0.0.1:4181/${name === 'index' ? '' : name}`);
   await page.waitForTimeout(1500);
   const total = await page.evaluate(() => document.documentElement.scrollHeight);
   let i = 0;

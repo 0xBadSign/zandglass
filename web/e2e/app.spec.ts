@@ -85,7 +85,7 @@ async function openKitFile(page: Page, kit: string, name = 'kit.sandglass'): Pro
 
 test('heir page: create a key, confirm words, show the code', async ({ page }, info) => {
   const seen = await instrument(page);
-  await page.goto('/heir.html');
+  await page.goto('/heir');
   await expect(page.getByRole('heading', { name: 'Become an heir' })).toBeVisible();
   await axe(page);
 
@@ -121,7 +121,7 @@ test('heir page: create a key, confirm words, show the code', async ({ page }, i
 
 test('claim page: opens the committed vector from a file, without leaking', async ({ page }, info) => {
   const seen = await instrument(page);
-  await page.goto('/claim.html');
+  await page.goto('/claim');
   await expect(page.getByRole('heading', { name: 'Open your kit' })).toBeVisible();
   await axe(page);
 
@@ -141,7 +141,7 @@ test('claim page: opens the committed vector from a file, without leaking', asyn
 
 test('claim page: JSON kit shows message, seed, height and restore steps', async ({ page }, info) => {
   const seen = await instrument(page);
-  await page.goto('/claim.html');
+  await page.goto('/claim');
   await openKitFile(page, await makeJsonKit());
   await expect(page.locator('.facts')).toContainText('Testnet');
   await page.getByLabel('Your 24 words').fill(PHRASE);
@@ -170,7 +170,7 @@ test('claim page: mailbox link fetches the kit with the read token', async ({ pa
     auth = route.request().headers()['authorization'] ?? '';
     return makeJsonKit().then((body) => route.fulfill({ status: 200, contentType: 'application/json', body }));
   });
-  await page.goto('/claim.html#m=abc123&r=readtoken');
+  await page.goto('/claim#m=abc123&r=readtoken');
   await expect(page.getByRole('heading', { name: 'This kit is unlocked' })).toBeVisible();
   expect(auth).toBe('Bearer readtoken');
   await page.getByLabel('Your 24 words').fill(PHRASE);
@@ -184,7 +184,7 @@ test('claim page: states (waiting, wrong key, damaged, network, missing mailbox)
   const unlock = 1692803367 + (beacon.round - 1) * 3;
   await page.clock.setFixedTime(new Date((unlock - 90_000) * 1000));
   await instrument(page);
-  await page.goto('/claim.html');
+  await page.goto('/claim');
   await openKitFile(page, RAW_KIT);
   await expect(page.getByRole('heading', { name: 'This kit is still locked' })).toBeVisible();
   await expect(page.locator('#countdown')).toHaveText(/^Unlocks in 1d 01h/);
@@ -195,7 +195,7 @@ test('claim page: states (waiting, wrong key, damaged, network, missing mailbox)
 
 test('claim page: wrong key, damaged kit, network error and missing mailbox', async ({ page }) => {
   await instrument(page);
-  await page.goto('/claim.html');
+  await page.goto('/claim');
   await openKitFile(page, RAW_KIT);
 
   // Not a full phrase.
@@ -217,14 +217,14 @@ test('claim page: wrong key, damaged kit, network error and missing mailbox', as
 
   // Missing mailbox.
   await page.route('**/v1/mailboxes/nope/kit', (r) => r.fulfill({ status: 404, body: '' }));
-  await page.goto('/claim.html#m=nope&r=x');
+  await page.goto('/claim#m=nope&r=x');
   await page.reload();
   await expect(page.getByText('No kit found for this link')).toBeVisible();
 });
 
 test('claim page: drand outage shows a retry that works once back', async ({ page }) => {
   await instrument(page, { drandDown: true });
-  await page.goto('/claim.html');
+  await page.goto('/claim');
   await openKitFile(page, RAW_KIT);
   await page.getByLabel('Your 24 words').fill(PHRASE);
   await page.getByRole('button', { name: 'Open the kit' }).click();

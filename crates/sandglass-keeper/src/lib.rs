@@ -602,6 +602,41 @@ async fn security_headers(req: Request, next: Next) -> Response {
     res
 }
 
+/// Pages served at clean addresses: `/playground` serves `playground.html`.
+const PAGES: [&str; 3] = ["playground", "heir", "claim"];
+
+/// Clean page addresses for the static site. `/playground` is served from
+/// `playground.html`; old `.html` addresses (and `/index.html`) redirect
+/// permanently to the clean ones, keeping the query. Browsers keep the
+/// `#fragment` across the redirect, so old claim links still work.
+async fn clean_urls(mut req: Request, next: Next) -> Response {
+    let path = req.uri().path();
+    let query = req.uri().query().map(|q| format!("?{q}")).unwrap_or_default();
+    let stem = path.strip_prefix('/').unwrap_or(path);
+    if stem == "index.html" {
+        return redirect(&format!("/{query}"));
+    }
+    if let Some(page) = stem.strip_suffix(".html") {
+        if PAGES.contains(&page) {
+            return redirect(&format!("/{page}{query}"));
+        }
+    }
+    if PAGES.contains(&stem) {
+        if let Ok(uri) = format!("/{stem}.html{query}").parse() {
+            *req.uri_mut() = uri;
+        }
+    }
+    next.run(req).await
+}
+
+fn redirect(to: &str) -> Response {
+    let mut res = StatusCode::MOVED_PERMANENTLY.into_response();
+    if let Ok(v) = HeaderValue::from_str(to) {
+        res.headers_mut().insert(axum::http::header::LOCATION, v);
+    }
+    res
+}
+
 async fn unknown() -> ApiError {
     ApiError::new(
         StatusCode::NOT_FOUND,
@@ -626,9 +661,9 @@ pub fn app(state: Arc<AppState>) -> Router {
             post(playground::settle),
         );
     let router = match &state.config.web_dir {
-        Some(dir) => {
-            api.fallback_service(ServeDir::new(dir).append_index_html_on_directories(true))
-        }
+        Some(dir) => api
+            .fallback_service(ServeDir::new(dir).append_index_html_on_directories(true))
+            .layer(middleware::from_fn(clean_urls)),
         None => api.fallback(unknown),
     };
     router

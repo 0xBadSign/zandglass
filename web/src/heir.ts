@@ -320,7 +320,7 @@ function code(): HTMLElement {
     h(
       'div',
       { class: 'actions' },
-      h('a', { class: 'btn', href: './claim.html' }, 'Go to the Claim page'),
+      h('a', { class: 'btn', href: './claim' }, 'Go to the Claim page'),
       h('button', { type: 'button', class: 'btn-quiet', onclick: reset }, 'Clear and start over'),
     ),
   );

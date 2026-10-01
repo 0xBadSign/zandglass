@@ -339,6 +339,44 @@ fn security_headers_on_static_files() {
 }
 
 #[test]
+fn clean_page_addresses() {
+    let web = tempfile::tempdir().unwrap();
+    std::fs::write(web.path().join("index.html"), "<p>home</p>").unwrap();
+    std::fs::write(web.path().join("claim.html"), "<p>claim</p>").unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = Config {
+        web_dir: Some(web.path().to_path_buf()),
+        ..Config::default()
+    };
+    let (addr, _s) = spawn_background(&dir.path().join("k.sqlite"), cfg).unwrap();
+
+    // The clean address serves the page.
+    let (status, body, _) = raw("GET", &format!("http://{addr}/claim"), None, None);
+    assert_eq!(status, 200);
+    assert!(body.contains("claim"));
+
+    // Old addresses redirect permanently, keeping the query.
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .max_redirects(0)
+        .build()
+        .into();
+    let loc = |path: &str| {
+        let resp = agent.get(&format!("http://{addr}{path}")).call().unwrap();
+        (
+            resp.status().as_u16(),
+            resp.headers()
+                .get("location")
+                .map(|v| v.to_str().unwrap().to_string()),
+        )
+    };
+    assert_eq!(loc("/claim.html?api=x"), (301, Some("/claim?api=x".into())));
+    assert_eq!(loc("/index.html"), (301, Some("/".into())));
+    // Other files are untouched.
+    assert_eq!(loc("/nothing.html").0, 404);
+}
+
+#[test]
 fn global_creation_caps() {
     let dir = tempfile::tempdir().unwrap();
     let cfg = Config {

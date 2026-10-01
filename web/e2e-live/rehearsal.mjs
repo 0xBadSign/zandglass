@@ -119,7 +119,7 @@ async function collectTxids() {
 }
 
 try {
-  await page.goto(`${BASE}/playground.html`);
+  await page.goto(`${BASE}/playground`);
   await page.getByRole('heading', { name: '1. Enter the judge code' }).waitFor();
   mark('page_loaded');
   log(`status line: ${await page.locator('#status-line').innerText()}`);

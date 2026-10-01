@@ -413,7 +413,7 @@ impl Playground {
             .put_kit(&mailbox_id, &kit_json, now)
             .map_err(Self::internal)?;
         let claim_link = format!(
-            "{}/claim.html#m={mailbox_id}&r={read_token}",
+            "{}/claim#m={mailbox_id}&r={read_token}",
             self.cfg.public_origin
         );
         let session = Session {

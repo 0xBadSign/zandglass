@@ -326,7 +326,7 @@ function heirView(): HTMLElement {
             {},
             'For this demo you can skip writing the words down and the 3-word check. This page keeps them in memory so it can open your kit later. ' +
               'Reloading the page forgets them. For a real inheritance, write them on paper and confirm them on the ',
-            h('a', { href: './heir.html' }, 'Become an heir page'),
+            h('a', { href: './heir' }, 'Become an heir page'),
             '.',
           ),
         ),

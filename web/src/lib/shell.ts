@@ -15,13 +15,13 @@ export function mountShell(current: PageId, opts: { wide?: boolean } = {}): HTML
     h(
       'header',
       { class: 'site-header' },
-      h('a', { class: 'brand', href: './index.html' }, hourglass(0.4), 'Sandglass'),
+      h('a', { class: 'brand', href: './' }, hourglass(0.4), 'Sandglass'),
       h(
         'nav',
         { class: 'site-nav', 'aria-label': 'Main' },
-        link('playground', './playground.html', 'Playground'),
-        link('heir', './heir.html', 'Become an heir'),
-        link('claim', './claim.html', 'Claim'),
+        link('playground', './playground', 'Playground'),
+        link('heir', './heir', 'Become an heir'),
+        link('claim', './claim', 'Claim'),
       ),
     ),
     main,

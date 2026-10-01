@@ -24,7 +24,7 @@ test('landing: content, links, live vault, axe, no horizontal scroll', async ({ 
   await page.route('**/live-vault.json', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: liveVault(null) }),
   );
-  await page.goto('/index.html');
+  await page.goto('/');
 
   await expect(page.getByRole('heading', { level: 1, name: 'Pass on your shielded ZEC. Privately.' })).toBeVisible();
   await expect(page.locator('.hero3 .lead')).toHaveText(PITCH);
@@ -49,9 +49,9 @@ test('landing: content, links, live vault, axe, no horizontal scroll', async ({ 
 
   // Links.
   const href = async (name: string, nth = 0) => page.getByRole('link', { name, exact: true }).nth(nth).getAttribute('href');
-  expect(await href('Try the playground')).toBe('./playground.html');
-  expect(await href('Become an heir')).toBe('./heir.html');
-  expect(await href('Claim')).toBe('./claim.html');
+  expect(await href('Try the playground')).toBe('./playground');
+  expect(await href('Become an heir')).toBe('./heir');
+  expect(await href('Claim')).toBe('./claim');
   expect(await href('Source code')).toBe('https://github.com/0xnesQuit/sandglass');
   expect(await href('Evidence')).toBe('https://github.com/0xnesQuit/sandglass/blob/main/docs/evidence/EVIDENCE.md');
 
@@ -71,7 +71,7 @@ test('landing: content, links, live vault, axe, no horizontal scroll', async ({ 
 });
 
 test('landing: the live vault card is hidden without live-vault.json and shows a claim', async ({ page }) => {
-  await page.goto('/index.html');
+  await page.goto('/');
   await expect(page.getByRole('heading', { level: 1, name: 'Pass on your shielded ZEC. Privately.' })).toBeVisible();
   await expect(page.locator('.live-card')).toHaveCount(0);
 
@@ -86,7 +86,7 @@ test('landing: the live vault card is hidden without live-vault.json and shows a
 
 test('landing: motion stops under reduced motion', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
-  await page.goto('/index.html');
+  await page.goto('/');
   const name = () => page.locator('.hero-stage .halo').evaluate((el) => getComputedStyle(el).animationName);
   expect(await name()).not.toBe('none');
   await expect(page.locator('canvas.dust')).toHaveCount(1);

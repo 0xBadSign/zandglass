@@ -16,7 +16,7 @@ try {
     const ctx = await browser.newContext({ viewport: vp, deviceScaleFactor: name === 'phone' ? 2 : 1, colorScheme: 'dark' });
     const page = await ctx.newPage();
     for (const p of pages) {
-      await page.goto(`http://127.0.0.1:4180/${p}.html`);
+      await page.goto(`http://127.0.0.1:4180/${p === 'index' ? '' : p}`);
       await page.waitForTimeout(1600);
       await page.screenshot({ path: `${out}/${p}-${name}-fold.png` });
       await page.screenshot({ path: `${out}/${p}-${name}-full.png`, fullPage: true });

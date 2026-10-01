@@ -76,7 +76,7 @@ and stores it in a keeper mailbox. The funding transaction is sent by the
 background worker.
 Response `201`:
 ```json
-{ "id": "hex", "token": "hex (session bearer token)", "claim_link": "https://<origin>/claim.html#m=..&r=..",
+{ "id": "hex", "token": "hex (session bearer token)", "claim_link": "https://<origin>/claim#m=..&r=..",
   "network": "main", "amount_zat": 20000, "minutes": 5 }
 ```
 Errors: `403 judge_code_invalid`, `400 heir_code_invalid`, `400 invalid_request`

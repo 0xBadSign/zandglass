@@ -34,8 +34,8 @@ const hero = h(
     h(
       'div',
       { class: 'actions' },
-      h('a', { class: 'btn-primary btn-lg', href: './playground.html' }, 'Try the playground', h('span', { class: 'arrow', 'aria-hidden': 'true' }, '→')),
-      h('a', { class: 'btn btn-lg ghost', href: './heir.html' }, 'Become an heir'),
+      h('a', { class: 'btn-primary btn-lg', href: './playground' }, 'Try the playground', h('span', { class: 'arrow', 'aria-hidden': 'true' }, '→')),
+      h('a', { class: 'btn btn-lg ghost', href: './heir' }, 'Become an heir'),
     ),
     h('div', { class: 'hero-meta' }, drandTicker(), h('span', { class: 'hm-note' }, 'The clock every kit is sealed to. One tick every 3 seconds.')),
   ),
@@ -312,13 +312,13 @@ const final = h(
   h(
     'div',
     { class: 'actions center' },
-    h('a', { class: 'btn-primary btn-lg', href: './playground.html' }, 'Open the playground', h('span', { class: 'arrow', 'aria-hidden': 'true' }, '→')),
+    h('a', { class: 'btn-primary btn-lg', href: './playground' }, 'Open the playground', h('span', { class: 'arrow', 'aria-hidden': 'true' }, '→')),
   ),
   h(
     'ul',
     { class: 'final-links' },
-    h('li', {}, h('a', { href: './heir.html' }, 'Become an heir')),
-    h('li', {}, h('a', { href: './claim.html' }, 'Claim a kit')),
+    h('li', {}, h('a', { href: './heir' }, 'Become an heir')),
+    h('li', {}, h('a', { href: './claim' }, 'Claim a kit')),
     h('li', {}, h('a', { href: EVIDENCE }, 'Evidence')),
     h('li', {}, h('a', { href: REPO }, 'Source code')),
   ),

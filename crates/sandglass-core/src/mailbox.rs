@@ -41,7 +41,8 @@ pub struct Created {
     pub read_token: String,
 }
 
-/// A claim link `<keeper>/claim.html#m=<id>&r=<read_token>` (the heir page).
+/// A claim link `<keeper>/claim#m=<id>&r=<read_token>` (the heir page). The
+/// older `/claim.html` form is still accepted.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClaimLink {
     /// Keeper base URL without a trailing slash.
@@ -99,7 +100,7 @@ impl std::fmt::Display for ClaimLink {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}/claim.html#m={}&r={}",
+            "{}/claim#m={}&r={}",
             self.base, self.id, self.read_token
         )
     }
@@ -218,7 +219,7 @@ mod tests {
         };
         let l = ClaimLink::new("http://127.0.0.1:8787/", &c);
         let text = l.to_string();
-        assert_eq!(text, "http://127.0.0.1:8787/claim.html#m=ab12&r=cd34");
+        assert_eq!(text, "http://127.0.0.1:8787/claim#m=ab12&r=cd34");
         assert_eq!(ClaimLink::parse(&text), Some(l));
         assert_eq!(ClaimLink::parse("kit.sandglass"), None);
         assert_eq!(ClaimLink::parse("http://x/claim#m=a"), None);
