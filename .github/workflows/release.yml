@@ -78,7 +78,8 @@ jobs:
           Copy-Item target/${{ matrix.target }}/release/zandglass.exe dist/${{ matrix.name }}/
           Copy-Item README.md, LICENSE-MIT, LICENSE-APACHE dist/${{ matrix.name }}/
           Compress-Archive -Path dist/${{ matrix.name }}/* -DestinationPath dist/${{ matrix.name }}.zip
-          (Get-FileHash dist/${{ matrix.name }}.zip -Algorithm SHA256).Hash.ToLower() + "  ${{ matrix.name }}.zip" | Out-File -Encoding ascii dist/${{ matrix.name }}.zip.sha256
+          $h = (Get-FileHash dist/${{ matrix.name }}.zip -Algorithm SHA256).Hash.ToLower()
+          [IO.File]::WriteAllText("$PWD/dist/${{ matrix.name }}.zip.sha256", "$h  ${{ matrix.name }}.zip`n")
 
       - uses: actions/upload-artifact@v4
         with:
