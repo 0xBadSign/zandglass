@@ -69,7 +69,7 @@ impl Default for Config {
 /// The Content-Security-Policy of every response. Identical to
 /// `web/vite.config.ts`.
 pub const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; \
-font-src 'self'; img-src 'self' data:; connect-src 'self' https://api.drand.sh \
+font-src 'self'; img-src 'self' data:; media-src 'self'; connect-src 'self' https://api.drand.sh \
 https://api2.drand.sh https://drand.cloudflare.com; base-uri 'none'; form-action 'none'; \
 frame-ancestors 'none'";
 

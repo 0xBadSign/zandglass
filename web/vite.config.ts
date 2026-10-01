@@ -10,6 +10,7 @@ const CSP = [
   "style-src 'self'",
   "font-src 'self'",
   "img-src 'self' data:",
+  "media-src 'self'",
   "connect-src 'self' https://api.drand.sh https://api2.drand.sh https://drand.cloudflare.com",
   "base-uri 'none'",
   "form-action 'none'",

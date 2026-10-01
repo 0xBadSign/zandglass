@@ -44,7 +44,7 @@ pub const PUBLIC_KEEPER: &str = "https://zandglass.cash";
 const IDLE_LOCK: std::time::Duration = std::time::Duration::from_secs(15 * 60);
 
 const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; \
-img-src 'self' data:; connect-src 'self' https://api.drand.sh https://api2.drand.sh \
+img-src 'self' data:; media-src 'self'; connect-src 'self' https://api.drand.sh https://api2.drand.sh \
 https://drand.cloudflare.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 /// Settings for the panel, taken from the command line.

@@ -304,7 +304,7 @@ fn creation_is_rate_limited() {
 fn security_headers_on_api_and_errors() {
     let (base, _d, _s) = start();
     let csp = "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; \
-img-src 'self' data:; connect-src 'self' https://api.drand.sh https://api2.drand.sh \
+img-src 'self' data:; media-src 'self'; connect-src 'self' https://api.drand.sh https://api2.drand.sh \
 https://drand.cloudflare.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
     for path in ["/v1/health", "/v1/nope", "/v1/mailboxes/zzzz/kit"] {
         let (_, _, h) = raw("GET", &format!("{base}{path}"), None, None);

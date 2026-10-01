@@ -157,7 +157,7 @@ if (SEGMENTS.includes('playground')) {
     await page.getByRole('button', { name: 'Use this heir code' }).click();
     await page.getByRole('heading', { name: '3. Start a vault' }).waitFor();
     mark('start');
-    await page.locator('input[name="minutes"][value="3"]').check();
+    await page.locator(`input[name="minutes"][value="${process.env.MINUTES ?? '5'}"]`).check();
     await sleep(1000);
     await page.getByRole('button', { name: 'Start the vault' }).click();
     await page.getByRole('heading', { name: '3. Your vault is running' }).waitFor({ timeout: 120_000 });
