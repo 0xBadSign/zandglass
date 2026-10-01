@@ -131,6 +131,15 @@ None yet.
 
 ## Session log (newest first)
 
+### 2026-10-01 (evening): Owner panel, reminders, lightwalletd fallback, shield logo
+- Owner panel `zandglass ui` (local, 127.0.0.1, session key, Host check) with embedded web pages; `zandglass remind` (.ics). Live testnet check through the real UI (`web/e2e-live/owner-live.mjs`): store, plan with claim link, funding, sync, flip (tx `74e19dce2dbdef7718b9a72ccfaa6740e29826a85c3beee3ae6e800ff13626bf`), kit and calendar downloads (e8283bf).
+- Found and fixed: cancel right after a flip marked the plan cancelled while the flip's funds were still unconfirmed (invisible to a light client). Cancel now refuses for 2 hours after a flip when the vault looks empty (unit test).
+- lightwalletd fallback: 6 public mainnet servers tried in order with a probe (e11a1a7). Testnet has one public server.
+- Logo C (shield with an hourglass cut out) in the header and favicon.
+- Playwright 40/40; check.sh green; deployed.
+- NU7: `zcash_protocol 0.11.0-pre.0` sets testnet NU7 at 4465026 (about 2026-11-01 at the current pace); mainnet has no height yet. The testnet playground stops working at testnet NU7 unless the cohort is bumped; the plan is to run the playground on mainnet (O-5) and bump when the cohort with the mainnet height is released (T6.1, before 11-05).
+- Next: O-5 (0.02 ZEC, new address) for T1.5 mainnet evidence, the mainnet playground and the live vault; final video; history rewrite before the repository goes public.
+
 ### 2026-10-01 (later): Redesign, clean URLs, rename to Zandglass, first deploy
 - Redesign of all pages (canvas sandglass, scroll story, spot-the-transaction, console layout for playground, heir and claim). Playwright 32/32, check.sh green (3231569).
 - Clean page addresses `/playground`, `/heir`, `/claim`; old `.html` addresses redirect (1375236, 6fa15eb).
