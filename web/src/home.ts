@@ -212,9 +212,9 @@ const spot = h(
 /* ----------------------------------------------------------------- proof */
 
 const PROOF: { step: string; what: string; txid: string }[] = [
-  { step: 'Fund', what: 'The owner funds a fresh vault', txid: 'c62ad1cbd16bc238ed78349999042db89990cdef992efc408f5d2b55e1fb8d68' },
-  { step: 'Flip', what: 'Funds roll to a new vault, a new kit is sealed', txid: 'd14a2d951681f8a53011cde9c6de26755b279c157212c1b8e598de41ce0a1d62' },
-  { step: 'Claim', what: 'The owner went silent; the heir opened the kit', txid: '5685741452b15ae0a8f9c458c6fa4fc1b6d6cfe45a3b2c71eebc80604c5a0407' },
+  { step: 'Fund', what: 'The owner funds a fresh vault', txid: 'b58f467f642d9e7a777f6d84f73e6dbd8fea3cf2fd51f3f526d3a5c2d29adc01' },
+  { step: 'Flip', what: 'Funds roll to a new vault, a new kit is sealed', txid: 'd5ce33a9c4dc04a5b12609cf2865d0100af3c2aae4ae5f1f570d8482ea5cebfe' },
+  { step: 'Claim', what: 'The owner went silent; the heir opened the kit', txid: 'e4fb38b61ac5a81623701809b29e1ff50adedf1bb441fa67e573495aed01a88c' },
 ];
 const shortId = (t: string): string => `${t.slice(0, 10)}…${t.slice(-8)}`;
 
@@ -223,7 +223,7 @@ const proof = h(
   { class: 'chain reveal', 'aria-labelledby': 'proof' },
   h('p', { class: 'kicker' }, 'Evidence'),
   h('h2', { id: 'proof', class: 'big-title' }, 'Already ', h('em', {}, 'on chain.')),
-  h('p', { class: 'muted narrow' }, 'A full inheritance, end to end on Zcash testnet, plus a vault restored and spent in a third-party wallet. Each step is an ordinary shielded transaction.'),
+  h('p', { class: 'muted narrow' }, 'A full inheritance, end to end on Zcash mainnet, plus testnet runs of scheduled payments and of a vault restored and spent in a third-party wallet. Each step is an ordinary shielded transaction.'),
   h(
     'ol',
     { class: 'chain-line' },

@@ -42,6 +42,6 @@ https://github.com/0xnesQuit/zandglass
 - [ ] Repository is public (C-3).
 - [ ] Demo URL loads and the playground accepts the judge code; the float holds funds.
 - [ ] Video link plays without sign-in.
-- [ ] Mainnet evidence rows exist in `docs/evidence/EVIDENCE.md` (the description says "testnet and mainnet").
+- [x] Mainnet evidence rows exist in `docs/evidence/EVIDENCE.md` (2026-10-01: fund, flip, claim).
 - [ ] Prize address: a shielded (unified) address of the owner, entered in the form.
 - [ ] The "repository will be public" box is ticked.
