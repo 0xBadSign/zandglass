@@ -548,6 +548,7 @@ label,
 
 input[type='text'],
 input[type='password'],
+select,
 textarea {
   width: 100%;
   font: 0.88rem/1.5 var(--mono);
@@ -561,6 +562,7 @@ textarea {
 
 input[type='text']:focus,
 input[type='password']:focus,
+select:focus,
 textarea:focus {
   outline: none;
   border-color: var(--gold-line);

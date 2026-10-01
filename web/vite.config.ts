@@ -35,6 +35,7 @@ export default defineConfig({
         heir: resolve(__dirname, 'heir.html'),
         claim: resolve(__dirname, 'claim.html'),
         playground: resolve(__dirname, 'playground.html'),
+        owner: resolve(__dirname, 'owner.html'),
       },
     },
   },

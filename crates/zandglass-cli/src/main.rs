@@ -3,6 +3,8 @@
 //! Commands are documented in `docs/PLAN.md` (T1.4). Every failure prints
 //! `error[<code>]: <message>` using the shared codes from PLAN section 5.10.
 
+mod ui;
+
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
@@ -123,6 +125,25 @@ enum Cmd {
     /// Kit tools.
     #[command(subcommand)]
     Kit(KitCmd),
+    /// Open the owner panel: a page on this computer to create plans, fund
+    /// them by QR code, flip, download kits and calendar reminders.
+    Ui {
+        /// Local port (default: any free port).
+        #[arg(long, default_value_t = 0)]
+        port: u16,
+        /// Do not open a browser; just print the address.
+        #[arg(long)]
+        no_open: bool,
+    },
+    /// Write calendar reminders (an .ics file) for a plan's flips and unlock
+    /// times. Import it into your own calendar; no server is involved.
+    Remind {
+        /// Plan id (prefix). Optional when only one plan is active.
+        plan: Option<String>,
+        /// Output file (default: zandglass-<plan>.ics).
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -764,6 +785,36 @@ async fn run(cli: Cli) -> Result<()> {
             .await?
         }
         Cmd::Kit(KitCmd::Inspect { file }) => inspect(file)?,
+        Cmd::Ui { port, no_open } => {
+            if let Some(s) = &cli.server {
+                ops::require_secure_url(s, "lightwalletd server")?;
+            }
+            warn_unaudited(network);
+            ui::serve(ui::UiConfig {
+                network,
+                root: store_root(&cli, network)?,
+                server: cli.server.clone(),
+                accept_unaudited: cli.accept_unaudited,
+                allow_transparent: cli.allow_transparent,
+                port: *port,
+                open_browser: !*no_open,
+            })
+            .await?;
+        }
+        Cmd::Remind { plan, out } => {
+            let store = open_store(&cli, network)?;
+            let plan = store.find_plan(plan.as_deref())?;
+            let path = out
+                .clone()
+                .unwrap_or_else(|| PathBuf::from(format!("zandglass-{}.ics", plan.short_id())));
+            std::fs::write(&path, zandglass_wallet::remind::plan_ics(&plan, now()))
+                .with_context(|| format!("writing {}", path.display()))?;
+            println!(
+                "Wrote {}. Import it into your calendar: it reminds you to flip plan {} before each unlock.                  It holds no amounts, heirs or addresses. After a flip, write it again for the new date.",
+                path.display(),
+                plan.short_id()
+            );
+        }
     }
     Ok(())
 }

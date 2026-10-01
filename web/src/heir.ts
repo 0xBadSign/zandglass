@@ -2,8 +2,8 @@ import './style.css';
 import './site.css';
 import './scenes.css';
 import './console.css';
-import qrcode from 'qrcode-generator';
-import { clear, copyButton, h, svg } from './lib/dom';
+import { clear, copyButton, h } from './lib/dom';
+import { qrSvg as qr } from './lib/qr';
 import { mountDust } from './lib/fx';
 import { generatePhrase, heirCodeFromPhrase, normalizePhrase, pickPositions } from './lib/heir';
 import { mountShell } from './lib/shell';
@@ -90,24 +90,7 @@ let step: Step = 'intro';
 let confirmError = '';
 
 function qrSvg(text: string): SVGElement {
-  const qr = qrcode(0, 'M');
-  qr.addData(text);
-  qr.make();
-  const n = qr.getModuleCount();
-  let d = '';
-  for (let r = 0; r < n; r++) {
-    for (let c = 0; c < n; c++) {
-      if (qr.isDark(r, c)) d += `M${c + 1} ${r + 1}h1v1h-1z`;
-    }
-  }
-  const s = svg('svg', {
-    viewBox: `0 0 ${n + 2} ${n + 2}`,
-    role: 'img',
-    'aria-label': 'QR code of your heir code',
-    'shape-rendering': 'crispEdges',
-  });
-  s.append(svg('path', { d, fill: '#000' }));
-  return s;
+  return qr(text, 'QR code of your heir code');
 }
 
 function stepper(): HTMLElement {

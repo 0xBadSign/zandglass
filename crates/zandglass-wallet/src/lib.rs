@@ -10,6 +10,7 @@ pub mod fsutil;
 pub mod installments;
 pub mod lightwalletd;
 pub mod ops;
+pub mod remind;
 pub mod store;
 pub mod vault;
 

@@ -607,7 +607,7 @@ async fn security_headers(req: Request, next: Next) -> Response {
 }
 
 /// Pages served at clean addresses: `/playground` serves `playground.html`.
-const PAGES: [&str; 3] = ["playground", "heir", "claim"];
+const PAGES: [&str; 4] = ["playground", "heir", "claim", "owner"];
 
 /// Clean page addresses for the static site. `/playground` is served from
 /// `playground.html`; old `.html` addresses (and `/index.html`) redirect

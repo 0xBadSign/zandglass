@@ -589,7 +589,8 @@ pub async fn flip(
     })
 }
 
-fn kit_file_name(plan: &Plan, epoch: u32) -> String {
+/// File name of a legacy plan's kit for one epoch.
+pub fn kit_file_name(plan: &Plan, epoch: u32) -> String {
     format!("{}-e{epoch}.zandglass", plan.short_id())
 }
 
@@ -768,6 +769,17 @@ pub struct CancelReport {
     pub already_claimed: Vec<u32>,
 }
 
+/// How long after a flip an empty-looking new vault may still be waiting for
+/// the flip transaction to be mined (its expiry is 40 blocks, about 50 minutes
+/// on mainnet; doubled for slow blocks).
+pub const FLIP_SETTLE_SECS: u64 = 2 * 3600;
+
+/// Whether the current epoch was created by a flip so recently that its
+/// funds may still be unconfirmed (and so invisible to a light client).
+pub fn flip_may_be_unconfirmed(plan: &Plan, rec: &EpochRecord, now: u64) -> bool {
+    plan.epoch > 1 && now.saturating_sub(rec.created) < FLIP_SETTLE_SECS
+}
+
 /// Sweeps the current vault to `to_address` and marks the plan cancelled.
 pub async fn cancel(
     store: &Store,
@@ -804,6 +816,15 @@ pub async fn cancel(
             if e.downcast_ref::<crate::error::CodedError>()
                 .is_some_and(|c| c.code == "vault_empty") =>
         {
+            // A light client does not see unmined transactions: right after
+            // a flip the new vault looks empty although the funds are on
+            // their way. Cancelling then would strand them in a cancelled plan.
+            if flip_may_be_unconfirmed(&plan, &rec, now()) {
+                return Err(coded(
+                    "insufficient_funds",
+                    "The last flip moved the funds into this vault, but that transaction is not confirmed yet. Wait a few minutes, then cancel again.",
+                ));
+            }
             (Vec::new(), 0)
         }
         Err(e) => return Err(e),
@@ -890,6 +911,29 @@ mod tests {
         let kit = dir.path().join("kit-e2.zandglass");
         fs::write(&kit, "{}").unwrap();
         (dir, store, plan, kit)
+    }
+
+    #[test]
+    fn a_fresh_flip_blocks_cancel_of_an_empty_looking_vault() {
+        let (_d, _store, mut plan, _) = pending_fixture();
+        let rec = EpochRecord {
+            epoch: 2,
+            dir: "v".into(),
+            birthday_height: 1,
+            unlock_round: 1,
+            unlock_time: 0,
+            created: 1_000_000,
+        };
+        plan.epoch = 2;
+        assert!(flip_may_be_unconfirmed(&plan, &rec, 1_000_000 + 60));
+        assert!(!flip_may_be_unconfirmed(
+            &plan,
+            &rec,
+            1_000_000 + FLIP_SETTLE_SECS
+        ));
+        // A first epoch was funded from outside, not by a flip.
+        plan.epoch = 1;
+        assert!(!flip_may_be_unconfirmed(&plan, &rec, 1_000_000 + 60));
     }
 
     #[test]

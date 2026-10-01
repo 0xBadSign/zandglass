@@ -1,6 +1,6 @@
 import { h, logoMark } from './dom';
 
-export type PageId = 'home' | 'playground' | 'heir' | 'claim';
+export type PageId = 'home' | 'playground' | 'heir' | 'claim' | 'owner';
 
 /** Build the shared header and footer; returns the <main> element to fill. */
 export function mountShell(current: PageId, opts: { wide?: boolean } = {}): HTMLElement {
@@ -22,6 +22,7 @@ export function mountShell(current: PageId, opts: { wide?: boolean } = {}): HTML
         link('playground', './playground', 'Playground'),
         link('heir', './heir', 'Become an heir'),
         link('claim', './claim', 'Claim'),
+        link('owner', './owner', 'Owner'),
       ),
     ),
     main,
