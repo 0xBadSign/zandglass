@@ -59,7 +59,7 @@ Live state of the project. The agent updates it at the end of every work unit, n
 - [ ] T2.4 Multiple heirs (1 to 3)
 
 ### M3 Mainnet playground and deployment (10-17 to 10-21)
-- [ ] T3.1 Playground backend (judge code, caps, float)
+- [x] T3.1 Playground backend (judge code, caps, float; offline-tested; live run pending funded float)
 - [x] T3.2 Landing and playground UI (mocked-API Playwright flow, leak checks, axe)
 - [ ] T3.3 Deploy (server, TLS, Pages, health, backups)
 - [ ] T3.4 Browser end-to-end tests and axe
