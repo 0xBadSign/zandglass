@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, Result};
 use zandglass_core::drand;
 use zandglass_core::kit::Sequence;
-use zandglass_core::mailbox::{normalize_base, ClaimLink, MailboxClient};
+use zandglass_core::mailbox::{normalize_base, ClaimLink, Created, MailboxClient};
 
 use crate::error::coded;
 use crate::ops::{
@@ -338,7 +338,13 @@ pub async fn split(
     let mut written: Vec<PathBuf> = Vec::new();
     let mut links: Vec<Option<String>> = Vec::new();
 
+    // One batch request for all mailboxes: the keeper's per-address creation
+    // limiter would refuse the 11th of many single creates.
+    let mut pre_created: Vec<Created> = Vec::new();
     let prepared: Result<()> = async {
+        if let Some(url) = &plan.mailbox_url {
+            pre_created = MailboxClient::new(url).create_many(n as usize)?;
+        }
         for k in 1..=n {
             let phrase = Vault::new_seed();
             let rel = Store::installment_rel_dir(&plan.id, k);
@@ -371,7 +377,9 @@ pub async fn split(
             let mut put_result = Ok(());
             if let Some(url) = &plan.mailbox_url {
                 let mb = MailboxClient::new(url);
-                let created = mb.create()?;
+                let created = pre_created
+                    .get((k - 1) as usize)
+                    .ok_or_else(|| anyhow!("the keeper returned too few mailboxes"))?;
                 rec.mailbox_id = Some(created.id.clone());
                 rec.mailbox_write_token = Some(created.write_token.clone());
                 put_result = mb.put(&created.id, &created.write_token, &kit.to_json()?);
@@ -386,7 +394,7 @@ pub async fn split(
     }
     .await;
 
-    let cleanup = |items: &[InstallmentRecord], written: &[PathBuf]| {
+    let cleanup = |written: &[PathBuf]| {
         for p in written {
             let _ = fs::remove_file(p);
         }
@@ -394,15 +402,14 @@ pub async fn split(
             let _ = fs::remove_dir_all(store.path(&Store::installment_rel_dir(&plan.id, k)));
         }
         if let Some(url) = &plan.mailbox_url {
-            for it in items {
-                if let (Some(id), Some(tok)) = (&it.mailbox_id, &it.mailbox_write_token) {
-                    let _ = delete_mailbox_parts(url, id, tok);
-                }
+            // Every mailbox the batch made, including ones not yet recorded.
+            for c in &pre_created {
+                let _ = delete_mailbox_parts(url, &c.id, &c.write_token);
             }
         }
     };
     if let Err(e) = prepared {
-        cleanup(&items, &written);
+        cleanup(&written);
         return Err(e);
     }
 
@@ -414,7 +421,7 @@ pub async fn split(
         Err(e) => {
             let msg = format!("{e:#}");
             if crate::ops::definitely_unsent(&e) {
-                cleanup(&items, &written);
+                cleanup(&written);
                 return Err(e);
             }
             return Err(anyhow!(

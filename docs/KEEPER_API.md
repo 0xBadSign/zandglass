@@ -11,7 +11,7 @@ All bodies are JSON. Tokens go in `Authorization: Bearer <token>`.
 | Method and path | Auth | Purpose | Success |
 |---|---|---|---|
 | `GET /v1/health` | none | Liveness | `200 { "ok": true, "version": "0.1.0" }` |
-| `POST /v1/mailboxes` | none | Create a mailbox | `201 { "id", "write_token", "read_token" }` |
+| `POST /v1/mailboxes` | none | Create a mailbox, or a batch with an optional body `{ "count": N }` (1 to 120) | `201 { "id", "write_token", "read_token" }`; for `count` above 1: `201 { "mailboxes": [ { "id", "write_token", "read_token" }, ... ] }` |
 | `PUT /v1/mailboxes/{id}/kit` | write token | Replace the mailbox's kit (the previous kit is overwritten) | `200 { "ok": true }` |
 | `GET /v1/mailboxes/{id}/kit` | read token | The latest kit, exactly as stored (`application/json`) | `200` |
 | `DELETE /v1/mailboxes/{id}` | write token | Delete the mailbox | `200 { "ok": true }` |
@@ -20,7 +20,8 @@ All bodies are JSON. Tokens go in `Authorization: Bearer <token>`.
 - The **write token** stays with the owner (the CLI stores it in the plan). The **read token** goes to the heir inside the claim link. Neither token opens funds or a kit.
 - A claim link is `<keeper>/claim#m=<id>&r=<read token>` (the heir page). Older links ending in `/claim.html#...` are also accepted, and the keeper redirects `/claim.html` (and the other `.html` pages) to the clean address. The heir page also accepts an optional `&k=<keeper origin>` when the page and the keeper live on different origins. The fragment is not sent to any server by the browser; the page uses it to build the `GET` request.
 - `PUT` validates the kit's public part offline, with the same rules as `docs/KIT_FORMAT.md` section 4 (format, version, plan id, drand chain, round and time consistency, header round). It cannot and does not look inside `sealed`.
-- A mailbox that has been created but never filled answers `GET` with `404 mailbox_not_found`.
+- A mailbox that has been created but never filled answers `GET` with `404 mailbox_not_found`. A mailbox that never receives a kit is deleted after 24 hours.
+- A batch request (`count` above 1) counts once against the per-address limiter, but N times against the keeper-wide limits (mailboxes per hour, mailboxes held). It is refused as a whole with `429 rate_limited` when it does not fit. A `count` outside 1 to 120, or a body that is not `{ "count": N }`, answers `400 invalid_request`. Without a body, or with `count` 1, the reply is the single-mailbox shape, so existing clients keep working.
 
 Example:
 
@@ -42,6 +43,7 @@ Errors are `{ "error": "<code>", "message": "<plain English>" }`.
 |---|---|---|
 | 400 | `kit_invalid` | The body is not UTF-8 JSON, or not a valid kit (public part) |
 | 400 | `kit_version_unsupported` | The kit has a `version` the keeper does not accept |
+| 400 | `invalid_request` | The mailbox-creation body is not `{ "count": N }` with N from 1 to 120 |
 | 401 | `unauthorized` | Missing or wrong token for this mailbox |
 | 404 | `mailbox_not_found` | No such mailbox, a malformed id, or no kit stored yet |
 | 404 | `not_found` | Unknown path (when no static web directory is configured) |
@@ -52,8 +54,10 @@ Errors are `{ "error": "<code>", "message": "<plain English>" }`.
 ## Limits
 
 - Kit size: 64 KiB (`MAX_KIT_BYTES`).
-- Rate limit per client address, in memory only (IPv6 addresses are grouped by /64): a burst of 60 requests, then 2 per second. Creating a mailbox (and a playground session) has its own bucket: a burst of 10, then 1 per minute.
-- With `ZANDGLASS_TRUST_PROXY=1` the last entry of `X-Forwarded-For` is used as the client address. Enable it only behind a reverse proxy you control.
+- Rate limit per client address, in memory only (IPv6 addresses are grouped by /48): a burst of 60 requests, then 2 per second. Creating a mailbox (and a playground session) has its own bucket: a burst of 10, then 1 per minute.
+- With `ZANDGLASS_TRUST_PROXY=1` the client address is taken from `CF-Connecting-IP` when present (Cloudflare), otherwise from the last entry of `X-Forwarded-For`. Enable it only behind a reverse proxy you control.
+
+Every response carries `Strict-Transport-Security: max-age=31536000`.
 
 ## CORS
 
@@ -77,6 +81,6 @@ A mailbox is deleted 180 days after its last update (creation counts as an updat
 |---|---|---|
 | `ZANDGLASS_LISTEN` | `127.0.0.1:8787` | Address to bind |
 | `ZANDGLASS_DB` | `./keeper.sqlite` | SQLite database file |
-| `ZANDGLASS_TRUST_PROXY` | off | `1` to use `X-Forwarded-For` for rate limiting |
+| `ZANDGLASS_TRUST_PROXY` | off | `1` to use `CF-Connecting-IP` or `X-Forwarded-For` for rate limiting |
 | `ZANDGLASS_WEB_DIR` | none | Directory of static files (the built `web/dist`) served at `/` |
 | `ZANDGLASS_PLAYGROUND_*` | off | Enables the playground; see [PLAYGROUND_API.md](PLAYGROUND_API.md) |

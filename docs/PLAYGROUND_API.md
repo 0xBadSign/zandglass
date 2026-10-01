@@ -101,8 +101,10 @@ replaces the mailbox kit. Allowed in `sealed` (funds confirmed). Returns the ses
 
 ### `POST /v1/playground/sessions/{id}/settle`
 Body: `{ "action": "return" }` sweeps the vault back to the float;
-`{ "action": "send", "to": "<unified address>" }` sweeps to the visitor (`400
-network_mismatch` for an invalid address);
+`{ "action": "send", "to": "<shielded address>" }` sweeps to the visitor (`400
+network_mismatch` for an invalid address; `400 invalid_request` for a
+transparent or Sprout address, which would show the amount publicly; Sapling
+addresses and unified addresses with a shielded receiver are accepted);
 `{ "action": "keep" }` marks the session as kept (the visitor restores the seed
 in their own wallet; counted against the daily keep cap; after 24 h an unclaimed
 vault may be returned).

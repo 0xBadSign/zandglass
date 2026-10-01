@@ -27,11 +27,14 @@ use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
-use zandglass_core::mailbox::MAX_KIT_BYTES;
+use zandglass_core::mailbox::{MAX_BATCH, MAX_KIT_BYTES};
 use zandglass_core::Kit;
 
 /// Mailboxes not updated for this long are deleted.
 pub const RETENTION_SECS: u64 = 180 * 86_400;
+
+/// Mailboxes that never received a kit are deleted after this long.
+pub const EMPTY_RETENTION_SECS: u64 = 86_400;
 
 /// Mailboxes the whole keeper may hold by default.
 pub const DEFAULT_MAX_MAILBOXES: u64 = 50_000;
@@ -41,7 +44,7 @@ pub const DEFAULT_MAX_CREATES_PER_HOUR: usize = 2_000;
 /// Runtime configuration.
 #[derive(Clone)]
 pub struct Config {
-    /// Trust `X-Forwarded-For` (only behind a reverse proxy you control).
+    /// Trust `CF-Connecting-IP` / `X-Forwarded-For` (only behind a reverse proxy you control).
     pub trust_proxy: bool,
     /// Directory of static files served at `/`.
     pub web_dir: Option<PathBuf>,
@@ -186,6 +189,24 @@ impl Db {
             .execute("DELETE FROM mailboxes WHERE updated < ?1", [cutoff as i64])?)
     }
 
+    /// Deletes mailboxes that never received a kit and were created before
+    /// `cutoff`; returns how many.
+    pub fn purge_empty_before(&self, cutoff: u64) -> Result<usize> {
+        Ok(self.conn().execute(
+            "DELETE FROM mailboxes WHERE kit IS NULL AND created < ?1",
+            [cutoff as i64],
+        )?)
+    }
+
+    /// Test helper: backdate a mailbox's creation.
+    pub fn set_created(&self, id: &str, created: u64) -> Result<()> {
+        self.conn().execute(
+            "UPDATE mailboxes SET created = ?2 WHERE id = ?1",
+            rusqlite::params![id, created as i64],
+        )?;
+        Ok(())
+    }
+
     /// Test helper: backdate a mailbox's last update.
     pub fn set_updated(&self, id: &str, updated: u64) -> Result<()> {
         self.conn().execute(
@@ -203,6 +224,20 @@ struct Bucket {
 
 /// Most client buckets kept in memory.
 const MAX_BUCKETS: usize = 50_000;
+
+/// The bucket an address belongs to: IPv4 per address, IPv6 per /48 (the
+/// smallest common end-site allocation), so one allocation cannot mint
+/// buckets.
+fn bucket_key(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V6(v6) => {
+            let mut o = v6.octets();
+            o[6..].fill(0);
+            IpAddr::V6(o.into())
+        }
+        v4 => v4,
+    }
+}
 
 /// In-memory token bucket per client address. Never persisted or logged.
 struct Limiter {
@@ -232,15 +267,7 @@ impl Limiter {
     }
 
     fn allow(&self, ip: IpAddr) -> bool {
-        let key = match ip {
-            // One bucket per /64.
-            IpAddr::V6(v6) => {
-                let mut o = v6.octets();
-                o[8..].fill(0);
-                IpAddr::V6(o.into())
-            }
-            v4 => v4,
-        };
+        let key = bucket_key(ip);
         let now = Instant::now();
         let mut map = self.buckets.lock().unwrap_or_else(|p| p.into_inner());
         if map.len() >= self.max_entries && !map.contains_key(&key) {
@@ -300,8 +327,9 @@ impl AppState {
         })
     }
 
-    /// Books one mailbox creation against the global hourly cap.
-    fn allow_creation(&self) -> bool {
+    /// Books `n` mailbox creations against the global hourly cap (all or
+    /// nothing).
+    fn allow_creation(&self, n: usize) -> bool {
         let now = Instant::now();
         let mut q = self
             .recent_creations
@@ -313,10 +341,10 @@ impl AppState {
         {
             q.pop_front();
         }
-        if q.len() >= self.config.max_creates_per_hour {
+        if q.len().saturating_add(n) > self.config.max_creates_per_hour {
             return false;
         }
-        q.push_back(now);
+        q.extend(std::iter::repeat_n(now, n));
         true
     }
 
@@ -435,7 +463,13 @@ async fn health() -> Json<serde_json::Value> {
     Json(json!({ "ok": true, "version": zandglass_core::VERSION }))
 }
 
-async fn create_mailbox(State(state): State<Arc<AppState>>) -> Result<Response, ApiError> {
+/// `POST /v1/mailboxes`: one mailbox, or `{"count": N}` for a batch. A batch
+/// counts once against the per-address limiter (in the middleware) and N
+/// against the global caps; it is refused as a whole if it does not fit.
+async fn create_mailbox(
+    State(state): State<Arc<AppState>>,
+    body: Body,
+) -> Result<Response, ApiError> {
     let full = || {
         ApiError::new(
             StatusCode::TOO_MANY_REQUESTS,
@@ -443,20 +477,51 @@ async fn create_mailbox(State(state): State<Arc<AppState>>) -> Result<Response, 
             "The keeper cannot take new mailboxes right now. Try again later.",
         )
     };
-    if state.db.count()? >= state.config.max_mailboxes || !state.allow_creation() {
+    let bad = || {
+        ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "The body must be empty or {\"count\": N} with N from 1 to 120.",
+        )
+    };
+    let bytes = axum::body::to_bytes(body, 1024).await.map_err(|_| bad())?;
+    let (count, batch) = if bytes.iter().all(u8::is_ascii_whitespace) {
+        (1usize, false)
+    } else {
+        let v: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| bad())?;
+        let n = v
+            .get("count")
+            .map_or(Some(1), |c| c.as_u64())
+            .ok_or_else(bad)?;
+        let n = usize::try_from(n).map_err(|_| bad())?;
+        if !(1..=MAX_BATCH).contains(&n) {
+            return Err(bad());
+        }
+        (n, n > 1)
+    };
+    let held = state.db.count()?;
+    if held.saturating_add(count as u64) > state.config.max_mailboxes
+        || !state.allow_creation(count)
+    {
         return Err(full());
     }
-    let id = random_hex(16);
-    let write_token = random_hex(32);
-    let read_token = random_hex(32);
-    state
-        .db
-        .create(&id, &sha256(&write_token), &sha256(&read_token), unix_now())?;
-    Ok((
-        StatusCode::CREATED,
-        Json(json!({ "id": id, "write_token": write_token, "read_token": read_token })),
-    )
-        .into_response())
+    let now = unix_now();
+    let mut made = Vec::with_capacity(count);
+    for _ in 0..count {
+        let id = random_hex(16);
+        let write_token = random_hex(32);
+        let read_token = random_hex(32);
+        state
+            .db
+            .create(&id, &sha256(&write_token), &sha256(&read_token), now)?;
+        made.push(json!({ "id": id, "write_token": write_token, "read_token": read_token }));
+    }
+    let body = if batch {
+        json!({ "mailboxes": made })
+    } else {
+        made.remove(0)
+    };
+    Ok((StatusCode::CREATED, Json(body)).into_response())
 }
 
 async fn put_kit(
@@ -544,6 +609,16 @@ async fn delete_mailbox(
 
 fn client_ip(state: &AppState, req: &Request) -> Option<IpAddr> {
     if state.config.trust_proxy {
+        // Cloudflare sets this to the connecting client and overwrites any
+        // value the client sent.
+        let cf = req
+            .headers()
+            .get("cf-connecting-ip")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.trim().parse().ok());
+        if cf.is_some() {
+            return cf;
+        }
         // The proxy appends the address it saw; the last entry is the client.
         let forwarded = req
             .headers()
@@ -592,6 +667,10 @@ async fn security_headers(req: Request, next: Next) -> Response {
         HeaderValue::from_static(CSP),
     );
     h.insert(REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
+    h.insert(
+        HeaderName::from_static("strict-transport-security"),
+        HeaderValue::from_static("max-age=31536000"),
+    );
     h.insert(
         HeaderName::from_static("x-content-type-options"),
         HeaderValue::from_static("nosniff"),
@@ -696,6 +775,10 @@ pub fn spawn_retention(state: Arc<AppState>) {
             let _ = state
                 .db
                 .purge_before(unix_now().saturating_sub(RETENTION_SECS));
+            // Empty mailboxes (never written) must not hold a slot for months.
+            let _ = state
+                .db
+                .purge_empty_before(unix_now().saturating_sub(EMPTY_RETENTION_SECS));
             tokio::time::sleep(Duration::from_secs(3600)).await;
         }
     });
@@ -738,6 +821,19 @@ mod tests {
 
     fn ip(n: u32) -> IpAddr {
         IpAddr::V4(std::net::Ipv4Addr::from(n))
+    }
+
+    #[test]
+    fn ipv6_is_bucketed_by_48() {
+        let a: IpAddr = "2001:db8:1:1::1".parse().unwrap();
+        let b: IpAddr = "2001:db8:1:ffff:1:2:3:4".parse().unwrap();
+        let c: IpAddr = "2001:db8:2:1::1".parse().unwrap();
+        assert_eq!(bucket_key(a), bucket_key(b));
+        assert_ne!(bucket_key(a), bucket_key(c));
+        let l = Limiter::new(1.0, 0.0);
+        assert!(l.allow(a));
+        assert!(!l.allow(b), "same /48 shares one bucket");
+        assert!(l.allow(c));
     }
 
     #[test]
