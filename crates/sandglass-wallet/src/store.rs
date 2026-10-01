@@ -112,8 +112,69 @@ pub struct Plan {
     /// funds and no kit, so it is stored with the plan.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mailbox_write_token: Option<String>,
-    /// All epochs, oldest first.
+    /// All epochs, oldest first. For an installment plan, epoch 1 is the
+    /// funding vault.
     pub epochs: Vec<EpochRecord>,
+    /// Installment schedule (installment plans only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub installments: Option<InstallmentSet>,
+}
+
+/// One installment vault of an installment plan.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InstallmentRecord {
+    /// 1-based position.
+    pub index: u32,
+    /// Vault directory, relative to the store root.
+    pub dir: String,
+    /// Wallet birthday height.
+    pub birthday_height: u32,
+    /// drand round the kit unlocks at.
+    pub unlock_round: u64,
+    /// Unix time of that round.
+    pub unlock_time: u64,
+    /// Kit file name that was written.
+    pub kit_file: String,
+    /// Keeper mailbox id of this installment's kit, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mailbox_id: Option<String>,
+    /// Write token of that mailbox (it opens no funds and no kit).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mailbox_write_token: Option<String>,
+}
+
+/// The schedule of an installment plan.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InstallmentSet {
+    /// What the payee receives per installment, in zatoshi.
+    pub amount_zat: u64,
+    /// Extra zatoshi in each vault so the payee's sweep fee is covered.
+    pub fee_zat: u64,
+    /// Seconds between installments.
+    pub every_secs: u64,
+    /// Number of installments.
+    pub count: u32,
+    /// Absolute start (unix time) when the owner gave one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_at: Option<u64>,
+    /// Otherwise the first installment unlocks this long after the split.
+    pub start_after_secs: u64,
+    /// Directory for the kit files and the claim-links file (`--out`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub out_dir: Option<String>,
+    /// Transaction id of the split, once done.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub split_txid: Option<String>,
+    /// The installment vaults (empty until the split).
+    #[serde(default)]
+    pub items: Vec<InstallmentRecord>,
+}
+
+impl InstallmentSet {
+    /// Zatoshi each installment vault holds.
+    pub fn vault_zat(&self) -> u64 {
+        self.amount_zat + self.fee_zat
+    }
 }
 
 impl Plan {
@@ -253,6 +314,11 @@ impl Store {
         }
     }
 
+    /// The vault directory (relative to the root) of an installment vault.
+    pub fn installment_rel_dir(plan_id: &str, index: u32) -> String {
+        format!("vaults/{plan_id}/i{index}")
+    }
+
     /// The vault directory (relative to the root) of an epoch.
     pub fn vault_rel_dir(plan_id: &str, epoch: u32) -> String {
         format!("vaults/{plan_id}/e{epoch}")
@@ -372,6 +438,7 @@ mod tests {
                 unlock_time: 100,
                 created: 1,
             }],
+            installments: None,
         }
     }
 

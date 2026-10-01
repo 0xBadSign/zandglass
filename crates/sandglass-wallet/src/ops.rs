@@ -8,7 +8,7 @@ use anyhow::{anyhow, Context, Result};
 use rand::{rngs::OsRng, RngCore};
 use sandglass_core::drand;
 use sandglass_core::heir::HeirCode;
-use sandglass_core::kit::{BuildParams, Kind, Payload};
+use sandglass_core::kit::{BuildParams, Kind, Payload, Sequence};
 use sandglass_core::mailbox::{normalize_base, ClaimLink, MailboxClient};
 use sandglass_core::Kit;
 use zeroize::Zeroizing;
@@ -129,7 +129,7 @@ pub fn now() -> u64 {
         .map_or(0, |d| d.as_secs())
 }
 
-fn total(b: &Balances) -> u64 {
+pub(crate) fn total(b: &Balances) -> u64 {
     b.total()
 }
 
@@ -140,7 +140,10 @@ pub fn open_vault(store: &Store, network: Network, rec: &EpochRecord) -> Result<
 }
 
 /// Syncs a vault and refuses unless it holds confirmed, spendable funds.
-async fn sync_and_require_funds(vault: &mut Vault, client: &mut Client) -> Result<Balances> {
+pub(crate) async fn sync_and_require_funds(
+    vault: &mut Vault,
+    client: &mut Client,
+) -> Result<Balances> {
     vault.sync(client).await?;
     let b = vault.balances()?;
     let all = total(&b);
@@ -164,7 +167,7 @@ async fn sync_and_require_funds(vault: &mut Vault, client: &mut Client) -> Resul
     Ok(b)
 }
 
-fn check_cap(network: Network, amount: u64, accept_unaudited: bool) -> Result<()> {
+pub(crate) fn check_cap(network: Network, amount: u64, accept_unaudited: bool) -> Result<()> {
     if network == Network::MainNetwork && amount > MAINNET_CAP_ZAT && !accept_unaudited {
         return Err(coded(
             "amount_over_cap",
@@ -179,13 +182,13 @@ fn check_cap(network: Network, amount: u64, accept_unaudited: bool) -> Result<()
     Ok(())
 }
 
-fn random_id() -> String {
+pub(crate) fn random_id() -> String {
     let mut bytes = [0u8; 16];
     OsRng.fill_bytes(&mut bytes);
     hex::encode(bytes)
 }
 
-fn write_kit_file(dir: &Path, name: &str, kit: &Kit) -> Result<PathBuf> {
+pub(crate) fn write_kit_file(dir: &Path, name: &str, kit: &Kit) -> Result<PathBuf> {
     fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     let path = dir.join(name);
     if path.exists() {
@@ -195,12 +198,13 @@ fn write_kit_file(dir: &Path, name: &str, kit: &Kit) -> Result<PathBuf> {
     Ok(path)
 }
 
-fn make_kit(
+pub(crate) fn make_kit(
     plan: &Plan,
     epoch: u32,
     phrase: &str,
     birthday: u32,
     unlock_round: u64,
+    sequence: Option<Sequence>,
     now: u64,
 ) -> Result<Kit> {
     let heirs = plan
@@ -223,8 +227,12 @@ fn make_kit(
     Ok(Kit::build(
         &payload,
         &BuildParams {
-            kind: Kind::Legacy,
-            sequence: None,
+            kind: if sequence.is_some() {
+                Kind::Installment
+            } else {
+                Kind::Legacy
+            },
+            sequence,
             now,
             unlock_round,
             heirs: &heirs,
@@ -245,6 +253,12 @@ pub fn upload_kit(plan: &Plan, kit: &Kit) -> Result<()> {
     Ok(())
 }
 
+/// Deletes one mailbox by its parts.
+pub fn delete_mailbox_parts(url: &str, id: &str, write_token: &str) -> Result<()> {
+    MailboxClient::new(url).delete(id, write_token)?;
+    Ok(())
+}
+
 /// Deletes the plan's mailbox. Does nothing when the plan has none.
 pub fn delete_mailbox(plan: &Plan) -> Result<()> {
     if let (Some(url), Some(id), Some(token)) = (
@@ -253,6 +267,29 @@ pub fn delete_mailbox(plan: &Plan) -> Result<()> {
         &plan.mailbox_write_token,
     ) {
         MailboxClient::new(url).delete(id, token)?;
+    }
+    Ok(())
+}
+
+/// Checks that there are 1 to 3 valid, distinct heir (or payee) codes.
+pub fn check_heirs(heirs: &[String]) -> Result<()> {
+    let max = sandglass_core::seal::MAX_HEIRS;
+    if heirs.is_empty() {
+        return Err(anyhow!(
+            "a plan needs at least one heir code (give --heir or --payee 1 to {max} times)"
+        ));
+    }
+    if heirs.len() > max {
+        return Err(anyhow!(
+            "a plan supports at most {max} heirs, but {} were given",
+            heirs.len()
+        ));
+    }
+    for (i, h) in heirs.iter().enumerate() {
+        HeirCode::parse(h).map_err(|e| anyhow!("heir code #{}: {e}", i + 1))?;
+        if heirs[..i].contains(h) {
+            return Err(anyhow!("heir code #{} is a duplicate", i + 1));
+        }
     }
     Ok(())
 }
@@ -295,12 +332,7 @@ pub async fn create_plan(
     kit_dir: &Path,
     accept_unaudited: bool,
 ) -> Result<PlanCreated> {
-    if new.heirs.is_empty() || new.heirs.len() > sandglass_core::seal::MAX_HEIRS {
-        return Err(anyhow!("a plan needs 1 to 3 heir codes"));
-    }
-    for h in &new.heirs {
-        HeirCode::parse(h)?;
-    }
+    check_heirs(&new.heirs)?;
     if let Some(a) = new.amount {
         check_cap(network, a, accept_unaudited)?;
     }
@@ -351,8 +383,17 @@ pub async fn create_plan(
             unlock_time: drand::round_time(unlock_round),
             created: now,
         }],
+        installments: None,
     };
-    let kit = make_kit(&plan, 1, vault.seed_phrase(), birthday, unlock_round, now)?;
+    let kit = make_kit(
+        &plan,
+        1,
+        vault.seed_phrase(),
+        birthday,
+        unlock_round,
+        None,
+        now,
+    )?;
     let kit_path = write_kit_file(kit_dir, &format!("{}-e1.sandglass", plan.short_id()), &kit)?;
     if let Err(e) = upload_kit(&plan, &kit) {
         // Nothing was funded: drop the unused vault, kit and mailbox.
@@ -405,6 +446,12 @@ pub async fn flip(
     if plan.status != PlanStatus::Active {
         return Err(anyhow!("plan {} is cancelled", plan.short_id()));
     }
+    if plan.kind != "legacy" {
+        return Err(anyhow!(
+            "plan {} is an installment plan; it has nothing to flip. Use `sandglass cancel` to stop it.",
+            plan.short_id()
+        ));
+    }
     let old = plan.current()?.clone();
     let mut old_vault = open_vault(store, network, &old)?;
     let balances = sync_and_require_funds(&mut old_vault, client).await?;
@@ -426,6 +473,7 @@ pub async fn flip(
         new_vault.seed_phrase(),
         birthday,
         unlock_round,
+        None,
         now,
     )?;
     let kit_path = write_kit_file(
@@ -481,6 +529,9 @@ pub struct CancelReport {
     pub moved: u64,
     /// Set when the plan has a mailbox and it could not be deleted.
     pub mailbox_error: Option<String>,
+    /// Installments whose funds the payee had already spent, so there was
+    /// nothing to take back (installment plans only).
+    pub already_claimed: Vec<u32>,
 }
 
 /// Sweeps the current vault to `to_address` and marks the plan cancelled.
@@ -501,6 +552,10 @@ pub async fn cancel(
             format!("That is not a valid {} address.", network_name(network)),
         )
     })?;
+    if plan.kind == "installments" {
+        return crate::installments::cancel_installments(store, network, client, plan, to_address)
+            .await;
+    }
     let rec = plan.current()?.clone();
     let mut vault = open_vault(store, network, &rec)?;
     let (sweeps, moved) = match sync_and_require_funds(&mut vault, client).await {
@@ -523,6 +578,7 @@ pub async fn cancel(
         sweeps,
         moved,
         mailbox_error,
+        already_claimed: Vec::new(),
     })
 }
 
