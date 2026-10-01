@@ -112,6 +112,7 @@ These tests show that the pages do not send secrets in the flows they exercise. 
 - It prints an address with a random 192-bit session key in the URL fragment. The page moves the key to `sessionStorage` and removes it from the address bar at once. Every API call needs it as a bearer token (compared in constant time); other local programs and web pages cannot call the API without it.
 - Every request must carry `Host: 127.0.0.1:<port>` or `localhost:<port>`, which blocks DNS-rebinding attacks from other sites.
 - The page and the API are same-origin; responses carry the site's CSP, `no-referrer` and `no-store` for the API. The page talks to nothing else (heir pages and drand are only used by the heir and claim pages).
-- The store passphrase is sent once from the page to the local server to unlock the store, which then stays unlocked in memory until "Lock" or the end of the process.
+- The store passphrase is sent once from the page to the local server to unlock the store, which then stays unlocked in memory until "Lock", 15 minutes without any request, or the end of the process.
+- The API has no CORS headers, so other web pages cannot read its answers, and its custom `Authorization` header forces a preflight that fails. Unit tests (`crates/zandglass-cli/src/ui.rs`) check the session key, the Host check and the CSP on every response.
 - Wallet work runs the same code as the CLI, on one worker thread, one action at a time.
 - Calendar files (`zandglass remind`, or the panel's "Calendar reminder") are made locally and hold only the plan's short id and times: no amounts, heirs, addresses or messages. Importing them into a cloud calendar shows that provider the reminder times.

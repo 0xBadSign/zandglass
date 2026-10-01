@@ -26,6 +26,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "signa
 zeroize = "1.9.0"
 
 [dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
 zandglass-keeper = { path = "../zandglass-keeper" }
 
 [lints]

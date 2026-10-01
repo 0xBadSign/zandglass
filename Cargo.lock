@@ -5035,6 +5035,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "tower",
  "zandglass-core",
  "zandglass-keeper",
  "zandglass-wallet",

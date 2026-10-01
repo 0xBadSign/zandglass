@@ -40,6 +40,9 @@ struct Assets;
 /// The public keeper used when the owner asks for a claim link.
 pub const PUBLIC_KEEPER: &str = "https://zandglass.cash";
 
+/// The unlocked store is locked again after this long without any request.
+const IDLE_LOCK: std::time::Duration = std::time::Duration::from_secs(15 * 60);
+
 const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; \
 img-src 'self' data:; connect-src 'self' https://api.drand.sh https://api2.drand.sh \
 https://drand.cloudflare.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
@@ -157,6 +160,31 @@ pub async fn serve(cfg: UiConfig) -> Result<()> {
         hosts: vec![format!("127.0.0.1:{port}"), format!("localhost:{port}")],
         jobs: tx,
     });
+    let app = app(state);
+
+    println!(
+        "Zandglass owner panel ({}) is running on this computer only.",
+        network_name(network)
+    );
+    println!("Open this address in your browser (it contains a one-time session key; do not share it):\n");
+    println!("  {url}\n");
+    println!(
+        "The store locks itself after {} minutes without use. Press Ctrl-C to stop.",
+        IDLE_LOCK.as_secs() / 60
+    );
+    if open_browser {
+        open_in_browser(&url);
+    }
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async {
+            let _ = tokio::signal::ctrl_c().await;
+        })
+        .await?;
+    Ok(())
+}
+
+/// The panel's HTTP application.
+fn app(state: Arc<AppState>) -> Router {
     let api = Router::new()
         .route("/api/state", get(api_state))
         .route("/api/init", post(api_init))
@@ -170,28 +198,10 @@ pub async fn serve(cfg: UiConfig) -> Result<()> {
         .route("/api/plans/{id}/kit", get(api_kit))
         .route("/api/plans/{id}/calendar", get(api_calendar))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_token));
-    let app = api
-        .fallback(static_file)
+    api.fallback(static_file)
         .layer(middleware::from_fn_with_state(state.clone(), check_host))
         .layer(middleware::from_fn(headers))
-        .with_state(state);
-
-    println!(
-        "Zandglass owner panel ({}) is running on this computer only.",
-        network_name(network)
-    );
-    println!("Open this address in your browser (it contains a one-time session key; do not share it):\n");
-    println!("  {url}\n");
-    println!("Press Ctrl-C to stop.");
-    if open_browser {
-        open_in_browser(&url);
-    }
-    axum::serve(listener, app)
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-        })
-        .await?;
-    Ok(())
+        .with_state(state)
 }
 
 fn open_in_browser(url: &str) {
@@ -371,6 +381,7 @@ async fn api_calendar(State(s): State<Arc<AppState>>, UrlPath(id): UrlPath<Strin
 struct Worker {
     cfg: UiConfig,
     store: Option<Store>,
+    last_use: std::time::Instant,
 }
 
 fn worker(cfg: UiConfig, mut rx: mpsc::Receiver<(Job, oneshot::Sender<JobResult>)>) {
@@ -380,8 +391,17 @@ fn worker(cfg: UiConfig, mut rx: mpsc::Receiver<(Job, oneshot::Sender<JobResult>
     else {
         return;
     };
-    let mut w = Worker { cfg, store: None };
+    let mut w = Worker {
+        cfg,
+        store: None,
+        last_use: std::time::Instant::now(),
+    };
     while let Some((job, reply)) = rx.blocking_recv() {
+        // An unlocked store left alone locks itself.
+        if w.last_use.elapsed() > IDLE_LOCK {
+            w.store = None;
+        }
+        w.last_use = std::time::Instant::now();
         let out = rt.block_on(w.handle(job));
         let _ = reply.send(out.map_err(|e| UiError::from_anyhow(&e)));
     }
@@ -607,4 +627,106 @@ fn summary(store: &Store, network: Network, p: &Plan) -> Value {
             "unlocks": s.items.iter().map(|i| i.unlock_time).collect::<Vec<_>>(),
         })),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::Request as HttpRequest;
+    use tower::ServiceExt;
+
+    const TOKEN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    /// A panel whose worker answers every job with the given state.
+    fn test_app() -> Router {
+        let (tx, mut rx) = mpsc::channel::<(Job, oneshot::Sender<JobResult>)>(8);
+        tokio::spawn(async move {
+            while let Some((_, reply)) = rx.recv().await {
+                let _ = reply.send(Ok(json!({ "store": "locked" })));
+            }
+        });
+        app(Arc::new(AppState {
+            token: TOKEN.into(),
+            hosts: vec!["127.0.0.1:9999".into(), "localhost:9999".into()],
+            jobs: tx,
+        }))
+    }
+
+    async fn status(host: &str, auth: Option<&str>, path: &str) -> (StatusCode, Option<String>) {
+        let mut req = HttpRequest::builder().uri(path).header(HOST, host);
+        if let Some(a) = auth {
+            req = req.header(AUTHORIZATION, a);
+        }
+        let res = test_app()
+            .oneshot(req.body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let csp = res
+            .headers()
+            .get("content-security-policy")
+            .map(|v| v.to_str().unwrap().to_string());
+        (res.status(), csp)
+    }
+
+    #[tokio::test]
+    async fn api_needs_the_session_key() {
+        let bearer = format!("Bearer {TOKEN}");
+        assert_eq!(
+            status("127.0.0.1:9999", Some(&bearer), "/api/state")
+                .await
+                .0,
+            StatusCode::OK
+        );
+        assert_eq!(
+            status("localhost:9999", Some(&bearer), "/api/state")
+                .await
+                .0,
+            StatusCode::OK
+        );
+        assert_eq!(
+            status("127.0.0.1:9999", None, "/api/state").await.0,
+            StatusCode::UNAUTHORIZED
+        );
+        let wrong = format!("Bearer {}", "f".repeat(TOKEN.len()));
+        assert_eq!(
+            status("127.0.0.1:9999", Some(&wrong), "/api/state").await.0,
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            status("127.0.0.1:9999", Some("Bearer short"), "/api/state")
+                .await
+                .0,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[tokio::test]
+    async fn other_hosts_are_refused_even_with_the_key() {
+        // DNS rebinding: a page on evil.example resolved to 127.0.0.1.
+        let bearer = format!("Bearer {TOKEN}");
+        assert_eq!(
+            status("evil.example:9999", Some(&bearer), "/api/state")
+                .await
+                .0,
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            status("127.0.0.1:1234", Some(&bearer), "/api/state")
+                .await
+                .0,
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            status("evil.example", None, "/owner").await.0,
+            StatusCode::FORBIDDEN
+        );
+    }
+
+    #[tokio::test]
+    async fn every_response_carries_the_csp() {
+        let (_, csp) = status("127.0.0.1:9999", None, "/api/state").await;
+        assert!(csp.unwrap().starts_with("default-src 'none'"));
+        let (_, csp) = status("127.0.0.1:9999", None, "/owner").await;
+        assert!(csp.unwrap().contains("frame-ancestors 'none'"));
+    }
 }
