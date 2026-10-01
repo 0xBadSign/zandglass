@@ -1,11 +1,12 @@
 import { h, hourglass } from './dom';
 
-export type PageId = 'home' | 'heir' | 'claim';
+export type PageId = 'home' | 'playground' | 'heir' | 'claim';
 
 /** Build the shared header and footer; returns the <main> element to fill. */
-export function mountShell(current: PageId): HTMLElement {
+export function mountShell(current: PageId, opts: { wide?: boolean } = {}): HTMLElement {
   const root = document.getElementById('root');
   if (!root) throw new Error('missing #root');
+  if (opts.wide) document.body.classList.add('wide');
   const link = (id: PageId, href: string, text: string) =>
     h('a', { href, 'aria-current': current === id ? 'page' : null }, text);
   const main = h('main', { id: 'main' });
@@ -18,6 +19,7 @@ export function mountShell(current: PageId): HTMLElement {
       h(
         'nav',
         { class: 'site-nav', 'aria-label': 'Main' },
+        link('playground', './playground.html', 'Playground'),
         link('heir', './heir.html', 'Become an heir'),
         link('claim', './claim.html', 'Claim'),
       ),
@@ -30,7 +32,7 @@ export function mountShell(current: PageId): HTMLElement {
         'p',
         {},
         'Everything on this page runs in your browser. Your words and your keys are never sent anywhere. ' +
-          'The only network requests are to the drand time servers and, for a claim link, to the keeper that holds the kit.',
+          'The only network requests are to the drand time servers and, for a claim link or the playground, to the keeper that holds the kit.',
       ),
     ),
   );

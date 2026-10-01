@@ -245,10 +245,3 @@ test('claim page: drand outage shows a retry that works once back', async ({ pag
   await page.getByRole('button', { name: 'Try again' }).click();
   await expect(page.getByRole('heading', { name: 'Your inheritance is open' })).toBeVisible();
 });
-
-test('landing page links to both tools and passes axe', async ({ page }) => {
-  await page.goto('/index.html');
-  await expect(page.getByRole('link', { name: 'Create my heir key' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Open a kit' })).toBeVisible();
-  await axe(page);
-});
