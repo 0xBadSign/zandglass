@@ -131,6 +131,13 @@ None yet.
 
 ## Session log (newest first)
 
+### 2026-10-01 (night 2): Mainnet
+- O-5 arrived (0.00978523 ZEC). T1.5 done: mainnet fund, flip and heir claim with the CLI (plan 37ee45fc, mailbox at zandglass.cash); the old kit opened an empty vault (EVIDENCE).
+- T3.5 done: the live vault (plan 6ee17d3e) unlocks 2026-11-12T20:37:33Z; funded with 0.0011 ZEC from zcash-devtool; web/public/live-vault.json drives the landing countdown. Heir phrase and store in WSL ~/zandglass-evidence/live (private).
+- The playground runs on mainnet (amount 10,000 zat per session, 3 active, 15 per day, keeps 2 per day). The float seed is now only on the server; WSL must not spend from it again. Full mainnet rehearsal on the live site in 4.5 minutes (EVIDENCE).
+- Float left after these runs: about 0.0079 ZEC (about 25 playground sessions at 0.0003 ZEC of fees each).
+- Landing proof section and README now point at the mainnet txids.
+
 ### 2026-10-01 (late): Independent review and fixes; live scheduled payments; restore guide
 - An independent read-only security and privacy review found no critical issue and 16 medium or lower findings. Fixed: pending-flip discard archives instead of deleting seeds; plans.json authenticated (HMAC, key inside the encrypted keycheck); birthdays on a 10,000-block grid; random calendar UIDs; kits always 3 age recipients and padded payloads (constant size per bucket); kits/ dir 0700; keeper purges never-written mailboxes after 24 h, IPv6 limiter per /48, batch mailbox creation (installments above 10), HSTS, CF-Connecting-IP, shielded-only playground payouts; browser verifies drand beacons against the pinned key and checks payload vs public part; kit messages labelled unauthenticated; panel idle lock by timer; no phrase words in errors; control characters stripped from printed outside text; runtime crypto packages are dependencies. Documented: CDN party, older kits (R8), unsigned kits (R9).
 - Claim page: guided restore per wallet with a phone mock (birthday filled in, never the seed).
