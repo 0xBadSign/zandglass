@@ -131,6 +131,11 @@ None yet.
 
 ## Session log (newest first)
 
+### 2026-10-02: Final demo video, submission texts
+- T4.3 done: 1:37 narrated video (edge-tts voice, captions in Sora), recorded with web/e2e-live/record2.mjs (landing, mainnet playground, owner panel) and e2e-live/video-claim.spec.ts; assembled with .private/video2/build.sh. Published at https://zandglass.cash/media/zandglass-demo-v1.mp4 (CSP now allows same-origin media; the first URL is cached by Cloudflare with the old CSP, so the file got a versioned name).
+- docs/SUBMISSION.md updated (1,945 characters with the placeholder), video link filled in.
+- Owner panel: custom periods; clearer first-run passphrase. Release build 36933439603 green.
+
 ### 2026-10-01 (night 2): Mainnet
 - O-5 arrived (0.00978523 ZEC). T1.5 done: mainnet fund, flip and heir claim with the CLI (plan 37ee45fc, mailbox at zandglass.cash); the old kit opened an empty vault (EVIDENCE).
 - T3.5 done: the live vault (plan 6ee17d3e) unlocks 2026-11-12T20:37:33Z; funded with 0.0011 ZEC from zcash-devtool; web/public/live-vault.json drives the landing countdown. Heir phrase and store in WSL ~/zandglass-evidence/live (private).
