@@ -28,7 +28,7 @@ test('landing: content, links, live vault, axe, no horizontal scroll', async ({ 
   );
   await page.goto('/index.html');
 
-  await expect(page.getByRole('heading', { level: 1, name: 'Sandglass' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Pass on your shielded ZEC. Privately.' })).toBeVisible();
   await expect(page.locator('.lead')).toHaveText(PITCH);
 
   // Four steps, in order.
@@ -65,7 +65,7 @@ test('landing: content, links, live vault, axe, no horizontal scroll', async ({ 
 
 test('landing: the live vault card is hidden without live-vault.json and shows a claim', async ({ page }) => {
   await page.goto('/index.html');
-  await expect(page.getByRole('heading', { level: 1, name: 'Sandglass' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Pass on your shielded ZEC. Privately.' })).toBeVisible();
   await expect(page.locator('.live-card')).toHaveCount(0);
 
   const tx = 'ab'.repeat(32);
@@ -80,7 +80,7 @@ test('landing: the live vault card is hidden without live-vault.json and shows a
 test('landing: the hourglass stops animating under reduced motion', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await page.goto('/index.html');
-  const name = () => page.locator('.hero .hourglass').evaluate((el) => getComputedStyle(el).animationName);
+  const name = () => page.locator('.sg-art').evaluate((el) => getComputedStyle(el).animationName);
   expect(await name()).not.toBe('none');
   await page.emulateMedia({ reducedMotion: 'reduce' });
   expect(await name()).toBe('none');

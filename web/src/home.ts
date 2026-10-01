@@ -1,6 +1,6 @@
 import './style.css';
 import './site.css';
-import { h, hourglass } from './lib/dom';
+import { h, sandglassArt } from './lib/dom';
 import { formatCountdown, networkLabel, parseLiveVault, type LiveVault } from './lib/playground';
 import { mountShell } from './lib/shell';
 
@@ -9,8 +9,7 @@ const EVIDENCE = `${REPO}/blob/main/docs/evidence/EVIDENCE.md`;
 
 const main = mountShell('home', { wide: true });
 
-const heroGlass = hourglass(0.45);
-heroGlass.classList.add('live');
+const heroGlass = sandglassArt();
 
 const STEPS: { title: string; body: string }[] = [
   {
@@ -107,27 +106,76 @@ const leakTable = h(
   ),
 );
 
+/** Real transactions from docs/evidence/EVIDENCE.md, shown as proof. */
+const PROOF: { step: string; what: string; txid: string }[] = [
+  { step: 'Fund', what: 'The owner funds a fresh vault', txid: 'c62ad1cbd16bc238ed78349999042db89990cdef992efc408f5d2b55e1fb8d68' },
+  { step: 'Flip', what: 'Funds roll to a new vault, a new kit is sealed', txid: 'd14a2d951681f8a53011cde9c6de26755b279c157212c1b8e598de41ce0a1d62' },
+  { step: 'Claim', what: 'The owner went silent; the heir opened the kit', txid: '5685741452b15ae0a8f9c458c6fa4fc1b6d6cfe45a3b2c71eebc80604c5a0407' },
+];
+
+const shortId = (t: string): string => `${t.slice(0, 10)}…${t.slice(-8)}`;
+
 main.append(
   h(
     'section',
-    { class: 'hero' },
-    heroGlass,
-    h('h1', {}, 'Sandglass'),
-    h(
-      'p',
-      { class: 'lead' },
-      'Shielded Zcash has no timelocks, so there is no private way to pass it on. ' +
-        'Sandglass gives your vault a time-locked recovery path: your heir can open it only after you stop checking in ' +
-        '— and nothing about it ever appears on chain.',
-    ),
+    { class: 'hero2' },
     h(
       'div',
-      { class: 'actions center' },
-      h('a', { class: 'btn-primary', href: './playground.html' }, 'Try the playground'),
-      h('a', { class: 'btn', href: './heir.html' }, 'Become an heir'),
+      { class: 'hero-copy' },
+      h('span', { class: 'eyebrow' }, 'Time-locked inheritance for Zcash'),
+      h('h1', {}, 'Pass on your shielded ZEC. ', h('em', {}, 'Privately.')),
+      h(
+        'p',
+        { class: 'lead' },
+        'Shielded Zcash has no timelocks, so there is no private way to pass it on. ' +
+          'Sandglass gives your vault a time-locked recovery path: your heir can open it only after you stop checking in ' +
+          '— and nothing about it ever appears on chain.',
+      ),
+      h(
+        'div',
+        { class: 'actions' },
+        h('a', { class: 'btn-primary', href: './playground.html' }, 'Try the playground'),
+        h('a', { class: 'btn', href: './heir.html' }, 'Become an heir'),
+      ),
+      h(
+        'ul',
+        { class: 'trust' },
+        h('li', {}, 'No custody'),
+        h('li', {}, 'No smart contract'),
+        h('li', {}, 'Nothing on chain'),
+      ),
     ),
+    h('div', { class: 'hero-art' }, heroGlass),
   ),
   h('div', { id: 'live-slot' }),
+  h(
+    'section',
+    { class: 'proof', 'aria-labelledby': 'proof' },
+    h(
+      'div',
+      { class: 'proof-head' },
+      h('h2', { id: 'proof' }, 'Already ', h('em', {}, 'on chain.')),
+      h(
+        'p',
+        { class: 'muted' },
+        'A full inheritance, end to end on Zcash testnet. Each step is an ordinary shielded transaction: standard expiry, standard fee, nothing to fingerprint.',
+      ),
+    ),
+    h(
+      'ol',
+      { class: 'proof-list' },
+      ...PROOF.map((p) =>
+        h(
+          'li',
+          {},
+          h('span', { class: 'proof-step' }, p.step),
+          h('span', { class: 'proof-what' }, p.what),
+          h('code', { class: 'proof-tx', title: p.txid }, shortId(p.txid)),
+        ),
+      ),
+    ),
+    h('a', { class: 'proof-more', href: EVIDENCE }, 'See all evidence'),
+  ),
   h(
     'section',
     { 'aria-labelledby': 'how' },
