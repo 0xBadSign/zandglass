@@ -464,3 +464,11 @@ async fn funding_that_never_confirms_fails_after_thirty_minutes() {
     r.pg.tick(t + 1900).await;
     assert_eq!(state(&r, &id), S::Failed);
 }
+
+#[test]
+fn min_confirmations_setting_is_validated() {
+    assert_eq!(DEFAULT_MIN_CONFIRMATIONS, 1);
+    assert_eq!(check_min_confirmations(1).unwrap(), 1);
+    assert_eq!(check_min_confirmations(6).unwrap(), 6);
+    assert!(check_min_confirmations(0).is_err());
+}

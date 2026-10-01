@@ -111,6 +111,7 @@ pub struct Vault {
     db: Db,
     account: AccountUuid,
     seed: Zeroizing<String>,
+    policy: ConfirmationsPolicy,
 }
 
 fn open_db(dir: &Path, network: Network) -> Result<Db> {
@@ -118,6 +119,13 @@ fn open_db(dir: &Path, network: Network) -> Result<Db> {
         .context("opening wallet database")?;
     init_wallet_db(&mut db, None).map_err(|e| anyhow!("wallet migration failed: {e:?}"))?;
     Ok(db)
+}
+
+/// A symmetrical policy needing `min_confirmations` for every note.
+pub fn confirmations_policy(min_confirmations: u32) -> Result<ConfirmationsPolicy> {
+    let n = std::num::NonZeroU32::new(min_confirmations)
+        .ok_or_else(|| anyhow!("minimum confirmations must be at least 1"))?;
+    Ok(ConfirmationsPolicy::new_symmetrical(n))
 }
 
 fn parse_phrase(phrase: &str) -> Result<Mnemonic<English>> {
@@ -201,6 +209,7 @@ impl Vault {
             db,
             account,
             seed: phrase,
+            policy: ConfirmationsPolicy::default(),
         })
     }
 
@@ -220,7 +229,29 @@ impl Vault {
             db,
             account,
             seed: phrase,
+            policy: ConfirmationsPolicy::default(),
         })
+    }
+
+    /// Sets how many confirmations funds need before this vault treats them
+    /// as spendable (balances, proposals, sweeps). Trusted and untrusted
+    /// notes use the same number. Without a call the library default applies
+    /// (3 trusted, 10 untrusted). Lower values make funds available sooner
+    /// and are meant for short-lived demo vaults.
+    pub fn set_min_confirmations(&mut self, min_confirmations: u32) -> Result<()> {
+        self.policy = confirmations_policy(min_confirmations)?;
+        Ok(())
+    }
+
+    /// Builder form of [`Vault::set_min_confirmations`].
+    pub fn with_min_confirmations(mut self, min_confirmations: u32) -> Result<Self> {
+        self.set_min_confirmations(min_confirmations)?;
+        Ok(self)
+    }
+
+    /// The confirmation policy in effect.
+    pub fn confirmations_policy(&self) -> ConfirmationsPolicy {
+        self.policy
     }
 
     /// The vault's seed phrase (for sealing into a kit).
@@ -282,7 +313,7 @@ impl Vault {
     pub fn balances(&self) -> Result<Balances> {
         let summary = self
             .db
-            .get_wallet_summary(ConfirmationsPolicy::default())
+            .get_wallet_summary(self.policy)
             .map_err(|e| anyhow!("reading balances: {e:?}"))?
             .ok_or_else(|| anyhow!("wallet has not been synced yet"))?;
         let acct = summary
@@ -320,7 +351,7 @@ impl Vault {
             .parse()
             .map_err(|e| anyhow!("recipient parse: {e:?}"))?;
 
-        let policy = ConfirmationsPolicy::default();
+        let policy = self.policy;
         let (target, anchor) = self
             .db
             .get_target_and_anchor_heights(policy.trusted())
@@ -406,7 +437,7 @@ impl Vault {
         let request =
             zip321::TransactionRequest::new(list).map_err(|e| anyhow!("request: {e:?}"))?;
 
-        let policy = ConfirmationsPolicy::default();
+        let policy = self.policy;
         let (target, anchor) = self
             .db
             .get_target_and_anchor_heights(policy.trusted())
@@ -523,6 +554,18 @@ mod tests {
         for extra in 0..=NEW_VAULT_BIRTHDAY_JITTER {
             assert!(jittered_birthday(10_000, extra) < 10_000 - 99);
         }
+    }
+
+    #[test]
+    fn confirmations_policy_is_symmetrical_and_nonzero() {
+        assert!(confirmations_policy(0).is_err());
+        let one = confirmations_policy(1).unwrap();
+        assert_eq!(one.trusted().get(), 1);
+        assert_eq!(one.untrusted().get(), 1);
+        let five = confirmations_policy(5).unwrap();
+        assert_eq!((five.trusted().get(), five.untrusted().get()), (5, 5));
+        // The library default is stricter for untrusted notes.
+        assert!(ConfirmationsPolicy::default().untrusted().get() > 1);
     }
 
     #[test]

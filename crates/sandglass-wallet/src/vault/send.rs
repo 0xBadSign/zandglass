@@ -7,7 +7,7 @@ use zcash_client_backend::{
     data_api::{
         wallet::{
             create_proposed_transactions, input_selection::GreedyInputSelectorError,
-            propose_standard_transfer_to_address, ConfirmationsPolicy, SpendingKeys,
+            propose_standard_transfer_to_address, SpendingKeys,
         },
         WalletRead,
     },
@@ -38,7 +38,7 @@ impl Vault {
             .ok_or_else(|| anyhow!("recipient is not a valid address for this network"))?;
         let amount = Zatoshis::from_u64(amount_zat).map_err(|_| anyhow!("invalid amount"))?;
 
-        let policy = ConfirmationsPolicy::default();
+        let policy = self.policy;
         let (target, anchor) = self
             .db
             .get_target_and_anchor_heights(policy.trusted())

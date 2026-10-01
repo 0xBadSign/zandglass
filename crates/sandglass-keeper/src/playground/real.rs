@@ -37,6 +37,9 @@ pub struct RealConfig {
     pub secret: Zeroizing<String>,
     pub float_seed_file: PathBuf,
     pub float_birthday: u32,
+    /// `SANDGLASS_PLAYGROUND_MIN_CONFIRMATIONS` (default 1): confirmations
+    /// before funds count as spendable, for the float and every session vault.
+    pub min_confirmations: u32,
 }
 
 struct Inner {
@@ -135,7 +138,8 @@ impl RealChain {
                 self.cfg.float_birthday,
             )
             .await?
-        };
+        }
+        .with_min_confirmations(self.cfg.min_confirmations)?;
         vault.sync(&mut client).await?;
         let address = vault.address()?;
         self.float_spendable
@@ -265,7 +269,8 @@ impl Chain for RealChain {
         let rel = Self::vault_rel(session, epoch)?;
         let inner = self.inner.lock().await;
         let phrase = inner.store.read_seed(&rel)?;
-        let mut vault = Vault::open(&inner.store.path(&rel), self.cfg.network, phrase)?;
+        let mut vault = Vault::open(&inner.store.path(&rel), self.cfg.network, phrase)?
+            .with_min_confirmations(self.cfg.min_confirmations)?;
         let mut client = self.client().await?;
         vault.sync(&mut client).await?;
         let b = vault.balances()?;
@@ -279,7 +284,8 @@ impl Chain for RealChain {
         let rel = Self::vault_rel(session, epoch)?;
         let inner = self.inner.lock().await;
         let phrase = inner.store.read_seed(&rel)?;
-        let mut vault = Vault::open(&inner.store.path(&rel), self.cfg.network, phrase)?;
+        let mut vault = Vault::open(&inner.store.path(&rel), self.cfg.network, phrase)?
+            .with_min_confirmations(self.cfg.min_confirmations)?;
         let mut client = self.client().await?;
         let mut attempt = 0;
         loop {

@@ -25,6 +25,7 @@ All endpoints are under the keeper origin and return JSON. Errors use
 | `SANDGLASS_PLAYGROUND_MAX_PER_DAY` | default 60 (UTC day) |
 | `SANDGLASS_PLAYGROUND_MAX_KEEPS_PER_DAY` | default 5 (sessions whose funds the visitor keeps) |
 | `SANDGLASS_PLAYGROUND_MAX_FLIPS` | default 3, flips per session |
+| `SANDGLASS_PLAYGROUND_MIN_CONFIRMATIONS` | default 1, at least 1. Confirmations before funds count as spendable, for the float and every session vault. The wallet library's own default (3 trusted, 10 untrusted, about 12 minutes on testnet) is too slow for a demo; the CLI keeps that default |
 | `SANDGLASS_LWD_URL` | lightwalletd URL (default per network) |
 
 ## Behaviour notes

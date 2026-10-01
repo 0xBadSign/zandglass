@@ -91,6 +91,20 @@ fn env_num<T: std::str::FromStr>(name: &str, default: T) -> Result<T> {
     }
 }
 
+/// Confirmations the playground waits for by default (the wallet library's
+/// own default would be 3 trusted / 10 untrusted, far too slow for a demo).
+pub const DEFAULT_MIN_CONFIRMATIONS: u32 = 1;
+
+/// `SANDGLASS_PLAYGROUND_MIN_CONFIRMATIONS` must be 1 or more.
+pub fn check_min_confirmations(n: u32) -> Result<u32> {
+    if n == 0 {
+        return Err(anyhow!(
+            "SANDGLASS_PLAYGROUND_MIN_CONFIRMATIONS must be at least 1"
+        ));
+    }
+    Ok(n)
+}
+
 fn env_req(name: &str) -> Result<String> {
     std::env::var(name).map_err(|_| anyhow!("{name} is required when the playground is enabled"))
 }
@@ -157,6 +171,10 @@ impl PlaygroundEnv {
             secret: Zeroizing::new(secret),
             float_seed_file: PathBuf::from(env_req("SANDGLASS_PLAYGROUND_FLOAT_SEED_FILE")?),
             float_birthday: env_num("SANDGLASS_PLAYGROUND_FLOAT_BIRTHDAY", 0)?,
+            min_confirmations: check_min_confirmations(env_num(
+                "SANDGLASS_PLAYGROUND_MIN_CONFIRMATIONS",
+                DEFAULT_MIN_CONFIRMATIONS,
+            )?)?,
         };
         if real.float_birthday == 0 {
             return Err(anyhow!(

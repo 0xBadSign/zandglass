@@ -26,6 +26,9 @@ export default defineConfig({
   base: './',
   build: {
     target: 'es2022',
+    // The CSP has `font-src 'self'`, which blocks the small fonts Vite would
+    // otherwise inline as data: URLs. Emit them as files.
+    assetsInlineLimit: 0,
     rollupOptions: {
       input: {
         index: resolve(__dirname, 'index.html'),
