@@ -131,6 +131,12 @@ None yet.
 
 ## Session log (newest first)
 
+### 2026-10-01 (late): Independent review and fixes; live scheduled payments; restore guide
+- An independent read-only security and privacy review found no critical issue and 16 medium or lower findings. Fixed: pending-flip discard archives instead of deleting seeds; plans.json authenticated (HMAC, key inside the encrypted keycheck); birthdays on a 10,000-block grid; random calendar UIDs; kits always 3 age recipients and padded payloads (constant size per bucket); kits/ dir 0700; keeper purges never-written mailboxes after 24 h, IPv6 limiter per /48, batch mailbox creation (installments above 10), HSTS, CF-Connecting-IP, shielded-only playground payouts; browser verifies drand beacons against the pinned key and checks payload vs public part; kit messages labelled unauthenticated; panel idle lock by timer; no phrase words in errors; control characters stripped from printed outside text; runtime crypto packages are dependencies. Documented: CDN party, older kits (R8), unsigned kits (R9).
+- Claim page: guided restore per wallet with a phone mock (birthday filled in, never the seed).
+- Live testnet: scheduled payments from the panel end to end (EVIDENCE). Waiting claims now retry network errors.
+- Linux and Windows release builds run (panel, key and host checks); release checksums fixed.
+
 ### 2026-10-01 (night): History cleaned, panel hardening, scheduled payments, downloads, ZIP draft
 - History rewritten with git-filter-repo: the stray wallet folder is gone from every commit; HEAD tree unchanged; force-pushed with the owner's approval (D-015 closed). Commit hashes in older log entries refer to the pre-rewrite history.
 - Owner panel review: idle auto-lock (15 min), router unit tests for the session key, DNS-rebinding hosts and the CSP.

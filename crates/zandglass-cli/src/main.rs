@@ -1161,7 +1161,7 @@ async fn claim(
             }
         }
         Some(addr) => {
-            let mut client = lightd(cli, kit_net).await?;
+            let mut client: Option<Client> = None;
             // A private (0700) directory with a random name; it is removed
             // when `tmp` drops, also when Ctrl-C interrupts the claim.
             let tmp = tempfile::Builder::new()
@@ -1174,9 +1174,23 @@ async fn claim(
             let started = now();
             let sweep_loop = async {
                 loop {
+                    let c = match client.as_mut() {
+                        Some(c) => c,
+                        None => match lightd(cli, kit_net).await {
+                            Ok(c) => client.insert(c),
+                            // A server can be briefly unreachable; a waiting
+                            // claim keeps trying for 10 minutes.
+                            Err(e) if wait && now().saturating_sub(started) < 600 => {
+                                println!("No lightwalletd server answered ({e}); trying again in 20 s ...");
+                                tokio::time::sleep(Duration::from_secs(20)).await;
+                                continue;
+                            }
+                            Err(e) => return Err(e),
+                        },
+                    };
                     let attempt = ops::claim_sweep(
                         kit_net,
-                        &mut client,
+                        c,
                         Zeroizing::new(payload.vault_seed.clone()),
                         payload.birthday_height,
                         addr,
@@ -1189,6 +1203,11 @@ async fn claim(
                             let patience = match error_code(&e) {
                                 Some("insufficient_funds") => 1800,
                                 Some("vault_empty") => 120,
+                                // No code: a network error. Reconnect and retry.
+                                None => {
+                                    client = None;
+                                    600
+                                }
                                 _ => 0,
                             };
                             if patience == 0 || now().saturating_sub(started) >= patience {

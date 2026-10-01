@@ -385,7 +385,7 @@ function planCard(p: PlanSum): HTMLElement {
       h('dt', {}, inst ? 'Next installment' : 'Unlocks in'),
       h('dd', { 'data-unlock': String(next?.at ?? 0), class: 'plan-left' }, next ? formatCountdown(next.at - nowSec()) : inst && !inst.split ? 'Not started' : '-'),
     ),
-    h('div', {}, h('dt', {}, 'Balance'), h('dd', {}, p.balance ? zec(p.balance.total_zat) : 'Press Sync', p.balance && p.balance.spendable_zat < p.balance.total_zat ? h('span', { class: 'confirming' }, 'confirming') : null)),
+    h('div', {}, h('dt', {}, inst?.split ? 'Left in funding' : 'Balance'), h('dd', {}, p.balance ? zec(p.balance.total_zat) : 'Press Sync', p.balance && p.balance.spendable_zat < p.balance.total_zat ? h('span', { class: 'confirming' }, 'confirming') : null)),
     inst
       ? h('div', {}, h('dt', {}, 'Schedule'), h('dd', {}, `${inst.count} × ${zec(inst.amount_zat)}`))
       : h('div', {}, h('dt', {}, 'Flip every'), h('dd', {}, periodText(p.period_secs))),
@@ -399,8 +399,16 @@ function planCard(p: PlanSum): HTMLElement {
     parts.push(notice('warn', 'Above the safety cap', `This plan holds more than ${zec(state.cap_zat)}. Zandglass is unaudited; a flip refuses above the cap unless the panel was started with --accept-unaudited.`));
   }
   const confirming = p.balance !== null && p.balance.spendable_zat < p.balance.total_zat;
-  if (active && confirming) {
-    parts.push(notice('info', 'Funds are confirming', 'New funds can be flipped once they have a few confirmations on the network (about 10 to 15 minutes). Press Sync to check.'));
+  if (active && confirming && !(inst && inst.split)) {
+    parts.push(
+      notice(
+        'info',
+        'Funds are confirming',
+        inst
+          ? 'You can start the schedule once the funds have a few confirmations on the network (about 10 to 15 minutes). Press Sync to check.'
+          : 'New funds can be flipped once they have a few confirmations on the network (about 10 to 15 minutes). Press Sync to check.',
+      ),
+    );
   }
   if (active && inst) {
     const startBtn = inst.split

@@ -1292,3 +1292,7 @@ label.check input {
   margin-top: 0.6rem;
   color: var(--ok);
 }
+
+.created-card p {
+  overflow-wrap: anywhere;
+}
