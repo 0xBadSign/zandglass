@@ -14,7 +14,7 @@ pub mod store;
 pub mod vault;
 
 pub use error::{coded, CodedError};
-pub use lightwalletd::{connect, default_url, Client};
+pub use lightwalletd::{connect, connect_any, default_url, default_urls, parse_urls, Client};
 pub use store::{
     EpochRecord, InstallmentRecord, InstallmentSet, Plan, PlanStatus, Store, StoreError,
 };

@@ -1,4 +1,4 @@
-import { h, hourglass } from './dom';
+import { h, logoMark } from './dom';
 
 export type PageId = 'home' | 'playground' | 'heir' | 'claim';
 
@@ -15,7 +15,7 @@ export function mountShell(current: PageId, opts: { wide?: boolean } = {}): HTML
     h(
       'header',
       { class: 'site-header' },
-      h('a', { class: 'brand', href: './' }, hourglass(0.4), 'Zandglass'),
+      h('a', { class: 'brand', href: './' }, logoMark(), 'Zandglass'),
       h(
         'nav',
         { class: 'site-nav', 'aria-label': 'Main' },

@@ -165,8 +165,16 @@ impl PlaygroundEnv {
         };
         let real = real::RealConfig {
             network,
-            lwd_url: std::env::var("ZANDGLASS_LWD_URL")
-                .unwrap_or_else(|_| zandglass_wallet::default_url(network).to_string()),
+            // A comma-separated list; servers are tried in order.
+            lwd_urls: match std::env::var("ZANDGLASS_LWD_URL") {
+                Ok(list) if !zandglass_wallet::parse_urls(&list).is_empty() => {
+                    zandglass_wallet::parse_urls(&list)
+                }
+                _ => zandglass_wallet::default_urls(network)
+                    .iter()
+                    .map(|u| (*u).to_string())
+                    .collect(),
+            },
             data_dir,
             secret: Zeroizing::new(secret),
             float_seed_file: PathBuf::from(env_req("ZANDGLASS_PLAYGROUND_FLOAT_SEED_FILE")?),

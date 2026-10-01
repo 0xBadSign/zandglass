@@ -117,3 +117,17 @@ export function hourglass(level = 0.35): SVGElement {
   s.append(sandTop, stream, sandBot, glass);
   return s;
 }
+
+/** The Zandglass mark: a shield (shielded Zcash) with an hourglass cut out of it. */
+export function logoMark(): SVGSVGElement {
+  return svgFrom(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" class="logo-mark" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="lm-s" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffd76a"/><stop offset="1" stop-color="#c88a12"/></linearGradient>
+    <linearGradient id="lm-g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe08a"/><stop offset=".55" stop-color="#f4b728"/><stop offset="1" stop-color="#b97c0c"/></linearGradient>
+  </defs>
+  <path d="M60 8 102 22v34c0 28-18 46-42 56C36 102 18 84 18 56V22z" fill="url(#lm-s)"/>
+  <path d="M42 32h36c0 14-12 20-16 28 4 8 16 14 16 28H42c0-14 12-20 16-28-4-8-16-14-16-28z" fill="#0b0d11"/>
+  <path d="M50 38h20c-2 6-7 10-10 14-3-4-8-8-10-14z" fill="url(#lm-g)" opacity=".55" class="lm-top"/>
+  <path d="M48 84c2-8 8-12 12-14 4 2 10 6 12 14z" fill="url(#lm-g)" class="lm-bottom"/>
+</svg>`);
+}

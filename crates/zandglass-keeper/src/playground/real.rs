@@ -30,7 +30,8 @@ const UNKNOWN: u64 = u64::MAX;
 /// Settings of the real chain.
 pub struct RealConfig {
     pub network: Network,
-    pub lwd_url: String,
+    /// lightwalletd servers, tried in order on every connection.
+    pub lwd_urls: Vec<String>,
     /// `ZANDGLASS_PLAYGROUND_DATA`.
     pub data_dir: PathBuf,
     /// `ZANDGLASS_PLAYGROUND_SECRET`: encrypts the session seeds.
@@ -111,7 +112,7 @@ impl RealChain {
     }
 
     async fn client(&self) -> Result<Client> {
-        zandglass_wallet::connect(&self.cfg.lwd_url).await
+        Ok(zandglass_wallet::connect_any(&self.cfg.lwd_urls).await?.0)
     }
 
     async fn init_float(&self) -> Result<()> {

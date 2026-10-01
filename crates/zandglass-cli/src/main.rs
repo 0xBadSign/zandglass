@@ -16,7 +16,8 @@ use zandglass_core::KitError;
 use zandglass_wallet::installments;
 use zandglass_wallet::ops::{self, format_span, network_name, now, zec};
 use zandglass_wallet::{
-    coded, connect, default_url, Client, CodedError, Network, PlanStatus, Store, StoreError,
+    coded, connect, connect_any, default_urls, Client, CodedError, Network, PlanStatus, Store,
+    StoreError,
 };
 use zeroize::Zeroizing;
 
@@ -39,7 +40,7 @@ struct Cli {
     /// Base data directory (default: ~/.zandglass). The network name is appended.
     #[arg(long, global = true, env = "ZANDGLASS_HOME")]
     data_dir: Option<PathBuf>,
-    /// lightwalletd server URL (default: a public server for the network).
+    /// lightwalletd server URL (default: the first public server that answers).
     #[arg(long, global = true)]
     server: Option<String>,
     /// Allow plans above the 0.25 ZEC mainnet cap (the software is unaudited).
@@ -257,13 +258,21 @@ fn open_store(cli: &Cli, network: Network) -> Result<Store> {
     Store::open(&root, &passphrase(false)?)
 }
 
+/// Connects to --server, or else to the first public server that answers.
 async fn lightd(cli: &Cli, network: Network) -> Result<Client> {
-    let url = cli
-        .server
-        .clone()
-        .unwrap_or_else(|| default_url(network).to_string());
-    ops::require_secure_url(&url, "lightwalletd server")?;
-    connect(&url).await
+    match &cli.server {
+        Some(url) => {
+            ops::require_secure_url(url, "lightwalletd server")?;
+            connect(url).await
+        }
+        None => {
+            let urls: Vec<String> = default_urls(network)
+                .iter()
+                .map(|u| (*u).to_string())
+                .collect();
+            Ok(connect_any(&urls).await?.0)
+        }
+    }
 }
 
 fn warn_unaudited(network: Network) {
