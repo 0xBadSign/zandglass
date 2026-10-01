@@ -131,6 +131,14 @@ None yet.
 
 ## Session log (newest first)
 
+### 2026-10-01 (later): Redesign, clean URLs, rename to Zandglass, first deploy
+- Redesign of all pages (canvas sandglass, scroll story, spot-the-transaction, console layout for playground, heir and claim). Playwright 32/32, check.sh green (3231569).
+- Clean page addresses `/playground`, `/heir`, `/claim`; old `.html` addresses redirect (1375236, 6fa15eb).
+- Stray never-funded mainnet wallet seed removed; seed guard in check.sh (d67482c, D-015).
+- Product renamed to Zandglass (386b926, D-014).
+- Deploy (T3.3, partly): keeper built on the server as user `zandglass` (`/opt/zandglass`, systemd `zandglass-keeper` on 127.0.0.1:8787, hardened unit), web in `/opt/zandglass/web`, playground on testnet until O-5. cloudflared ingress for `zandglass.cash` and `www` added and validated; waiting for the owner to restart cloudflared and add the DNS CNAMEs (proxied) to the tunnel.
+- Not pushed yet: the push of these commits waits for the owner.
+
 ### 2026-09-30 (3): M0 build start
 - T0.1 scaffold (0ab0ccf), T0.2 toolchain, T0.3 dependencies (D-011), T0.4 connectivity (D-012) done. The GitHub private repo `0xnesQuit/zandglass` was created and pushed (O-1 done).
 - Spike A (Sonnet subagent, merged):
