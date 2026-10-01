@@ -13,6 +13,7 @@ use sandglass_core::heir::{generate_phrase, identity_from_phrase};
 use sandglass_core::kit::{self, Kit};
 use sandglass_core::mailbox::{ClaimLink, MailboxClient, MailboxError};
 use sandglass_core::KitError;
+use sandglass_wallet::installments;
 use sandglass_wallet::ops::{self, format_span, network_name, now, zec};
 use sandglass_wallet::{
     coded, connect, default_url, Client, CodedError, Network, PlanStatus, Store, StoreError,
@@ -87,11 +88,15 @@ enum Cmd {
         #[arg(long)]
         to: String,
     },
-    /// Heir side: open an unlocked kit and move the funds.
+    /// Heir or payee side: open unlocked kits and move the funds.
     Claim {
-        /// The `*.sandglass` kit file, or the claim link the owner sent you
-        /// (`https://.../claim.html#m=...&r=...`).
-        kit: String,
+        /// `*.sandglass` kit files, or claim links the owner sent you
+        /// (`https://.../claim.html#m=...&r=...`). Several are fine (installments).
+        kits: Vec<String>,
+        /// A text file with claim links or kit paths (the owner's
+        /// `<plan>-claim-links.txt` works as it is).
+        #[arg(long)]
+        links_file: Option<PathBuf>,
         /// File holding the heir's 24-word phrase.
         #[arg(long)]
         phrase_file: PathBuf,
@@ -101,7 +106,15 @@ enum Cmd {
         /// Wait until the kit unlocks instead of refusing.
         #[arg(long)]
         wait: bool,
+        /// Wait for every kit in unlock order and sweep each one when it
+        /// opens. A kit that turns out empty (a cancelled plan) is reported
+        /// and skipped. Needs --to.
+        #[arg(long)]
+        watch: bool,
     },
+    /// Installment plans.
+    #[command(subcommand)]
+    Installments(InstallmentsCmd),
     /// Kit tools.
     #[command(subcommand)]
     Kit(KitCmd),
@@ -118,11 +131,56 @@ enum HeirCmd {
 }
 
 #[derive(Subcommand)]
+enum InstallmentsCmd {
+    /// Send the funded funding vault into the installment vaults (one
+    /// ordinary transaction) and seal one kit per installment.
+    Split {
+        /// Plan id (prefix). Optional when only one plan is active.
+        plan: Option<String>,
+        /// Directory for the kit files and the claim-links file (default:
+        /// the plan's --out).
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+}
+
+#[derive(Subcommand)]
 enum PlanCmd {
+    /// Scheduled payments: N installments, each unlocking for the payee on
+    /// its due date; cancel sweeps the rest back.
+    Installments {
+        /// Payee code (age1...). Repeat for up to 3 payees; any one can claim.
+        #[arg(long = "payee")]
+        payees: Vec<String>,
+        /// ZEC the payee receives per installment (for example 0.5).
+        #[arg(long)]
+        amount: String,
+        /// Time between installments (for example 30d or 2m).
+        #[arg(long)]
+        every: String,
+        /// Number of installments.
+        #[arg(long)]
+        count: u32,
+        /// When the first installment unlocks: an RFC 3339 UTC time
+        /// (2026-12-01T09:00:00Z), or a delay after the split (10m, 1d).
+        /// Default: one period after the split.
+        #[arg(long)]
+        start: Option<String>,
+        /// A message for the payee, sealed into every kit.
+        #[arg(long)]
+        message: Option<String>,
+        /// Keeper URL: one mailbox per installment; the split writes all
+        /// claim links to <plan>-claim-links.txt.
+        #[arg(long)]
+        mailbox: Option<String>,
+        /// Directory for the kit files and the claim-links file.
+        #[arg(long, default_value = ".")]
+        out: PathBuf,
+    },
     /// A legacy plan: funds go to the heirs if the owner stops flipping.
     Legacy {
-        /// Heir code (age1...). Repeat for up to 3 heirs.
-        #[arg(long = "heir", required = true)]
+        /// Heir code (age1...). Repeat for up to 3 heirs; any one can claim.
+        #[arg(long = "heir")]
         heirs: Vec<String>,
         /// How long each kit stays locked, and how often to flip (for example 90d or 10m).
         #[arg(long)]
@@ -278,6 +336,7 @@ async fn run(cli: Cli) -> Result<()> {
             amount,
             out,
         }) => {
+            ops::check_heirs(heirs)?;
             warn_unaudited(network);
             let store = open_store(&cli, network)?;
             let new = ops::NewPlan {
@@ -311,6 +370,141 @@ async fn run(cli: Cli) -> Result<()> {
                 None => println!("\nGive the kit file to your heirs. Run `sandglass flip {}` before the unlock time to keep the funds yours.", c.plan.short_id()),
             }
         }
+        Cmd::Plan(PlanCmd::Installments {
+            payees,
+            amount,
+            every,
+            count,
+            start,
+            message,
+            mailbox,
+            out,
+        }) => {
+            let amount_zat = ops::parse_zec(amount)?;
+            let every_secs = ops::parse_duration(every)?;
+            let (start_at, start_after_secs) = match start {
+                Some(s) => installments::parse_start(s)?,
+                None => (None, every_secs),
+            };
+            installments::validate(payees, amount_zat, *count, start_at)?;
+            warn_unaudited(network);
+            let store = open_store(&cli, network)?;
+            let out_abs = std::path::absolute(out).unwrap_or_else(|_| out.clone());
+            let mut client = lightd(&cli, network).await?;
+            let c = installments::create_installments(
+                &store,
+                network,
+                &mut client,
+                installments::NewInstallments {
+                    payees: payees.clone(),
+                    amount_zat,
+                    every_secs,
+                    count: *count,
+                    start_at,
+                    start_after_secs,
+                    message: message.clone(),
+                    mailbox_url: mailbox.clone(),
+                    out_dir: Some(out_abs.display().to_string()),
+                },
+                cli.accept_unaudited,
+            )
+            .await?;
+            let id = c.plan.short_id().to_string();
+            println!(
+                "Installment plan {} created on {}: {} installments of {} ZEC.",
+                c.plan.id,
+                network_name(network),
+                count,
+                zec(amount_zat)
+            );
+            println!(
+                "Each installment vault will hold {} ZEC: the {} ZEC installment plus {} ZEC for the payee's sweep fee (ZIP 317, one input), so the payee receives exactly {} ZEC.",
+                zec(amount_zat + installments::PAYEE_FEE_ZAT),
+                zec(amount_zat),
+                zec(installments::PAYEE_FEE_ZAT),
+                zec(amount_zat)
+            );
+            println!(
+                "\nStep 1. Fund the funding vault with {} ZEC ({} installments plus the fees) from any Zcash wallet:\n",
+                zec(c.required),
+                count
+            );
+            println!("  {}\n", c.uri);
+            println!("Funding address: {}", c.address);
+            println!(
+                "\nStep 2. When the funds have confirmed, run `sandglass installments split {id}`. \
+                 It sends one ordinary transaction into the {count} installment vaults and writes the kits{}.",
+                if mailbox.is_some() { " and the claim-links file" } else { "" }
+            );
+            match &start_at {
+                Some(at) => println!(
+                    "The first installment unlocks at {}, then every {}.",
+                    unix_to_text(*at),
+                    format_span(every_secs)
+                ),
+                None => println!(
+                    "The schedule starts at the split: the first installment unlocks {} later, then every {}.",
+                    format_span(start_after_secs),
+                    format_span(every_secs)
+                ),
+            }
+            println!("`sandglass cancel {id} --to <address>` sweeps everything that is left back to you.");
+        }
+        Cmd::Installments(InstallmentsCmd::Split { plan, out }) => {
+            warn_unaudited(network);
+            let store = open_store(&cli, network)?;
+            let p = installments::require_installment_plan(&store, plan.as_deref())?;
+            let kit_dir = match out {
+                Some(o) => o.clone(),
+                None => PathBuf::from(
+                    p.installments
+                        .as_ref()
+                        .and_then(|s| s.out_dir.clone())
+                        .unwrap_or_else(|| ".".into()),
+                ),
+            };
+            let mut client = lightd(&cli, network).await?;
+            let r = installments::split(
+                &store,
+                network,
+                &mut client,
+                &p.id,
+                &kit_dir,
+                cli.accept_unaudited,
+            )
+            .await?;
+            let set = r.plan.installments.as_ref().expect("installment plan");
+            println!(
+                "Split plan {}: one transaction funded {} installment vaults of {} ZEC each ({} ZEC for the payee, {} ZEC for the payee's sweep fee).",
+                r.plan.short_id(),
+                set.count,
+                zec(set.vault_zat()),
+                zec(set.amount_zat),
+                zec(set.fee_zat)
+            );
+            println!("  txid {}", r.tx.txid);
+            for l in &r.lines {
+                println!(
+                    "  installment {} of {}: unlocks {} ({}), kit {}",
+                    l.index,
+                    set.count,
+                    unix_to_text(l.unlock_time),
+                    time_left(l.unlock_time),
+                    kit_dir.join(&l.kit_file).display()
+                );
+            }
+            match &r.links_path {
+                Some(p) => println!(
+                    "\nThe kits were uploaded to the keeper (one mailbox each). Send the payee this file with all claim links: {}\nThe links open nothing without the payee's phrase and the unlock time. The payee runs: sandglass claim --watch --links-file <file> --phrase-file <phrase file> --to <address>",
+                    p.display()
+                ),
+                None => println!("\nGive the kit files to the payee (any order; each opens at its own time)."),
+            }
+            println!(
+                "Run `sandglass cancel {} --to <address>` to stop the schedule and take back what is left.",
+                r.plan.short_id()
+            );
+        }
         Cmd::Receive { plan } => {
             let store = open_store(&cli, network)?;
             let plan = store.find_plan(plan.as_deref())?;
@@ -330,6 +524,19 @@ async fn run(cli: Cli) -> Result<()> {
             let mut client = lightd(&cli, network).await?;
             for plan in store.plans()? {
                 if plan.status != PlanStatus::Active {
+                    continue;
+                }
+                if plan.kind == "installments" {
+                    for (label, total, spendable, height) in
+                        installments::sync_all(&store, network, &mut client, &plan).await?
+                    {
+                        println!(
+                            "Plan {} {label}: synced to height {height}. Balance {} ZEC ({} confirmed).",
+                            plan.short_id(),
+                            zec(total),
+                            zec(spendable)
+                        );
+                    }
                     continue;
                 }
                 let mut vault = ops::open_vault(&store, network, plan.current()?)?;
@@ -356,6 +563,10 @@ async fn run(cli: Cli) -> Result<()> {
                 println!("No plans yet. Create one with `sandglass plan legacy`.");
             }
             for plan in plans {
+                if plan.kind == "installments" {
+                    installments_status(&store, network, &plan, client.as_mut()).await?;
+                    continue;
+                }
                 let rec = plan.current()?;
                 println!(
                     "Plan {} ({}, {}) {}",
@@ -450,13 +661,33 @@ async fn run(cli: Cli) -> Result<()> {
             let mut client = lightd(&cli, network).await?;
             let r = ops::cancel(&store, network, &mut client, plan, to).await?;
             println!(
-                "Plan {} cancelled. Moved {} ZEC to {}.",
+                "Plan {} cancelled. Moved {} ZEC to {} ({} ZEC was in the vaults; network fees {} ZEC).",
                 r.plan.short_id(),
+                zec(r.moved.saturating_sub(r.sweeps.iter().filter_map(|s| s.fee).sum::<u64>())),
+                to,
                 zec(r.moved),
-                to
+                zec(r.sweeps.iter().filter_map(|s| s.fee).sum::<u64>())
             );
             print_txids(&r.sweeps);
-            if r.plan.mailbox_id.is_some() {
+            if r.plan.kind == "installments" {
+                if !r.already_claimed.is_empty() {
+                    let list: Vec<String> = r.already_claimed.iter().map(u32::to_string).collect();
+                    println!(
+                        "Installment(s) {} were already claimed by the payee (their claim is on the network), so there was nothing to take back.",
+                        list.join(", ")
+                    );
+                }
+                println!("Every installment vault and the funding vault were emptied; kits not yet claimed now open empty vaults.");
+                match &r.mailbox_error {
+                    None if r.plan.mailbox_url.is_some() => {
+                        println!("The keeper mailboxes were deleted.")
+                    }
+                    None => {}
+                    Some(e) => eprintln!(
+                        "WARNING: some keeper mailboxes could not be deleted ({e}); the keeper removes them after 180 days."
+                    ),
+                }
+            } else if r.plan.mailbox_id.is_some() {
                 match &r.mailbox_error {
                     None => println!("The keeper mailbox was deleted."),
                     Some(e) => eprintln!(
@@ -466,11 +697,37 @@ async fn run(cli: Cli) -> Result<()> {
             }
         }
         Cmd::Claim {
-            kit: kit_path,
+            kits,
+            links_file,
             phrase_file,
             to,
             wait,
-        } => claim(&cli, kit_path, phrase_file, to.as_deref(), *wait).await?,
+            watch,
+        } => {
+            let mut sources = kits.clone();
+            if let Some(f) = links_file {
+                sources.extend(read_links_file(f)?);
+            }
+            if sources.is_empty() {
+                return Err(anyhow!(
+                    "give at least one kit file or claim link (or --links-file)"
+                ));
+            }
+            if *watch && to.is_none() {
+                return Err(anyhow!(
+                    "--watch sweeps each kit as it unlocks, so it needs --to <address>"
+                ));
+            }
+            claim_all(
+                &cli,
+                &sources,
+                phrase_file,
+                to.as_deref(),
+                *wait || *watch,
+                *watch,
+            )
+            .await?
+        }
         Cmd::Kit(KitCmd::Inspect { file }) => inspect(file)?,
     }
     Ok(())
@@ -513,20 +770,158 @@ fn write_secret_file(path: &Path, text: &str) -> Result<()> {
     Ok(())
 }
 
+/// Claim links and kit paths found in a text file (other words are ignored).
+fn read_links_file(path: &Path) -> Result<Vec<String>> {
+    let text = std::fs::read_to_string(path)
+        .with_context(|| format!("reading {}", path.display()))
+        .map_err(|e| coded("kit_invalid", format!("{e:#}")))?;
+    Ok(text
+        .split_whitespace()
+        .filter(|t| ClaimLink::parse(t).is_some() || Path::new(t).is_file())
+        .map(str::to_string)
+        .collect())
+}
+
+fn load_kit(source: &str) -> Result<Kit> {
+    match ClaimLink::parse(source) {
+        Some(link) if !Path::new(source).exists() => {
+            let text = MailboxClient::new(&link.base).get(&link.id, &link.read_token)?;
+            Ok(Kit::from_json(&text)?)
+        }
+        _ => read_kit(Path::new(source)),
+    }
+}
+
+/// Claims every kit in unlock order. With `watch`, a kit that fails (for
+/// example an empty vault after a cancel) is reported and the next one is
+/// still waited for; the exit status is then non-zero.
+async fn claim_all(
+    cli: &Cli,
+    sources: &[String],
+    phrase_file: &Path,
+    to: Option<&str>,
+    wait: bool,
+    watch: bool,
+) -> Result<()> {
+    let mut kits = Vec::new();
+    for s in sources {
+        kits.push((s.clone(), load_kit(s)?));
+    }
+    kits.sort_by_key(|(_, k)| k.unlock_time());
+    let total = kits.len();
+    let mut failed = 0usize;
+    for (i, (source, kit)) in kits.iter().enumerate() {
+        if total > 1 {
+            match kit.sequence {
+                Some(s) => println!(
+                    "\n== Kit {} of {total}: installment {} of {} ==",
+                    i + 1,
+                    s.index,
+                    s.count
+                ),
+                None => println!("\n== Kit {} of {total} ==", i + 1),
+            }
+        }
+        match claim(cli, kit, phrase_file, to, wait).await {
+            Ok(()) => {}
+            Err(e) if watch => {
+                failed += 1;
+                match error_code(&e) {
+                    Some(code) => eprintln!("error[{code}]: {source}: {e:#}"),
+                    None => eprintln!("error: {source}: {e:#}"),
+                }
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    if failed > 0 {
+        return Err(anyhow!("{failed} of {total} kits could not be claimed"));
+    }
+    Ok(())
+}
+
+async fn installments_status(
+    store: &Store,
+    network: Network,
+    plan: &sandglass_wallet::Plan,
+    mut client: Option<&mut Client>,
+) -> Result<()> {
+    let set = plan
+        .installments
+        .as_ref()
+        .ok_or_else(|| anyhow!("plan {} has no installment data", plan.short_id()))?;
+    println!(
+        "Plan {} (installments, {}) {}",
+        plan.id,
+        plan.network,
+        match plan.status {
+            PlanStatus::Active => "active",
+            PlanStatus::Cancelled => "cancelled",
+        }
+    );
+    println!("  payees:  {}", plan.heirs.len());
+    println!(
+        "  amount:  {} ZEC per installment x {}, every {} (each vault holds {} ZEC: the amount plus {} ZEC for the payee's sweep fee)",
+        zec(set.amount_zat),
+        set.count,
+        format_span(set.every_secs),
+        zec(set.vault_zat()),
+        zec(set.fee_zat)
+    );
+    if plan.status == PlanStatus::Cancelled {
+        return Ok(());
+    }
+    let mut funding = ops::open_vault(store, network, plan.current()?)?;
+    if let Some(c) = client.as_mut() {
+        funding.sync(c).await?;
+    }
+    match funding.balances() {
+        Ok(b) => println!(
+            "  funding: {} ZEC ({} confirmed), as of height {}",
+            zec(b.total()),
+            zec(b.spendable()),
+            b.fully_scanned
+        ),
+        Err(_) => println!("  funding: not synced yet (run `sandglass status --sync`)"),
+    }
+    match &set.split_txid {
+        None => println!(
+            "  split:   not done. Fund the vault ({} ZEC needed), then run `sandglass installments split {}`.",
+            zec(installments::required_funding(set.amount_zat, set.count)),
+            plan.short_id()
+        ),
+        Some(txid) => println!("  split:   done, txid {txid}"),
+    }
+    if set.items.is_empty() {
+        return Ok(());
+    }
+    let rows = installments::installment_rows(store, network, plan, client).await?;
+    for r in rows {
+        let state = match r.state {
+            installments::InstallmentState::Locked => "locked",
+            installments::InstallmentState::Unlocked => "unlocked (the payee can claim now)",
+            installments::InstallmentState::ClaimedOrEmpty => "claimed or empty",
+            installments::InstallmentState::Unknown => "unknown (run `sandglass status --sync`)",
+        };
+        println!(
+            "  {} of {}: {} ZEC, unlocks {} ({}), {state}",
+            r.index,
+            set.count,
+            zec(r.amount_zat),
+            unix_to_text(r.unlock_time),
+            time_left(r.unlock_time)
+        );
+    }
+    Ok(())
+}
+
 async fn claim(
     cli: &Cli,
-    source: &str,
+    kit: &Kit,
     phrase_file: &Path,
     to: Option<&str>,
     wait: bool,
 ) -> Result<()> {
-    let kit = match ClaimLink::parse(source) {
-        Some(link) if !Path::new(source).exists() => {
-            let text = MailboxClient::new(&link.base).get(&link.id, &link.read_token)?;
-            Kit::from_json(&text)?
-        }
-        _ => read_kit(Path::new(source))?,
-    };
     let kit_net = ops::wallet_network(kit.network);
     if let Some(n) = cli.network {
         let asked = match n {
@@ -610,16 +1005,43 @@ async fn claim(
                 &payload.plan[..8],
                 now()
             ));
-            let (sweeps, moved) = ops::claim_sweep(
-                kit_net,
-                &mut client,
-                Zeroizing::new(payload.vault_seed.clone()),
-                payload.birthday_height,
-                addr,
-                &work,
-            )
-            .await?;
-            println!("Moved {} ZEC to {addr}.", zec(moved));
+            // When the caller is waiting, the unlock can come before the funds
+            // are spendable (the owner's split still confirming): keep trying.
+            let started = now();
+            let (sweeps, moved) = loop {
+                let attempt = ops::claim_sweep(
+                    kit_net,
+                    &mut client,
+                    Zeroizing::new(payload.vault_seed.clone()),
+                    payload.birthday_height,
+                    addr,
+                    &work,
+                )
+                .await;
+                match attempt {
+                    Ok(r) => break r,
+                    Err(e) if wait => {
+                        let patience = match error_code(&e) {
+                            Some("insufficient_funds") => 1800,
+                            Some("vault_empty") => 120,
+                            _ => 0,
+                        };
+                        if patience == 0 || now().saturating_sub(started) >= patience {
+                            return Err(e);
+                        }
+                        println!("The funds are not spendable yet ({e}); trying again in 20 s ...");
+                        tokio::time::sleep(Duration::from_secs(20)).await;
+                    }
+                    Err(e) => return Err(e),
+                }
+            };
+            let fee: u64 = sweeps.iter().filter_map(|s| s.fee).sum();
+            println!(
+                "Moved {} ZEC to {addr} (the vault held {} ZEC; network fee {} ZEC).",
+                zec(moved.saturating_sub(fee)),
+                zec(moved),
+                zec(fee)
+            );
             print_txids(&sweeps);
         }
     }

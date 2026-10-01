@@ -61,7 +61,7 @@ Details, residual metadata and trust assumptions: [docs/PRIVACY.md](docs/PRIVACY
 
 | Real | Mock or limited |
 |---|---|
-| Ordinary Zcash transactions for funding, flips and claims (testnet evidence is logged; mainnet evidence is pending, see [evidence](docs/evidence/EVIDENCE.md)); drand quicknet timelock encryption; age X25519 heir keys; the blind mailbox; kits that open with the reference `tle` and `age` tools (`scripts/interop-kit.sh`) | In the hosted playground the server plays the owner and holds a tiny demo vault (the heir key is real and stays in your browser); playground timers are minutes, not months; unaudited, with a 0.25 ZEC mainnet cap; installments (`plan installments`) are in progress and not available yet; reminders and Tor are not implemented; restoring a claimed vault in a third-party wallet is described but not yet logged as evidence |
+| Ordinary Zcash transactions for funding, flips and claims (testnet evidence is logged; mainnet evidence is pending, see [evidence](docs/evidence/EVIDENCE.md)); drand quicknet timelock encryption; age X25519 heir keys; the blind mailbox; kits that open with the reference `tle` and `age` tools (`scripts/interop-kit.sh`) | In the hosted playground the server plays the owner and holds a tiny demo vault (the heir key is real and stays in your browser); playground timers are minutes, not months; unaudited, with a 0.25 ZEC mainnet cap; installments are tested on testnet only; reminders and Tor are not implemented; restoring a claimed vault in a third-party wallet is described but not yet logged as evidence |
 
 ## Quickstart (WSL or Linux)
 

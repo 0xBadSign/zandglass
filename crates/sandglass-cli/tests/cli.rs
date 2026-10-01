@@ -176,6 +176,7 @@ fn claim_link_fetches_the_kit_from_the_keeper() {
             unlock_time: 1,
             created: 1,
         }],
+        installments: None,
     };
     upload_kit(&plan, &kit).unwrap();
     let link = ClaimLink::new(&base, &created).to_string();

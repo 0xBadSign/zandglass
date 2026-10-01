@@ -11,12 +11,17 @@ use rand::rngs::OsRng;
 use rusqlite::Connection;
 use secrecy::SecretVec;
 use zcash_address::ZcashAddress;
-use zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelectorError;
+use zcash_client_backend::data_api::wallet::input_selection::{
+    GreedyInputSelector, GreedyInputSelectorError, SpendPolicy,
+};
+use zcash_client_backend::fees::{
+    standard::SingleOutputChangeStrategy, DustOutputPolicy, StandardFeeRule,
+};
 use zcash_client_backend::{
     data_api::{
         wallet::{
-            create_proposed_transactions, propose_send_max_transfer, ConfirmationsPolicy,
-            SpendingKeys,
+            create_proposed_transactions, propose_send_max_transfer, propose_transfer,
+            ConfirmationsPolicy, SpendingKeys,
         },
         AccountBirthday, MaxSpendMode, WalletRead, WalletWrite,
     },
@@ -345,6 +350,96 @@ impl Vault {
         )
         .map_err(|e| anyhow!("building transaction failed: {e:?}"))?;
 
+        self.broadcast(client, txids, target_height, anchor_height)
+            .await
+    }
+
+    /// Sends one ordinary transaction that pays every `(address, zatoshi)`
+    /// pair (the installment split). The change returns to this vault.
+    /// Uses `propose_transfer` with the ZIP 317 fee and `OvkPolicy::Discard`.
+    pub async fn send_many(
+        &mut self,
+        client: &mut Client,
+        payments: &[(String, u64)],
+    ) -> Result<Vec<SweepReport>> {
+        let mut list = Vec::new();
+        for (addr, zat) in payments {
+            zcash_keys::address::Address::decode(&self.network, addr)
+                .ok_or_else(|| anyhow!("recipient is not a valid address for this network"))?;
+            let to: ZcashAddress = addr
+                .parse()
+                .map_err(|e| anyhow!("recipient parse: {e:?}"))?;
+            let amount = zcash_protocol::value::Zatoshis::from_u64(*zat)
+                .map_err(|e| anyhow!("amount: {e:?}"))?;
+            list.push(
+                zip321::Payment::new(to, Some(amount), None, None, None, vec![])
+                    .map_err(|e| anyhow!("payment: {e:?}"))?,
+            );
+        }
+        let request =
+            zip321::TransactionRequest::new(list).map_err(|e| anyhow!("request: {e:?}"))?;
+
+        let policy = ConfirmationsPolicy::default();
+        let (target, anchor) = self
+            .db
+            .get_target_and_anchor_heights(policy.trusted())
+            .map_err(|e| anyhow!("reading heights: {e:?}"))?
+            .ok_or_else(|| anyhow!("wallet has not been synced yet"))?;
+        let selector = GreedyInputSelector::<Db>::new();
+        let change = SingleOutputChangeStrategy::<Db>::new(
+            StandardFeeRule::Zip317,
+            None,
+            ShieldedPool::Orchard,
+            DustOutputPolicy::default(),
+        );
+        let proposal =
+            propose_transfer::<_, _, _, _, zcash_client_sqlite::wallet::commitment_tree::Error>(
+                &mut self.db,
+                &self.network,
+                self.account,
+                &selector,
+                &change,
+                request,
+                policy,
+                &SpendPolicy::default(),
+                None,
+                None,
+            )
+            .map_err(|e| anyhow!("proposal failed: {e:?}"))?;
+
+        let seed = Zeroizing::new(parse_phrase(&self.seed)?.to_seed(""));
+        let usk = UnifiedSpendingKey::from_seed(&self.network, &seed[..], zip32::AccountId::ZERO)
+            .map_err(|e| anyhow!("deriving spending key: {e:?}"))?;
+        let prover = LocalTxProver::bundled();
+        let txids = create_proposed_transactions::<
+            _,
+            _,
+            GreedyInputSelectorError,
+            _,
+            <StandardFeeRule as FeeRule>::Error,
+            _,
+        >(
+            &mut self.db,
+            &self.network,
+            &prover,
+            &prover,
+            &SpendingKeys::from_unified_spending_key(usk),
+            OvkPolicy::Discard,
+            &proposal,
+            None,
+        )
+        .map_err(|e| anyhow!("building transaction failed: {e:?}"))?;
+        self.broadcast(client, txids, u32::from(target), u32::from(anchor))
+            .await
+    }
+
+    async fn broadcast(
+        &mut self,
+        client: &mut Client,
+        txids: impl IntoIterator<Item = zcash_primitives::transaction::TxId>,
+        target_height: u32,
+        anchor_height: u32,
+    ) -> Result<Vec<SweepReport>> {
         let mut reports = Vec::new();
         for txid in txids {
             let tx = self

@@ -55,8 +55,8 @@ Live state of the project. The agent updates it at the end of every work unit, n
 ### M2 Keeper, heir page, installments (10-11 to 10-16)
 - [x] T2.1 Keeper mailbox (axum + SQLite, token hashes, no IP logs, CLI --mailbox and claim links)
 - [x] T2.2 Heir page: become-an-heir and claim pages; Playwright proves no secret leaves the page; axe clean
-- [ ] T2.3 Installments (split, payee auto-claim, cancel)
-- [ ] T2.4 Multiple heirs (1 to 3)
+- [x] T2.3 Installments (split, payee auto-claim `claim --watch`, cancel) with testnet evidence
+- [x] T2.4 Multiple heirs (1 to 3), testnet evidence
 
 ### M3 Mainnet playground and deployment (10-17 to 10-21)
 - [x] T3.1 Playground backend (judge code, caps, float; offline-tested; live run pending funded float)
