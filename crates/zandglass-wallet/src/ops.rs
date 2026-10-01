@@ -189,7 +189,7 @@ pub(crate) fn random_id() -> String {
 }
 
 pub(crate) fn write_kit_file(dir: &Path, name: &str, kit: &Kit) -> Result<PathBuf> {
-    fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+    crate::fsutil::create_private_dir(dir)?;
     let path = dir.join(name);
     if path.exists() {
         return Err(anyhow!("{} already exists", path.display()));
@@ -432,6 +432,7 @@ pub async fn create_plan(
         }],
         installments: None,
         pending: None,
+        archived: Vec::new(),
     };
     let kit = make_kit(
         &plan,
@@ -606,16 +607,44 @@ pub(crate) fn definitely_unsent(e: &anyhow::Error) -> bool {
         || msg.contains("broadcast rejected")
 }
 
-/// Drops a pending epoch that never received funds: its vault directory, its
-/// kit file (only when this call created it) and the plan's pending record.
+/// Sets a pending epoch aside. What lightwalletd shows cannot be fully
+/// trusted, so nothing is ever deleted: the epoch's vault directory (with its
+/// encrypted seed) and its kit file (only when this call created it) move to
+/// `<store>/archive/<plan>-e<epoch>-<unix time>/`, and the epoch is recorded
+/// in the plan's `archived` list.
 fn abandon_pending(store: &Store, plan: &mut Plan, kit_path: Option<&Path>) {
-    if let Some(p) = plan.pending.take() {
-        let _ = fs::remove_dir_all(store.path(&p.dir));
-        if let Some(k) = kit_path {
-            let _ = fs::remove_file(k);
+    let Some(p) = plan.pending.clone() else {
+        return;
+    };
+    let archive = store
+        .root()
+        .join("archive")
+        .join(format!("{}-e{}-{}", plan.id, p.epoch, now()));
+    let src = store.path(&p.dir);
+    let moved = (|| -> Result<()> {
+        crate::fsutil::create_private_dir(&archive)?;
+        if src.exists() {
+            let dst = archive.join("vault");
+            fs::rename(&src, &dst).with_context(|| format!("archiving {}", src.display()))?;
         }
-        let _ = store.put_plan(plan);
+        if let Some(k) = kit_path.filter(|k| k.exists()) {
+            let name = k.file_name().map_or_else(
+                || "kit.zandglass".into(),
+                |n| n.to_string_lossy().into_owned(),
+            );
+            let data = fs::read(k).with_context(|| format!("reading {}", k.display()))?;
+            crate::fsutil::write_new_private(&archive.join(name), &data)?;
+            fs::remove_file(k).with_context(|| format!("removing {}", k.display()))?;
+        }
+        Ok(())
+    })();
+    if moved.is_err() {
+        // Keep the epoch pending rather than lose track of a seed.
+        return;
     }
+    plan.pending = None;
+    plan.archived.push(p);
+    let _ = store.put_plan(plan);
 }
 
 /// Handles a failed sweep. A definite pre-broadcast failure cleans the new
@@ -647,7 +676,7 @@ pub enum PendingOutcome {
     /// The funds are in the pending epoch, which is now the current one.
     Adopted(Box<FlipReport>),
     /// The sweep never happened (the old vault is spendable again after the
-    /// transaction expired); the pending epoch was removed.
+    /// transaction expired); the pending epoch was archived, not deleted.
     Discarded,
     /// The outcome is not known yet; the message says what to do.
     Waiting(String),
@@ -911,6 +940,7 @@ mod tests {
             epochs: vec![rec(1)],
             installments: None,
             pending: Some(rec(2)),
+            archived: Vec::new(),
         };
         store.put_plan(&plan).unwrap();
         store.write_seed(&rec(2).dir, "seed words").unwrap();
@@ -1010,6 +1040,28 @@ mod tests {
         assert!(!kit.exists());
         assert!(plan.pending.is_none());
         assert!(store.find_plan(Some(ID)).unwrap().pending.is_none());
+        // Nothing is deleted: the seed and the kit moved to the archive.
+        let saved = store.find_plan(Some(ID)).unwrap();
+        assert_eq!(saved.archived.len(), 1);
+        assert_eq!(saved.archived[0].epoch, 2);
+        let entry = fs::read_dir(store.root().join("archive"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        let name = entry.file_name().unwrap().to_string_lossy().into_owned();
+        assert!(name.starts_with(&format!("{ID}-e2-")), "{name}");
+        assert!(entry.join("vault/seed.age").exists());
+        assert!(entry.join("kit-e2.zandglass").exists());
+        // The vault path is free again for a later epoch 2.
+        assert_eq!(
+            store
+                .read_seed(&format!("archive/{name}/vault"))
+                .unwrap()
+                .as_str(),
+            "seed words"
+        );
     }
 
     #[test]

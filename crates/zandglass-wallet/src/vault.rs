@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context, Result};
 use bip0039::{Count, English, Mnemonic};
-use rand::{rngs::OsRng, Rng};
+use rand::rngs::OsRng;
 use rusqlite::Connection;
 use secrecy::SecretVec;
 use zcash_address::ZcashAddress;
@@ -42,13 +42,13 @@ const DB_FILE: &str = "wallet.sqlite";
 const SYNC_BATCH_SIZE: u32 = 1000;
 /// Birthday offset below the chain tip for freshly created vaults.
 pub const NEW_VAULT_BIRTHDAY_LOOKBACK: u32 = 100;
-/// Extra random lookback (0 to this many blocks) added to the birthday.
-pub const NEW_VAULT_BIRTHDAY_JITTER: u32 = 200;
+/// Birthdays are rounded down to a multiple of this many blocks.
+pub const NEW_VAULT_BIRTHDAY_GRID: u32 = 10_000;
 
-/// `tip - 100 - extra`, never below 1.
-fn jittered_birthday(tip: u32, extra: u32) -> u32 {
-    tip.saturating_sub(NEW_VAULT_BIRTHDAY_LOOKBACK + extra)
-        .max(1)
+/// `tip - 100` rounded down to a multiple of 10,000, never below 1.
+fn grid_birthday(tip: u32) -> u32 {
+    let h = tip.saturating_sub(NEW_VAULT_BIRTHDAY_LOOKBACK);
+    (h - h % NEW_VAULT_BIRTHDAY_GRID).max(1)
 }
 
 /// The pool for change when the wallet's own flows do not decide it (the
@@ -166,18 +166,17 @@ impl Vault {
         u32::try_from(tip).context("chain tip out of range")
     }
 
-    /// The birthday height for a vault created now: `tip - 100 - random(0..=200)`.
+    /// The birthday height for a vault created now: `tip - 100`, rounded down
+    /// to a multiple of 10,000 blocks.
     ///
-    /// The jitter keeps the first block a vault's wallet asks the server for
-    /// from being a fixed offset below the tip, so two vaults (or a vault and
-    /// its next epoch) cannot be linked by an identical start height. The
-    /// birthday stays below the tip, hence below the funding height.
+    /// The first block a vault's wallet asks the server for must not be an
+    /// unusual exact height: the heir asks for it again, so it would link the
+    /// owner and the heir at lightwalletd. A coarse grid is shared by many
+    /// wallets' checkpoints. The birthday stays at least 100 blocks below the
+    /// tip, hence below the funding height; the cost is a longer first sync.
     pub async fn new_birthday(client: &mut Client) -> Result<u32> {
         let tip = Self::chain_tip(client).await?;
-        Ok(jittered_birthday(
-            tip,
-            OsRng.gen_range(0..=NEW_VAULT_BIRTHDAY_JITTER),
-        ))
+        Ok(grid_birthday(tip))
     }
 
     /// Creates the wallet database for `phrase` in `dir` (which must not hold a
@@ -547,12 +546,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn birthday_is_jittered_below_tip() {
-        assert_eq!(jittered_birthday(10_000, 0), 9_900);
-        assert_eq!(jittered_birthday(10_000, 200), 9_700);
-        assert_eq!(jittered_birthday(50, 200), 1);
-        for extra in 0..=NEW_VAULT_BIRTHDAY_JITTER {
-            assert!(jittered_birthday(10_000, extra) < 10_000 - 99);
+    fn birthday_is_on_a_coarse_grid_below_tip() {
+        assert_eq!(grid_birthday(10_100), 10_000);
+        assert_eq!(grid_birthday(10_099), 1);
+        assert_eq!(grid_birthday(3_123_456), 3_120_000);
+        assert_eq!(grid_birthday(50), 1);
+        for tip in [10_100, 12_345, 99_999, 3_000_000, 3_000_099, 3_000_100] {
+            let b = grid_birthday(tip);
+            assert!(b + 100 <= tip, "{tip} -> {b}");
+            assert!(b % NEW_VAULT_BIRTHDAY_GRID == 0 || b == 1);
         }
     }
 

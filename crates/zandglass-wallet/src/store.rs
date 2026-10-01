@@ -2,8 +2,9 @@
 //!
 //! ```text
 //! <root>/
-//!   keycheck.age          passphrase check (age scrypt)
-//!   plans.json            plans and vault epochs (no secrets)
+//!   keycheck.age          passphrase check and plans MAC key (age scrypt)
+//!   plans.json            plans and vault epochs (no secrets), HMAC-tagged
+//!   archive/<plan>-e<N>-<time>/   epochs set aside by a flip (never deleted)
 //!   vaults/<plan>/e<N>/
 //!     seed.age            the vault seed, age passphrase (scrypt) encrypted
 //!     wallet.sqlite       the vault's light-client wallet (viewing keys only)
@@ -22,6 +23,11 @@ use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
+use hmac::{Hmac, Mac};
+use rand::{rngs::OsRng, RngCore};
+use sha2::Sha256;
+
+use crate::error::coded;
 use crate::fsutil::{create_private_dir, write_private_atomic as write_private};
 
 /// The plan file format version.
@@ -31,7 +37,11 @@ pub const DEFAULT_WORK_FACTOR: u8 = 18;
 /// Largest scrypt work factor accepted when reading our own files.
 const MAX_WORK_FACTOR: u8 = 22;
 const KEYCHECK_FILE: &str = "keycheck.age";
-const KEYCHECK_TEXT: &str = "zandglass-store-v1";
+/// Older stores: a fixed text, no plans authentication.
+const KEYCHECK_V1: &str = "zandglass-store-v1";
+/// Current stores: this line, then the hex plans MAC key.
+const KEYCHECK_V2: &str = "zandglass-store-v2";
+const MAC_CONTEXT: &[u8] = b"zandglass-plans-v1\n";
 const PLANS_FILE: &str = "plans.json";
 const SEED_FILE: &str = "seed.age";
 
@@ -125,6 +135,11 @@ pub struct Plan {
     /// until its balance has been checked: see `ops::adopt_pending`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending: Option<EpochRecord>,
+    /// Pending epochs that were set aside after a failed or unconfirmed flip.
+    /// Their vault directory and kit moved to `archive/` in the store and are
+    /// never deleted automatically.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub archived: Vec<EpochRecord>,
 }
 
 /// One installment vault of an installment plan.
@@ -203,13 +218,42 @@ impl Plan {
 struct PlansFile {
     version: u32,
     plans: Vec<Plan>,
+    /// Hex HMAC-SHA256 over the compact JSON of `version` and `plans`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    mac: Option<String>,
 }
+
+/// The bytes the plans MAC covers.
+#[derive(Serialize)]
+struct PlansBody<'a> {
+    version: u32,
+    plans: &'a [Plan],
+}
+
+type HmacSha256 = Hmac<Sha256>;
 
 /// An opened store (passphrase verified).
 pub struct Store {
     root: PathBuf,
     passphrase: SecretString,
     work_factor: u8,
+    /// Random key that authenticates `plans.json`. It lives inside the
+    /// passphrase-encrypted keycheck file, so only the passphrase holder can
+    /// produce a valid tag.
+    mac_key: Zeroizing<Vec<u8>>,
+}
+
+fn tampered() -> anyhow::Error {
+    coded(
+        "store_tampered",
+        "plans.json does not match its authentication tag: the file was changed outside \
+         Zandglass (or is damaged). Do not flip or create plans until you have checked it; \
+         restore it from a backup you trust.",
+    )
+}
+
+fn keycheck_text(key: &[u8]) -> String {
+    format!("{KEYCHECK_V2}\n{}", hex::encode(key))
 }
 
 impl Store {
@@ -227,15 +271,23 @@ impl Store {
             bail!("the passphrase must not be empty");
         }
         create_private_dir(root)?;
+        let mut key = vec![0u8; 32];
+        OsRng.fill_bytes(&mut key);
         let store = Self {
             root: root.to_path_buf(),
             passphrase: SecretString::from(passphrase.to_string()),
             work_factor,
+            mac_key: Zeroizing::new(key),
         };
-        let check = store.encrypt(KEYCHECK_TEXT.as_bytes())?;
-        write_private(&root.join(KEYCHECK_FILE), &check)?;
+        store.write_keycheck()?;
         store.save_plans(&[])?;
         Ok(store)
+    }
+
+    fn write_keycheck(&self) -> Result<()> {
+        let text = Zeroizing::new(keycheck_text(&self.mac_key));
+        let check = self.encrypt(text.as_bytes())?;
+        write_private(&self.root.join(KEYCHECK_FILE), &check)
     }
 
     /// Opens an existing store and verifies the passphrase.
@@ -244,17 +296,53 @@ impl Store {
         if !path.exists() {
             return Err(StoreError::NotInitialised(root.display().to_string()).into());
         }
-        let store = Self {
+        let mut store = Self {
             root: root.to_path_buf(),
             passphrase: SecretString::from(passphrase.to_string()),
             work_factor: DEFAULT_WORK_FACTOR,
+            mac_key: Zeroizing::new(Vec::new()),
         };
         let data = fs::read(&path).with_context(|| format!("reading {}", path.display()))?;
         let text = store.decrypt(&data)?;
-        if text.as_slice() != KEYCHECK_TEXT.as_bytes() {
-            return Err(StoreError::WrongPassphrase.into());
+        if text.as_slice() == KEYCHECK_V1.as_bytes() {
+            // An older store has no plans tag yet: add the key and tag the
+            // current plans file once.
+            let mut key = vec![0u8; 32];
+            OsRng.fill_bytes(&mut key);
+            store.mac_key = Zeroizing::new(key);
+            let plans = store.read_plans_unchecked()?;
+            store.write_keycheck()?;
+            store.save_plans(&plans)?;
+            return Ok(store);
         }
+        let text = String::from_utf8_lossy(&text).into_owned();
+        let key = text
+            .strip_prefix(KEYCHECK_V2)
+            .and_then(|r| r.strip_prefix('\n'))
+            .and_then(|h| hex::decode(h).ok())
+            .filter(|k| k.len() == 32)
+            .ok_or(StoreError::WrongPassphrase)?;
+        store.mac_key = Zeroizing::new(key);
         Ok(store)
+    }
+
+    fn mac_of(&self, body: &PlansBody) -> Result<HmacSha256> {
+        let mut mac =
+            HmacSha256::new_from_slice(&self.mac_key).map_err(|_| anyhow!("invalid plans key"))?;
+        mac.update(MAC_CONTEXT);
+        mac.update(&serde_json::to_vec(body)?);
+        Ok(mac)
+    }
+
+    fn read_plans_unchecked(&self) -> Result<Vec<Plan>> {
+        let path = self.root.join(PLANS_FILE);
+        let text =
+            fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+        let file: PlansFile = serde_json::from_str(&text).context("parsing plans.json")?;
+        if file.version != PLANS_VERSION {
+            bail!("plans.json has unsupported version {}", file.version);
+        }
+        Ok(file.plans)
     }
 
     /// The store root.
@@ -267,18 +355,36 @@ impl Store {
         let path = self.root.join(PLANS_FILE);
         let text =
             fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
-        let file: PlansFile = serde_json::from_str(&text).context("parsing plans.json")?;
+        let file: PlansFile = serde_json::from_str(&text).map_err(|_| tampered())?;
+        let tag = file
+            .mac
+            .as_deref()
+            .and_then(|t| hex::decode(t).ok())
+            .ok_or_else(tampered)?;
+        let body = PlansBody {
+            version: file.version,
+            plans: &file.plans,
+        };
+        self.mac_of(&body)?
+            .verify_slice(&tag)
+            .map_err(|_| tampered())?;
         if file.version != PLANS_VERSION {
             bail!("plans.json has unsupported version {}", file.version);
         }
         Ok(file.plans)
     }
 
-    /// Replaces the plan list atomically.
+    /// Replaces the plan list atomically and re-tags it.
     pub fn save_plans(&self, plans: &[Plan]) -> Result<()> {
+        let body = PlansBody {
+            version: PLANS_VERSION,
+            plans,
+        };
+        let tag = hex::encode(self.mac_of(&body)?.finalize().into_bytes());
         let file = PlansFile {
             version: PLANS_VERSION,
             plans: plans.to_vec(),
+            mac: Some(tag),
         };
         let text = serde_json::to_string_pretty(&file)?;
         write_private(&self.root.join(PLANS_FILE), text.as_bytes())
@@ -424,6 +530,7 @@ mod tests {
             }],
             installments: None,
             pending: None,
+            archived: Vec::new(),
         }
     }
 
@@ -525,5 +632,106 @@ mod tests {
         );
         assert!(store.find_plan(None).is_err());
         assert!(store.find_plan(Some("ffff")).is_err());
+    }
+}
+
+#[cfg(test)]
+mod mac_tests {
+    use super::*;
+
+    fn code_of(e: &anyhow::Error) -> Option<&'static str> {
+        e.downcast_ref::<crate::error::CodedError>().map(|c| c.code)
+    }
+
+    fn sample(id: &str) -> Plan {
+        Plan {
+            id: id.into(),
+            kind: "legacy".into(),
+            network: "test".into(),
+            heirs: vec!["zgh1abc".into()],
+            period_secs: 180,
+            message: None,
+            epoch: 1,
+            status: PlanStatus::Active,
+            created: 1,
+            mailbox_url: Some("https://keeper.example".into()),
+            mailbox_id: None,
+            mailbox_write_token: None,
+            epochs: vec![],
+            installments: None,
+            pending: None,
+            archived: Vec::new(),
+        }
+    }
+
+    fn strip_mac(path: &Path) {
+        let mut v: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+        v.as_object_mut().unwrap().remove("mac");
+        fs::write(path, v.to_string()).unwrap();
+    }
+
+    #[test]
+    fn plans_round_trip_with_a_tag() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("s");
+        let store = Store::init_with(&root, "pw", 10).unwrap();
+        store.put_plan(&sample("aa")).unwrap();
+        let again = Store::open(&root, "pw").unwrap();
+        assert_eq!(again.plans().unwrap().len(), 1);
+        assert!(fs::read_to_string(root.join(PLANS_FILE))
+            .unwrap()
+            .contains("\"mac\""));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(root.join(PLANS_FILE))
+                .unwrap()
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+    }
+
+    #[test]
+    fn edited_plans_are_detected() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("s");
+        let store = Store::init_with(&root, "pw", 10).unwrap();
+        store.put_plan(&sample("aa")).unwrap();
+        let path = root.join(PLANS_FILE);
+        let text = fs::read_to_string(&path).unwrap();
+        fs::write(&path, text.replace("keeper.example", "evil.example")).unwrap();
+        assert_eq!(code_of(&store.plans().unwrap_err()), Some("store_tampered"));
+        // A removed tag is tampering too on a current store.
+        fs::write(&path, &text).unwrap();
+        strip_mac(&path);
+        assert_eq!(code_of(&store.plans().unwrap_err()), Some("store_tampered"));
+        // Putting the original back works again.
+        fs::write(&path, text).unwrap();
+        assert_eq!(store.plans().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn an_old_store_is_tagged_on_first_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("s");
+        let store = Store::init_with(&root, "pw", 10).unwrap();
+        store.put_plan(&sample("aa")).unwrap();
+        // Rebuild what an older version wrote: v1 keycheck, untagged plans.
+        let old = store.encrypt(KEYCHECK_V1.as_bytes()).unwrap();
+        fs::write(root.join(KEYCHECK_FILE), old).unwrap();
+        strip_mac(&root.join(PLANS_FILE));
+
+        let opened = Store::open(&root, "pw").unwrap();
+        assert_eq!(opened.plans().unwrap()[0].id, "aa");
+        assert!(fs::read_to_string(root.join(PLANS_FILE))
+            .unwrap()
+            .contains("\"mac\""));
+        // Now it is a current store: a stripped tag is tampering.
+        let again = Store::open(&root, "pw").unwrap();
+        assert_eq!(again.plans().unwrap().len(), 1);
+        strip_mac(&root.join(PLANS_FILE));
+        assert_eq!(code_of(&again.plans().unwrap_err()), Some("store_tampered"));
     }
 }
