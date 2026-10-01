@@ -1,0 +1,104 @@
+# Builds the zandglass program (CLI + owner panel with the web pages
+# embedded) for Linux, Windows and macOS. Runs by hand, or on a version tag,
+# where it also attaches the files to a GitHub release.
+name: release
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            name: zandglass-linux-x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            name: zandglass-windows-x86_64
+          - os: macos-14
+            target: aarch64-apple-darwin
+            name: zandglass-macos-arm64
+          - os: macos-14
+            target: x86_64-apple-darwin
+            name: zandglass-macos-x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build the web pages (embedded in the program)
+        working-directory: web
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.1
+          targets: ${{ matrix.target }}
+
+      - uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --locked -p zandglass-cli --target ${{ matrix.target }}
+
+      - name: Package (Linux, macOS)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p dist/${{ matrix.name }}
+          cp target/${{ matrix.target }}/release/zandglass dist/${{ matrix.name }}/
+          cp README.md LICENSE-MIT LICENSE-APACHE dist/${{ matrix.name }}/
+          tar -C dist -czf dist/${{ matrix.name }}.tar.gz ${{ matrix.name }}
+          shasum -a 256 dist/${{ matrix.name }}.tar.gz > dist/${{ matrix.name }}.tar.gz.sha256
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist/${{ matrix.name }} | Out-Null
+          Copy-Item target/${{ matrix.target }}/release/zandglass.exe dist/${{ matrix.name }}/
+          Copy-Item README.md, LICENSE-MIT, LICENSE-APACHE dist/${{ matrix.name }}/
+          Compress-Archive -Path dist/${{ matrix.name }}/* -DestinationPath dist/${{ matrix.name }}.zip
+          (Get-FileHash dist/${{ matrix.name }}.zip -Algorithm SHA256).Hash.ToLower() + "  ${{ matrix.name }}.zip" | Out-File -Encoding ascii dist/${{ matrix.name }}.zip.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.sha256
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          draft: false
+          prerelease: true

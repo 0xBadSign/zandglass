@@ -50,8 +50,8 @@ https://drand.cloudflare.com; base-uri 'none'; form-action 'none'; frame-ancesto
 /// Settings for the panel, taken from the command line.
 pub struct UiConfig {
     pub network: Network,
-    /// The store directory for this network.
-    pub root: PathBuf,
+    /// The base data directory; the network name is appended.
+    pub base: PathBuf,
     /// A fixed lightwalletd server (`--server`), or the public list.
     pub server: Option<String>,
     pub accept_unaudited: bool,
@@ -73,6 +73,7 @@ enum Job {
     Init(Zeroizing<String>),
     Unlock(Zeroizing<String>),
     Lock,
+    Network(String),
     Create(CreateReq),
     CreateInstallments(InstallmentsReq),
     Split(String),
@@ -98,6 +99,11 @@ struct CreateReq {
     #[serde(default)]
     claim_link: bool,
     amount: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct NetworkReq {
+    network: String,
 }
 
 #[derive(Deserialize)]
@@ -207,6 +213,7 @@ fn app(state: Arc<AppState>) -> Router {
         .route("/api/init", post(api_init))
         .route("/api/unlock", post(api_unlock))
         .route("/api/lock", post(api_lock))
+        .route("/api/network", post(api_network))
         .route("/api/plans", post(api_create))
         .route("/api/sync", post(api_sync))
         .route("/api/installments", post(api_installments))
@@ -364,6 +371,10 @@ async fn api_lock(State(s): State<Arc<AppState>>) -> Response {
     run_job(&s, Job::Lock).await
 }
 
+async fn api_network(State(s): State<Arc<AppState>>, Json(r): Json<NetworkReq>) -> Response {
+    run_job(&s, Job::Network(r.network)).await
+}
+
 async fn api_create(State(s): State<Arc<AppState>>, Json(r): Json<CreateReq>) -> Response {
     run_job(&s, Job::Create(r)).await
 }
@@ -449,8 +460,12 @@ impl Worker {
             .ok_or_else(|| zandglass_wallet::coded("unauthorized", "unlock the store first"))
     }
 
+    fn root(&self) -> PathBuf {
+        self.cfg.base.join(network_name(self.cfg.network))
+    }
+
     fn kit_dir(&self) -> PathBuf {
-        self.cfg.root.join("kits")
+        self.root().join("kits")
     }
 
     async fn client(&self) -> Result<Client> {
@@ -477,14 +492,35 @@ impl Worker {
                         "use a passphrase of at least 10 characters",
                     ));
                 }
-                self.store = Some(Store::init(&self.cfg.root, &pass)?);
+                self.store = Some(Store::init(&self.root(), &pass)?);
                 self.state()
             }
             Job::Unlock(pass) => {
-                self.store = Some(Store::open(&self.cfg.root, &pass)?);
+                self.store = Some(Store::open(&self.root(), &pass)?);
                 self.state()
             }
             Job::Lock => {
+                self.store = None;
+                self.state()
+            }
+            Job::Network(name) => {
+                if self.cfg.server.is_some() {
+                    return Err(zandglass_wallet::coded(
+                        "invalid_request",
+                        "the panel was started with --server, which fixes the network",
+                    ));
+                }
+                self.cfg.network = match name.as_str() {
+                    "main" => Network::MainNetwork,
+                    "test" => Network::TestNetwork,
+                    _ => {
+                        return Err(zandglass_wallet::coded(
+                            "invalid_request",
+                            "network must be main or test",
+                        ))
+                    }
+                };
+                // Each network has its own store; lock the old one.
                 self.store = None;
                 self.state()
             }
@@ -696,7 +732,7 @@ impl Worker {
         let network = self.cfg.network;
         let store_state = if self.store.is_some() {
             "open"
-        } else if self.cfg.root.join("keycheck.age").exists() {
+        } else if self.root().join("keycheck.age").exists() {
             "locked"
         } else {
             "missing"
@@ -707,6 +743,7 @@ impl Worker {
         };
         Ok(json!({
             "network": network_name(network),
+            "network_fixed": self.cfg.server.is_some(),
             "store": store_state,
             "now": now(),
             "cap_zat": ops::MAINNET_CAP_ZAT,

@@ -41,6 +41,7 @@ interface PlanSum {
 }
 interface UiState {
   network: 'main' | 'test';
+  network_fixed?: boolean;
   store: 'missing' | 'locked' | 'open';
   now: number;
   cap_zat: number;
@@ -299,6 +300,29 @@ function notice(tone: string, title: string, body: Child): HTMLElement {
   return h('div', { class: `notice ${tone}`, role: tone === 'bad' ? 'alert' : 'status' }, h('div', {}, h('strong', {}, title), h('p', {}, body)));
 }
 
+/** Mainnet or testnet. Each network has its own store; switching locks the current one. */
+function networkSwitch(): HTMLElement | null {
+  if (!state || state.network_fixed) return null;
+  const opt = (n: 'main' | 'test', label: string) =>
+    h(
+      'button',
+      {
+        type: 'button',
+        class: `net${state?.network === n ? ' on' : ''}`,
+        'aria-pressed': String(state?.network === n),
+        disabled: busy || state?.network === n ? true : null,
+        onclick: () =>
+          void act(`Switching to ${label}...`, async () => {
+            setState(await api<UiState>('POST', '/api/network', { network: n }));
+            created = null;
+            splitDone = null;
+          }),
+      },
+      label,
+    );
+  return h('div', { class: 'net-switch', role: 'group', 'aria-label': 'Network' }, opt('main', 'Mainnet'), opt('test', 'Testnet (test coins)'));
+}
+
 function passForm(kind: 'init' | 'unlock'): HTMLElement {
   const p1 = h('input', { type: 'password', id: 'pass1', autocomplete: kind === 'init' ? 'new-password' : 'current-password' });
   const p2 = h('input', { type: 'password', id: 'pass2', autocomplete: 'new-password' });
@@ -307,6 +331,7 @@ function passForm(kind: 'init' | 'unlock'): HTMLElement {
     'section',
     { class: 'card' },
     h('h2', { tabindex: '-1' }, kind === 'init' ? 'Create your store' : 'Unlock your store'),
+    networkSwitch(),
     h(
       'p',
       {},
@@ -843,7 +868,7 @@ function render(): void {
     h(
       'div',
       { class: 'owner-bar' },
-      h('span', { class: state.network === 'test' ? 'badge test' : 'badge' }, state.network === 'test' ? 'Testnet (test coins)' : 'Mainnet (real ZEC)'),
+      networkSwitch() ?? h('span', { class: state.network === 'test' ? 'badge test' : 'badge' }, state.network === 'test' ? 'Testnet (test coins)' : 'Mainnet (real ZEC)'),
       h(
         'button',
         {

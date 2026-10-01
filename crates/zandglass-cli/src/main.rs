@@ -52,8 +52,9 @@ struct Cli {
     /// address public on chain, so it is refused by default.
     #[arg(long, global = true)]
     allow_transparent: bool,
+    /// Without a command, the owner panel opens (as `zandglass ui`).
     #[command(subcommand)]
-    cmd: Cmd,
+    cmd: Option<Cmd>,
 }
 
 #[derive(Subcommand)]
@@ -338,7 +339,10 @@ fn read_kit(path: &Path) -> Result<Kit> {
 
 async fn run(cli: Cli) -> Result<()> {
     let network = network_of(&cli);
-    match &cli.cmd {
+    let Some(cmd) = &cli.cmd else {
+        return Err(anyhow!("no command"));
+    };
+    match cmd {
         Cmd::Heir(HeirCmd::New { save }) => {
             let phrase = generate_phrase();
             let code = identity_from_phrase(&phrase)?.code();
@@ -793,7 +797,10 @@ async fn run(cli: Cli) -> Result<()> {
             warn_unaudited(network);
             ui::serve(ui::UiConfig {
                 network,
-                root: store_root(&cli, network)?,
+                base: store_root(&cli, network)?
+                    .parent()
+                    .map(Path::to_path_buf)
+                    .ok_or_else(|| anyhow!("bad data directory"))?,
                 server: cli.server.clone(),
                 accept_unaudited: cli.accept_unaudited,
                 allow_transparent: cli.allow_transparent,
@@ -1237,7 +1244,15 @@ fn error_code(e: &anyhow::Error) -> Option<&'static str> {
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    let cli = Cli::parse();
+    let mut cli = Cli::parse();
+    // Started without a command (for example by a double click): open the panel.
+    let double_click = cli.cmd.is_none();
+    if double_click {
+        cli.cmd = Some(Cmd::Ui {
+            port: 0,
+            no_open: false,
+        });
+    }
     match run(cli).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
@@ -1245,6 +1260,11 @@ async fn main() -> ExitCode {
             match error_code(&e) {
                 Some(code) => eprintln!("error[{code}]: {text}"),
                 None => eprintln!("error: {text}"),
+            }
+            if double_click {
+                // Keep a double-clicked console window open long enough to read.
+                eprintln!("Press Enter to close.");
+                let _ = std::io::stdin().read_line(&mut String::new());
             }
             ExitCode::FAILURE
         }
