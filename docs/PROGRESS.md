@@ -60,7 +60,7 @@ Live state of the project. The agent updates it at the end of every work unit, n
 
 ### M3 Mainnet playground and deployment (10-17 to 10-21)
 - [ ] T3.1 Playground backend (judge code, caps, float)
-- [ ] T3.2 Landing and playground UI
+- [x] T3.2 Landing and playground UI (mocked-API Playwright flow, leak checks, axe)
 - [ ] T3.3 Deploy (server, TLS, Pages, health, backups)
 - [ ] T3.4 Browser end-to-end tests and axe
 - [ ] T3.5 Live vault on mainnet (unlock about 2026-11-12)
@@ -171,3 +171,4 @@ None yet.
 - The `spike_vault` example stores seeds in plaintext (spike only). T1.3 replaces this with age-passphrase encryption.
 - `tlock_age` pulls in its own `age` 0.11 beside `age` 0.12.1 (bytes only cross the boundary).
 - `drand_core` uses `ureq`; a future WASM build of core must avoid its HTTP client.
+- Claim to verify before submission: the landing page says claims are restored in third-party wallets. A real restore in Zkool or Zodl must be done and logged in evidence (T1.5), or the sentence must change.
