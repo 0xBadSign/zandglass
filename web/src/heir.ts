@@ -1,6 +1,10 @@
 import './style.css';
+import './site.css';
+import './scenes.css';
+import './console.css';
 import qrcode from 'qrcode-generator';
 import { clear, copyButton, h, svg } from './lib/dom';
+import { mountDust } from './lib/fx';
 import { generatePhrase, heirCodeFromPhrase, normalizePhrase, pickPositions } from './lib/heir';
 import { mountShell } from './lib/shell';
 
@@ -12,7 +16,71 @@ const STEPS: { id: Step; label: string }[] = [
   { id: 'code', label: 'Share code' },
 ];
 
-const main = mountShell('heir');
+const main = mountShell('heir', { wide: true });
+mountDust();
+
+/* ------------------------------------------------------------ stage */
+
+// A decorative "key forge": 256 cells, one per bit of a 24-word key. The lit
+// pattern is random decoration, NOT derived from the phrase.
+const CELLS = 256;
+const forgeCells = Array.from({ length: CELLS }, () => h('span', {}));
+const forge = h('div', { class: 'forge', 'aria-hidden': 'true' }, ...forgeCells);
+const stageCaption = h('p', { class: 'stage-caption' });
+const stageBody = h('div', { class: 'stage-body' });
+const stage = h(
+  'aside',
+  { class: 'app-stage heir-stage', 'aria-label': 'Your heir key' },
+  h('div', { class: 'stage-top' }, h('span', { class: 'stage-k' }, 'Heir key'), h('span', { class: 'badge' }, 'In this browser')),
+  stageBody,
+  stageCaption,
+  h(
+    'ul',
+    { class: 'stage-facts' },
+    h('li', {}, h('strong', {}, '24'), ' words'),
+    h('li', {}, h('strong', {}, '0'), ' sent'),
+    h('li', {}, h('strong', {}, '0'), ' stored'),
+  ),
+);
+
+function litForge(on: boolean): void {
+  forgeCells.forEach((c) => {
+    c.className = on && Math.random() < 0.5 ? 'on' : '';
+  });
+}
+
+const CAPTION: Record<Step, string> = {
+  intro: 'Your key is made here, from fresh randomness. Nothing leaves this page.',
+  backup: '256 bits of randomness, written as 24 words. Only you will see them.',
+  confirm: 'A quick check that your paper copy is right.',
+  code: 'The public half of your key. It can lock things to you, but it opens nothing.',
+};
+
+function paintStage(): void {
+  stageCaption.textContent = CAPTION[step];
+  stage.dataset.step = step;
+  if (step === 'code' && heirCode) {
+    stageBody.replaceChildren(
+      h(
+        'div',
+        { class: 'key-card big' },
+        h('span', { class: 'kc-chip', 'aria-hidden': 'true' }),
+        h('span', { class: 'kc-label' }, 'Heir code'),
+        h('span', { class: 'kc-code' }, `${heirCode.slice(0, 14)}…${heirCode.slice(-8)}`),
+        h('div', { class: 'kc-qr', 'aria-hidden': 'true' }, qrSvg(heirCode)),
+      ),
+    );
+    return;
+  }
+  if (stageBody.firstChild !== forge) {
+    stageBody.replaceChildren(forge);
+  }
+  const lit = step !== 'intro';
+  if (forge.classList.contains('lit') !== lit) {
+    forge.classList.toggle('lit', lit);
+    litForge(lit);
+  }
+}
 
 // The phrase lives only in this closure. It is never stored or sent.
 let phrase = '';
@@ -261,15 +329,26 @@ function code(): HTMLElement {
 function render(): void {
   clear(main);
   main.append(
-    h('h1', {}, 'Become an heir'),
     h(
-      'p',
-      { class: 'lead' },
-      'Create a key that lets you receive an inheritance. It is made in your browser and nothing is stored.',
+      'div',
+      { class: `app-console step-${step}` },
+      stage,
+      h(
+        'div',
+        { class: 'app-flow' },
+        h('span', { class: 'eyebrow' }, 'For the person who inherits'),
+        h('h1', {}, 'Become an ', h('em', {}, 'heir')),
+        h(
+          'p',
+          { class: 'lead' },
+          'Create a key that lets you receive an inheritance. It is made in your browser and nothing is stored.',
+        ),
+        stepper(),
+        { intro, backup, confirm, code }[step](),
+      ),
     ),
-    stepper(),
-    { intro, backup, confirm, code }[step](),
   );
+  paintStage();
 }
 
 render();

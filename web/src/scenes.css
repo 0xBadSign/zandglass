@@ -1,0 +1,574 @@
+/* Shared visual effects: canvas sandglass, dust, drand ticker, reveals, and
+   the "How it works" illustrations. All motion stops under reduced motion. */
+
+/* ------------------------------------------------------------ canvas glass */
+
+.sgc {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.sgc canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.sgc.sgc-flip {
+  animation: sgc-turn 1.05s cubic-bezier(0.65, 0, 0.25, 1) forwards;
+}
+
+/* lift, turn over, set down: shrinks mid-turn so a tall glass never sticks out sideways */
+@keyframes sgc-turn {
+  0% { transform: none; }
+  50% { transform: rotate(90deg) scale(0.5); }
+  100% { transform: rotate(180deg); }
+}
+
+/* ------------------------------------------------------------------- dust */
+
+canvas.dust {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.8;
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+}
+
+/* film grain over everything, very faint */
+body::after {
+  content: '';
+  position: fixed;
+  inset: -50%;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0.06;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.9 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ------------------------------------------------------------ drand ticker */
+
+.drand-tick {
+  display: inline-grid;
+  grid-template-columns: auto auto auto;
+  align-items: center;
+  column-gap: 0.6rem;
+  row-gap: 0.45rem;
+  padding: 0.65rem 0.95rem 0.6rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: rgb(10 12 16 / 70%);
+  backdrop-filter: blur(6px);
+  font: 500 0.72rem/1 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.dt-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 0 0 rgb(244 183 40 / 60%);
+}
+
+.drand-tick.tick .dt-dot {
+  animation: dt-ping 0.9s var(--ease);
+}
+
+.dt-num {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
+.drand-tick.tick .dt-num {
+  animation: dt-flash 0.6s var(--ease);
+}
+
+.dt-bar {
+  grid-column: 1 / -1;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--line-strong);
+  overflow: hidden;
+}
+
+.dt-bar span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--gold-deep), var(--gold-bright));
+  transform-origin: left;
+  transform: scaleX(0);
+}
+
+@keyframes dt-ping {
+  from { box-shadow: 0 0 0 0 rgb(244 183 40 / 65%); }
+  to { box-shadow: 0 0 0 10px rgb(244 183 40 / 0%); }
+}
+
+@keyframes dt-flash {
+  from { color: var(--gold-bright); }
+  to { color: var(--text); }
+}
+
+/* ------------------------------------------------------------------ reveal */
+
+.motion .reveal {
+  transform: translateY(28px);
+  transition: transform 0.9s var(--ease);
+}
+
+.motion .reveal.in {
+  transform: none;
+}
+
+/* ------------------------------------------------------------------ scenes */
+
+.scene {
+  width: 100%;
+  height: auto;
+  overflow: hidden;
+  font-family: var(--mono);
+}
+
+.scene text {
+  fill: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.scene .sc-cap {
+  fill: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  letter-spacing: 0;
+}
+
+.scene .sc-cap.gold {
+  fill: var(--gold);
+}
+
+.scene .sc-fine {
+  fill: var(--faint);
+  font-size: 10px;
+}
+
+.scene .mid {
+  text-anchor: middle;
+}
+
+.sc-tile rect {
+  fill: #12161d;
+  stroke: rgb(236 233 225 / 14%);
+}
+
+.sc-tile text {
+  fill: var(--gold);
+  font-size: 9px;
+}
+
+.sc-tile text.w {
+  fill: var(--text);
+  font-size: 10px;
+}
+
+.sc-redact {
+  fill: rgb(236 233 225 / 22%);
+}
+
+.sc-lock rect {
+  fill: var(--gold);
+}
+
+.sc-lock path {
+  stroke: var(--gold);
+  stroke-width: 3;
+}
+
+.sc-derive,
+.sc-send,
+.sc-arc,
+.sc-chain {
+  fill: none;
+  stroke: var(--gold);
+  stroke-width: 1.6;
+  stroke-dasharray: 4 6;
+  opacity: 0.7;
+}
+
+.sc-card-bg {
+  stroke: rgb(244 183 40 / 45%);
+  stroke-width: 1.2;
+}
+
+.sc-label {
+  fill: var(--gold) !important;
+  font-size: 11px !important;
+  letter-spacing: 0.22em !important;
+}
+
+.sc-chip {
+  stroke: rgb(0 0 0 / 35%);
+  fill: none;
+}
+
+.scene .sc-code {
+  fill: var(--text);
+  font-size: 15px;
+}
+
+.scene .sc-code.dim {
+  fill: var(--muted);
+}
+
+.sc-qr rect {
+  fill: var(--text);
+}
+
+.sc-qr rect.sc-qr-f {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 2.4;
+}
+
+.sc-owner circle:first-child {
+  fill: #12161d;
+  stroke: var(--gold-line);
+}
+
+.sc-head {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 1.8;
+}
+
+.sc-seal-ring {
+  fill: none;
+  stroke: var(--gold-line);
+  stroke-width: 1.2;
+  stroke-dasharray: 2 4;
+}
+
+.sc-face {
+  fill: #12161d;
+  stroke: var(--gold);
+  stroke-width: 1.6;
+}
+
+.sc-ticks path {
+  stroke: var(--muted);
+  stroke-width: 2;
+}
+
+.sc-hand {
+  stroke: var(--gold);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+}
+
+.sc-keyhole {
+  fill: var(--gold);
+}
+
+.sc-vault-body {
+  stroke: rgb(244 183 40 / 50%);
+  stroke-width: 1.4;
+}
+
+.sc-slot,
+.sc-foot {
+  fill: #2a2f3a;
+}
+
+.sc-door {
+  fill: none;
+  stroke: rgb(236 233 225 / 22%);
+  stroke-width: 2;
+}
+
+.sc-door.inner {
+  stroke: var(--gold-line);
+}
+
+.sc-wheel path {
+  stroke: var(--gold);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.sc-hub {
+  fill: var(--gold);
+}
+
+.scene .sc-z {
+  fill: #3a2705;
+  font: 700 12px var(--sans);
+  text-anchor: middle;
+}
+
+.sc-vault.old {
+  opacity: 0.38;
+}
+
+.sc-vault.new .sc-vault-body {
+  stroke: var(--gold);
+  filter: drop-shadow(0 0 14px rgb(244 183 40 / 35%));
+}
+
+.sc-mg {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.sc-env {
+  fill: #141821;
+  stroke: rgb(236 233 225 / 25%);
+  stroke-width: 1.3;
+}
+
+.sc-env-flap {
+  fill: none;
+  stroke: rgb(236 233 225 / 25%);
+  stroke-width: 1.3;
+}
+
+.sc-strike {
+  stroke: var(--bad);
+  stroke-width: 2;
+  opacity: 0.8;
+}
+
+.sc-oldkit {
+  opacity: 0.7;
+}
+
+/* --- scene motion (only when allowed) */
+
+@media (prefers-reduced-motion: no-preference) {
+  .sc-sheen {
+    animation: sc-sheen 4.5s ease-in-out infinite;
+  }
+
+  .sc-derive,
+  .sc-send,
+  .sc-arc,
+  .sc-chain {
+    animation: sc-dash 1.2s linear infinite;
+  }
+
+  .scene-heir .sc-card {
+    animation: sc-float 6s ease-in-out infinite;
+  }
+
+  .scene-heir .sc-tile:nth-child(odd) .sc-redact {
+    animation: sc-blink 3s ease-in-out infinite;
+  }
+
+  .sc-hand {
+    transform-box: view-box;
+    transform-origin: 0 0;
+    animation: sc-spin 6s linear infinite;
+  }
+
+  .sc-hand.short {
+    animation-duration: 36s;
+  }
+
+  .sc-coin {
+    animation: sc-drop 2.4s cubic-bezier(0.5, 0, 0.9, 0.6) infinite;
+    opacity: 0;
+  }
+
+  .sc-coin.c1 { animation-delay: 0.8s; }
+  .sc-coin.c2 { animation-delay: 1.6s; }
+
+  .sc-wheel {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: sc-wheel 8s var(--ease) infinite;
+  }
+
+  .sc-flipper {
+    animation: sc-flip 3.2s cubic-bezier(0.65, 0, 0.25, 1) infinite;
+  }
+
+  .scene-open .sc-wax.l {
+    animation: sc-crack-l 4.2s var(--ease) infinite;
+  }
+
+  .scene-open .sc-wax.r {
+    animation: sc-crack-r 4.2s var(--ease) infinite;
+  }
+
+  .scene-open .sc-tile.up {
+    animation: sc-rise 4.2s var(--ease) infinite;
+  }
+
+  .scene-open .t1 { animation-delay: 0.05s !important; }
+  .scene-open .t2 { animation-delay: 0.1s !important; }
+  .scene-open .t3 { animation-delay: 0.15s !important; }
+  .scene-open .t4 { animation-delay: 0.2s !important; }
+  .scene-open .t5 { animation-delay: 0.25s !important; }
+  .scene-open .t6 { animation-delay: 0.3s !important; }
+  .scene-open .t7 { animation-delay: 0.35s !important; }
+  .scene-open .t8 { animation-delay: 0.4s !important; }
+  .scene-open .t9 { animation-delay: 0.45s !important; }
+  .scene-open .t10 { animation-delay: 0.5s !important; }
+  .scene-open .t11 { animation-delay: 0.55s !important; }
+}
+
+@keyframes sc-sheen {
+  0%, 30% { transform: translateX(0); }
+  70%, 100% { transform: translateX(560px); }
+}
+
+@keyframes sc-dash {
+  to { stroke-dashoffset: -20; }
+}
+
+@keyframes sc-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes sc-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes sc-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes sc-drop {
+  0% { transform: translateY(110px); opacity: 0; }
+  15% { opacity: 1; }
+  70% { transform: translateY(186px); opacity: 1; }
+  80%, 100% { transform: translateY(196px); opacity: 0; }
+}
+
+@keyframes sc-wheel {
+  0%, 20% { transform: rotate(0); }
+  45%, 70% { transform: rotate(140deg); }
+  100% { transform: rotate(0); }
+}
+
+@keyframes sc-flip {
+  0%, 35% { transform: rotate(0); }
+  65%, 100% { transform: rotate(180deg); }
+}
+
+@keyframes sc-crack-l {
+  0%, 30% { transform: translate(0, 0) rotate(0); }
+  55%, 85% { transform: translate(-16px, 6px) rotate(-14deg); }
+  100% { transform: translate(0, 0) rotate(0); }
+}
+
+@keyframes sc-crack-r {
+  0%, 30% { transform: translate(0, 0) rotate(0); }
+  55%, 85% { transform: translate(16px, 6px) rotate(14deg); }
+  100% { transform: translate(0, 0) rotate(0); }
+}
+
+@keyframes sc-rise {
+  0%, 35% { transform: translateY(150px); opacity: 0; }
+  60%, 88% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.sc-wax {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+
+/* sealed kit */
+
+.sk-ring {
+  fill: none;
+  stroke: var(--gold-line);
+  stroke-width: 1;
+  stroke-dasharray: 3 7;
+}
+
+.sk-ring.b {
+  stroke: rgb(236 233 225 / 12%);
+  stroke-dasharray: 1 9;
+}
+
+.sk-wax-ring {
+  fill: none;
+  stroke: rgb(58 39 5 / 55%);
+  stroke-width: 1.5;
+}
+
+.sk-z {
+  fill: none;
+  stroke: #3a2705;
+  stroke-width: 4;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.sk-wax {
+  filter: drop-shadow(0 0 12px rgb(244 183 40 / 45%));
+}
+
+.scene-kit.ready .sk-wax {
+  filter: drop-shadow(0 0 22px rgb(244 183 40 / 85%));
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sk-ring.a {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: sc-spin 30s linear infinite;
+  }
+
+  .sk-ring.b {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: sc-spin 50s linear infinite reverse;
+  }
+
+  .scene-kit.ready .sk-glow {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: sk-pulse 2.2s ease-in-out infinite;
+  }
+}
+
+@keyframes sk-pulse {
+  0%, 100% { opacity: 0.6; transform: scale(0.96); }
+  50% { opacity: 1; transform: scale(1.04); }
+}
+
+/* the canvas glass fills its stage box exactly (no intrinsic sizing) */
+.hero-stage,
+.stage-glass,
+.final-art {
+  position: relative;
+}
+
+.hero-stage > .sgc,
+.stage-glass > .sgc,
+.final-art > .sgc {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  height: auto;
+}

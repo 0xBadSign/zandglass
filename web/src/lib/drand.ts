@@ -57,9 +57,10 @@ async function fetchJson(url: string, timeoutMs: number, fetchFn: typeof fetch):
 }
 
 /**
- * A quicknet chain client that tries each relay in turn. The chain info is
- * pinned, so only `/public/<round>` is fetched. The beacon signature is the
- * decryption key, so a forged beacon simply fails to open the kit.
+ * A quicknet chain client that asks every relay at once and takes the first
+ * good answer, so one slow or unreachable relay does not stall the claim. The
+ * chain info is pinned, so only `/public/<round>` is fetched. The beacon
+ * signature is the decryption key, so a forged beacon simply fails to open the kit.
  */
 export function relayClient(
   relays: readonly string[] = RELAYS,
@@ -70,20 +71,20 @@ export function relayClient(
   async function get(round: number): Promise<never> {
     if (cache.has(round)) return cache.get(round) as never;
     let notReady = false;
-    for (const relay of relays) {
-      try {
-        const beacon = await fetchJson(
-          `${relay}/${QUICKNET.chainHash}/public/${round}`,
-          timeoutMs,
-          fetchFn,
-        );
-        cache.set(round, beacon);
-        return beacon as never;
-      } catch (e) {
-        if (e instanceof BeaconNotReadyError) notReady = true;
-      }
+    try {
+      const beacon = await Promise.any(
+        relays.map((relay) =>
+          fetchJson(`${relay}/${QUICKNET.chainHash}/public/${round}`, timeoutMs, fetchFn).catch((e: unknown) => {
+            if (e instanceof BeaconNotReadyError) notReady = true;
+            throw e;
+          }),
+        ),
+      );
+      cache.set(round, beacon);
+      return beacon as never;
+    } catch {
+      throw notReady ? new BeaconNotReadyError() : new NetworkError();
     }
-    throw notReady ? new BeaconNotReadyError() : new NetworkError();
   }
   return {
     options: { disableBeaconVerification: true, noCache: true },

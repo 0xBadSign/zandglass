@@ -1,6 +1,10 @@
 import './style.css';
 import './site.css';
-import { clear, copyButton, h, hourglass, type Child } from './lib/dom';
+import './scenes.css';
+import './console.css';
+import { clear, copyButton, h, type Child } from './lib/dom';
+import { Sandglass, mountDust } from './lib/fx';
+import { sceneOpen } from './lib/scenes';
 import { BeaconNotReadyError, NetworkError, relayClient } from './lib/drand';
 import { generatePhrase, heirCodeFromPhrase } from './lib/heir';
 import {
@@ -34,7 +38,8 @@ import {
 } from './lib/playground';
 import { mountShell } from './lib/shell';
 
-const main = mountShell('playground');
+const main = mountShell('playground', { wide: true });
+mountDust();
 const API = apiBase(window.location.search, window.location.origin);
 const POLL = pollMs(window.location.search);
 const JUDGE_KEY = 'sandglass-judge-code';
@@ -68,12 +73,25 @@ let opened: OpenedPayload | null = null;
 let seedShown = false;
 let codeError = '';
 let pollTimer: number | undefined;
-let lastGlassLevel = -1;
 
 // Persistent live elements, re-attached by render() so polling never steals focus.
 const problemBox = h('div', { id: 'problems' });
 const countdownEl = h('p', { class: 'countdown big', role: 'timer', id: 'countdown' });
-const glassBox = h('div', { class: 'big-glass' });
+const glass = new Sandglass({ className: 'pg-glass' });
+glass.set(0);
+glass.setFlowing(false);
+const stageNet = h('span', { class: 'badge', id: 'stage-net' });
+const stageCaption = h('p', { class: 'stage-caption' });
+const vaultRow = h('ol', { class: 'vault-row', 'aria-label': 'Vaults' });
+const stage = h(
+  'aside',
+  { class: 'pg-stage', 'aria-label': 'Vault status' },
+  h('div', { class: 'stage-top' }, h('span', { class: 'stage-k' }, 'Live vault'), stageNet),
+  h('div', { class: 'stage-glass' }, h('div', { class: 'halo', 'aria-hidden': 'true' }), glass.el),
+  countdownEl,
+  stageCaption,
+  h('div', { class: 'stage-vaults' }, h('span', { class: 'stage-k' }, 'Vault epochs'), vaultRow),
+);
 const timelineBox = h('div', { id: 'timeline-box' });
 const messageEl = h('p', { class: 'muted', role: 'status', id: 'session-message' });
 const flipHint = h('p', { class: 'muted small', id: 'flip-hint' });
@@ -146,7 +164,6 @@ function resetAll(): void {
   opening = false;
   opened = null;
   seedShown = false;
-  lastGlassLevel = -1;
   setProblem(null);
   go('heir');
 }
@@ -314,8 +331,14 @@ function heirView(): HTMLElement {
           ),
         ),
       ),
-      h('h3', {}, 'Your heir code (public)'),
-      h('code', { class: 'code-box', id: 'heir-code' }, heirCode),
+      h(
+        'div',
+        { class: 'key-card' },
+        h('span', { class: 'kc-chip', 'aria-hidden': 'true' }),
+        h('h3', { class: 'kc-label' }, 'Your heir code (public)'),
+        h('code', { class: 'code-box', id: 'heir-code' }, heirCode),
+        h('span', { class: 'kc-fine' }, 'Safe to share. Only your 24 words can use it.'),
+      ),
       h(
         'div',
         { class: 'actions' },
@@ -351,7 +374,6 @@ async function startSession(minutes: number): Promise<void> {
     snap = null;
     lastRank = 0;
     stopFlip = false;
-    lastGlassLevel = -1;
     starting = false;
     render();
     void poll();
@@ -474,15 +496,64 @@ function paintButtons(): void {
   flipHint.textContent = hint;
 }
 
-function paintGlass(): void {
-  if (!snap || !snap.unlock_time || !created) return;
-  const unlockMs = Date.parse(snap.unlock_time);
-  const level = Math.round(elapsedFraction(unlockMs, created.minutes, Date.now()) * 20) / 20;
-  if (level === lastGlassLevel) return;
-  lastGlassLevel = level;
-  const g = hourglass(level);
-  if (level < 1) g.classList.add('live');
-  glassBox.replaceChildren(g);
+const IDLE_CAPTION: Record<Step, string> = {
+  code: 'Enter the judge code to begin.',
+  heir: 'Make the heir key that will open this vault.',
+  vault: 'Start a vault to set the sand running.',
+  open: 'The sand has run out.',
+};
+
+function cd(label: string, time: string): void {
+  countdownEl.replaceChildren(h('span', { class: 'cd-label' }, label), h('span', { class: 'cd-time' }, time));
+}
+
+/** The left-hand stage: the sandglass, the countdown and the chain of vaults. */
+function paintStage(): void {
+  const net = networkLabel(networkName());
+  stageNet.textContent = net.text;
+  stageNet.className = net.test ? 'badge test' : 'badge';
+
+  const flips = snap ? snap.txs.filter((t) => t.kind === 'flip').length : 0;
+  const count = created ? 1 + flips : 0;
+  const unlocked = snap !== null && stateRank(snap.state) >= 3 && snap.state !== 'failed';
+  vaultRow.replaceChildren(
+    ...(count
+      ? Array.from({ length: count }, (_, i) =>
+          h(
+            'li',
+            { class: i < count - 1 ? 'old' : unlocked ? 'cur open' : 'cur', title: i < count - 1 ? 'Emptied by a flip' : 'Holds the funds' },
+            h('span', { class: 'v-n' }, `#${i + 1}`),
+            h('span', { class: 'v-s' }, i < count - 1 ? 'empty' : unlocked ? 'opened' : 'funds'),
+          ),
+        )
+      : [h('li', { class: 'none' }, 'No vault yet')]),
+  );
+
+  if (!created || !snap || snap.state === 'funding') {
+    glass.set(0);
+    glass.setFlowing(false);
+    stageCaption.textContent = created ? 'Funding a fresh vault on chain.' : IDLE_CAPTION[step];
+    if (!created) cd('Timer', '--m --s');
+    return;
+  }
+  if (unlocked || TERMINAL_STATES.includes(snap.state)) {
+    glass.set(1);
+    glass.setFlowing(false);
+    stageCaption.textContent = opened ? 'The kit is open in this browser.' : 'The sand has run out. The heir can open the kit.';
+    cd('Unlocked', '00m 00s');
+    return;
+  }
+  if (snap.unlock_time) {
+    const frac = elapsedFraction(Date.parse(snap.unlock_time), created.minutes, Date.now());
+    glass.set(frac);
+    glass.setFlowing(snap.state === 'sealed' && frac < 1);
+  }
+  stageCaption.textContent =
+    snap.state === 'flipping'
+      ? 'Flipping: the funds move to a new vault.'
+      : stopFlip
+        ? 'You stopped flipping. Let the sand run out.'
+        : 'The sand is falling. A flip turns the glass.';
 }
 
 function paintCountdown(): void {
@@ -493,10 +564,7 @@ function paintCountdown(): void {
   }
   const left = (Date.parse(snap.unlock_time) - Date.now()) / 1000;
   if (left > 0) {
-    countdownEl.replaceChildren(
-      h('span', { class: 'cd-label' }, 'Unlocks in '),
-      h('span', { class: 'cd-time' }, formatCountdown(left)),
-    );
+    cd('Unlocks in ', formatCountdown(left));
   } else {
     countdownEl.textContent = 'The time has passed. Waiting for the server to confirm...';
   }
@@ -508,7 +576,7 @@ function applySnapshot(s: SessionSnapshot): void {
   if (s.state !== 'failed') lastRank = Math.max(lastRank, stateRank(s.state));
   paintTimeline();
   paintButtons();
-  paintGlass();
+  paintStage();
   paintCountdown();
   const unlocked = stateRank(s.state) >= 3 && s.state !== 'failed';
   if (step === 'vault' && created && unlocked) go('open');
@@ -572,7 +640,7 @@ flipBtn.addEventListener('click', () => {
         token: c.token,
         body: {},
       });
-      lastGlassLevel = -1;
+      void glass.flip();
       applySnapshot(s);
     } catch (e) {
       if (before) applySnapshot(before);
@@ -584,17 +652,18 @@ flipBtn.addEventListener('click', () => {
 stopBtn.addEventListener('click', () => {
   stopFlip = !stopFlip;
   paintButtons();
+  paintStage();
 });
 
 setInterval(() => {
   paintCountdown();
-  paintGlass();
+  paintStage();
 }, 1000);
 
 function sessionView(): HTMLElement {
   paintTimeline();
   paintButtons();
-  paintGlass();
+  paintStage();
   paintCountdown();
   const net = networkLabel(networkName());
   return h(
@@ -607,7 +676,7 @@ function sessionView(): HTMLElement {
       h('span', { class: net.test ? 'badge test' : 'badge' }, net.text),
       ` Timer: ${created?.minutes ?? ''} minutes. Amount: ${formatZec(created?.amount_zat ?? 0, net.test ? 'TAZ' : 'ZEC')}.`,
     ),
-    h('div', { class: 'timer-row' }, glassBox, h('div', {}, countdownEl, messageEl)),
+    messageEl,
     h(
       'p',
       { class: 'keep-open small' },
@@ -710,6 +779,7 @@ function openedView(r: OpenedPayload): HTMLElement {
   return h(
     'div',
     { class: 'opened' },
+    h('div', { class: 'opened-art', 'aria-hidden': 'true' }, sceneOpen()),
     h('h3', { tabindex: '-1', id: 'opened-title' }, 'The kit is open'),
     h(
       'div',
@@ -870,17 +940,22 @@ function openView(): HTMLElement {
 
 function render(): void {
   clear(main);
-  main.append(
-    h('h1', {}, 'Playground'),
+  const flow = h(
+    'div',
+    { class: 'pg-flow' },
+    h('span', { class: 'eyebrow' }, 'A real vault, in about five minutes'),
+    h('h1', {}, 'Play', h('em', {}, 'ground')),
     h('p', { class: 'lead' }, 'Try the whole flow in about five minutes. You are the heir; the server plays the owner.'),
     banner(),
     stepper(),
     problemBox,
   );
-  if (step === 'code') main.append(codeView());
-  else if (step === 'heir') main.append(heirView());
-  else if (step === 'vault') main.append(created ? sessionView() : startView());
-  else main.append(openView());
+  if (step === 'code') flow.append(codeView());
+  else if (step === 'heir') flow.append(heirView());
+  else if (step === 'vault') flow.append(created ? sessionView() : startView());
+  else flow.append(openView());
+  main.append(h('div', { class: `pg-console step-${step}` }, stage, flow));
+  paintStage();
 }
 
 /* ------------------------------------------------------------ start */

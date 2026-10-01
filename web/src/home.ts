@@ -1,224 +1,333 @@
 import './style.css';
 import './site.css';
-import { h, sandglassArt } from './lib/dom';
+import './scenes.css';
+import './landing.css';
+import { h } from './lib/dom';
+import { Sandglass, drandTicker, mountDust, reducedMotion, revealOnScroll } from './lib/fx';
 import { formatCountdown, networkLabel, parseLiveVault, type LiveVault } from './lib/playground';
+import { sceneFlip, sceneHeir, sceneOpen, sceneSeal } from './lib/scenes';
 import { mountShell } from './lib/shell';
 
 const REPO = 'https://github.com/0xnesQuit/sandglass';
 const EVIDENCE = `${REPO}/blob/main/docs/evidence/EVIDENCE.md`;
 
 const main = mountShell('home', { wide: true });
+mountDust();
 
-const heroGlass = sandglassArt();
+/* ------------------------------------------------------------------ hero */
 
-const STEPS: { title: string; body: string }[] = [
+const glass = new Sandglass({ autoplay: true, period: 13, className: 'hero-glass' });
+
+const hero = h(
+  'section',
+  { class: 'hero3' },
+  h(
+    'div',
+    { class: 'hero-copy' },
+    h('span', { class: 'eyebrow' }, 'Time-locked inheritance for shielded Zcash'),
+    h('h1', { class: 'mega' }, h('span', { class: 'l1' }, 'Pass on your'), h('span', { class: 'l2' }, 'shielded ZEC.'), h('em', { class: 'l3' }, 'Privately.')),
+    h(
+      'p',
+      { class: 'lead' },
+      'Your heir can open your vault only after you stop checking in. Until then nobody can, and nothing on chain reveals the plan, the heir or the amounts.',
+    ),
+    h(
+      'div',
+      { class: 'actions' },
+      h('a', { class: 'btn-primary btn-lg', href: './playground.html' }, 'Try the playground', h('span', { class: 'arrow', 'aria-hidden': 'true' }, '→')),
+      h('a', { class: 'btn btn-lg ghost', href: './heir.html' }, 'Become an heir'),
+    ),
+    h('div', { class: 'hero-meta' }, drandTicker(), h('span', { class: 'hm-note' }, 'The clock every kit is sealed to. One tick every 3 seconds.')),
+  ),
+  h('div', { class: 'hero-stage' }, h('div', { class: 'halo', 'aria-hidden': 'true' }), glass.el),
+  h('a', { class: 'scroll-cue', href: '#problem', 'aria-label': 'Scroll to the story' }, h('span', {})),
+);
+
+/* --------------------------------------------------------------- marquee */
+
+const TAGS = ['No custody', 'No smart contract', 'No plan on chain', 'Nothing pre-signed', 'Open source', 'Restores in any wallet'];
+const marquee = h(
+  'div',
+  { class: 'marquee', 'aria-hidden': 'true' },
+  h('div', { class: 'mq-track' }, ...[0, 1].flatMap(() => TAGS.map((t) => h('span', {}, t)))),
+);
+
+/* --------------------------------------------------------------- problem */
+
+const problem = h(
+  'section',
+  { class: 'problem reveal', id: 'problem', 'aria-labelledby': 'problem-h' },
+  h('p', { class: 'kicker' }, 'The problem'),
+  h(
+    'h2',
+    { id: 'problem-h', class: 'statement' },
+    'Shielded Zcash has ',
+    h('em', {}, 'no timelocks.'),
+    ' If you die, your heirs cannot even see that the funds ',
+    h('span', { class: 'ghost-word' }, 'exist.'),
+  ),
+  h(
+    'p',
+    { class: 'statement-sub' },
+    'Writing the seed in a will gives it to a lawyer today. Telling your heir gives it to them today. Sandglass gives it to them ',
+    h('em', {}, 'later'),
+    ', and only if you go silent.',
+  ),
+);
+
+/* ------------------------------------------------------- how it works */
+
+const STEPS = [
   {
-    title: 'Heir code',
-    body: 'Your heir makes a key in their browser and sends you a short public code. The words stay with them.',
+    n: '01',
+    title: 'Your heir makes a key',
+    body: 'In their own browser: 24 words that never leave them, and a short public heir code they send to you.',
+    scene: sceneHeir,
   },
   {
-    title: 'Seal',
-    body: 'Sandglass moves your funds into a fresh vault and locks its key twice: to a future moment, and to your heir.',
+    n: '02',
+    title: 'Sandglass seals a vault',
+    body: 'Your funds move into a fresh vault. Its seed is locked twice: to a future drand round, and to the heir code. You hold the kit.',
+    scene: sceneSeal,
   },
   {
-    title: 'Flip',
-    body: 'From time to time you flip the sandglass. The funds move to a new vault and the timer starts again. Old kits open an empty vault.',
+    n: '03',
+    title: 'You flip, now and then',
+    body: 'A flip moves the funds to a new vault and seals a new kit with a new timer. Every older kit now opens an empty vault.',
+    scene: sceneFlip,
   },
   {
+    n: '04',
     title: 'The sand runs out',
-    body: 'If you stop flipping, the time passes. Your heir opens the kit in a browser and restores the vault in any Zcash wallet.',
+    body: 'If you stop flipping, the round arrives. Your heir opens the kit in a browser and restores the vault in any Zcash wallet.',
+    scene: sceneOpen,
   },
 ];
 
-const LEAKS: { who: string; learns: string; not: string }[] = [
-  {
-    who: 'People watching the chain',
-    learns: 'Ordinary shielded transactions that look like any wallet.',
-    not: 'That a plan exists, who the heir is, amounts, unlock times, or any link between vaults.',
-  },
-  {
-    who: 'The drand network',
-    learns: 'At most, that someone fetched a public time key.',
-    not: 'Anything about the kit.',
-  },
-  {
-    who: 'The mailbox keeper',
-    learns: 'That a mailbox exists, when its kit is replaced, and the unlock round.',
-    not: 'Who the owner or heir is, amounts, addresses, or contents. It can never decrypt.',
-  },
-  {
-    who: 'The heir, after the unlock',
-    learns: 'The current vault seed, so its balance and its one incoming transfer.',
-    not: 'Earlier vaults, or the owner’s other funds.',
-  },
-  {
-    who: 'Someone who steals a kit',
-    learns: 'Nothing, before or after the unlock.',
-    not: 'It cannot be opened without the heir key.',
-  },
+const stageScenes = STEPS.map((s, i) => h('div', { class: `stage-scene${i === 0 ? ' on' : ''}`, 'data-i': String(i) }, s.scene()));
+const stepEls = STEPS.map((s, i) =>
+  h(
+    'li',
+    { class: 'story-step', 'data-i': String(i) },
+    h('div', { class: 'inline-scene', 'aria-hidden': 'true' }, s.scene()),
+    h('span', { class: 'step-n' }, s.n),
+    h('h3', {}, s.title),
+    h('p', {}, s.body),
+  ),
+);
+const progressFill = h('span', {});
+const how = h(
+  'section',
+  { class: 'story', 'aria-labelledby': 'how' },
+  h('p', { class: 'kicker' }, 'How it works'),
+  h('h2', { id: 'how', class: 'big-title' }, 'Four moves. ', h('em', {}, 'No contract.')),
+  h(
+    'div',
+    { class: 'story-grid' },
+    h('div', { class: 'story-stage', 'aria-hidden': 'true' }, h('div', { class: 'stage-frame' }, ...stageScenes), h('div', { class: 'stage-progress' }, progressFill)),
+    h('ol', { class: 'story-steps' }, ...stepEls),
+  ),
+);
+
+function wireStory(): void {
+  const set = (i: number): void => {
+    stageScenes.forEach((s, j) => s.classList.toggle('on', i === j));
+    stepEls.forEach((s, j) => s.classList.toggle('on', i === j));
+    progressFill.style.transform = `scaleY(${((i + 1) / STEPS.length).toFixed(3)})`;
+  };
+  set(0);
+  if (!('IntersectionObserver' in window)) return;
+  const io = new IntersectionObserver(
+    (entries) => {
+      for (const e of entries) if (e.isIntersecting) set(Number((e.target as HTMLElement).dataset.i));
+    },
+    { rootMargin: '-45% 0px -45% 0px' },
+  );
+  stepEls.forEach((s) => io.observe(s));
+}
+
+/* ------------------------------------------------- spot the inheritance */
+
+function hex(n: number, seed: number): string {
+  let s = seed;
+  let out = '';
+  for (let i = 0; i < n; i++) {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    out += '0123456789abcdef'[s >>> 28];
+  }
+  return out;
+}
+
+const TILE_COUNT = 24;
+const spotMsg = h('p', { class: 'spot-msg', 'aria-live': 'polite' }, 'Pick the one you think is an inheritance.');
+let picks = 0;
+const tiles = Array.from({ length: TILE_COUNT }, (_, i) => {
+  const id = hex(8, i * 7919 + 17);
+  const actions = i % 4 === 1 ? 3 : 2;
+  const b = h(
+    'button',
+    { type: 'button', class: 'tx-tile', 'aria-label': `Shielded transaction ${id}` },
+    h(
+      'span',
+      { class: 'tt-front' },
+      h('span', { class: 'tt-lock', 'aria-hidden': 'true' }),
+      h('span', { class: 'tt-id' }, `${id}…`),
+      h('span', { class: 'tt-row' }, `${actions} actions`),
+      h('span', { class: 'tt-row' }, 'fee 0.0001'),
+    ),
+    h('span', { class: 'tt-back' }, 'Ordinary', h('br', {}), 'shielded'),
+  );
+  b.addEventListener('click', () => {
+    if (b.classList.contains('flipped')) return;
+    b.classList.add('flipped');
+    picks++;
+    spotMsg.textContent =
+      picks === 1
+        ? 'Ordinary shielded transaction. Try another.'
+        : picks === 2
+          ? 'Ordinary again. A Sandglass flip uses the standard fee, expiry and anchor of any wallet.'
+          : 'You cannot tell, and neither can anyone watching the chain. That is the point.';
+    if (picks >= 3) spot.classList.add('solved');
+  });
+  return b;
+});
+const spot = h(
+  'section',
+  { class: 'spot reveal', 'aria-labelledby': 'spot-h' },
+  h(
+    'div',
+    { class: 'spot-copy' },
+    h('p', { class: 'kicker' }, 'Privacy'),
+    h('h2', { id: 'spot-h', class: 'big-title' }, 'Spot the ', h('em', {}, 'inheritance.')),
+    h(
+      'p',
+      { class: 'muted' },
+      'A block of shielded transactions (an illustration). On the real chain, Sandglass funding, flips and claims are built by the standard Zcash wallet library at send time: nothing is scheduled, pre-signed or marked.',
+    ),
+    spotMsg,
+  ),
+  h('div', { class: 'spot-grid' }, ...tiles),
+);
+
+/* ----------------------------------------------------------------- proof */
+
+const PROOF: { step: string; what: string; txid: string }[] = [
+  { step: 'Fund', what: 'The owner funds a fresh vault', txid: 'c62ad1cbd16bc238ed78349999042db89990cdef992efc408f5d2b55e1fb8d68' },
+  { step: 'Flip', what: 'Funds roll to a new vault, a new kit is sealed', txid: 'd14a2d951681f8a53011cde9c6de26755b279c157212c1b8e598de41ce0a1d62' },
+  { step: 'Claim', what: 'The owner went silent; the heir opened the kit', txid: '5685741452b15ae0a8f9c458c6fa4fc1b6d6cfe45a3b2c71eebc80604c5a0407' },
 ];
+const shortId = (t: string): string => `${t.slice(0, 10)}…${t.slice(-8)}`;
+
+const proof = h(
+  'section',
+  { class: 'chain reveal', 'aria-labelledby': 'proof' },
+  h('p', { class: 'kicker' }, 'Evidence'),
+  h('h2', { id: 'proof', class: 'big-title' }, 'Already ', h('em', {}, 'on chain.')),
+  h('p', { class: 'muted narrow' }, 'A full inheritance, end to end on Zcash testnet, plus a vault restored and spent in a third-party wallet. Each step is an ordinary shielded transaction.'),
+  h(
+    'ol',
+    { class: 'chain-line' },
+    ...PROOF.map((p, i) =>
+      h(
+        'li',
+        { class: 'block' },
+        h('span', { class: 'blk-cube', 'aria-hidden': 'true' }, h('span', {}), h('span', {}), h('span', {})),
+        h('span', { class: 'blk-n' }, `0${i + 1}`),
+        h('span', { class: 'blk-step' }, p.step),
+        h('span', { class: 'blk-what' }, p.what),
+        h('code', { class: 'blk-tx', title: p.txid }, shortId(p.txid)),
+      ),
+    ),
+  ),
+  h('a', { class: 'link-arrow', href: EVIDENCE }, 'All transaction ids and how to check them', h('span', { 'aria-hidden': 'true' }, ' →')),
+);
+
+/* ------------------------------------------------------------ who sees */
+
+const LEAKS: { icon: string; who: string; learns: string; not: string }[] = [
+  { icon: 'eye', who: 'Anyone watching the chain', learns: 'Ordinary shielded transactions, like any wallet’s.', not: 'That a plan exists, the heir, the amounts, the unlock time, or any link between vaults.' },
+  { icon: 'clock', who: 'The drand network', learns: 'At most, that someone fetched a public time key.', not: 'Anything about the kit.' },
+  { icon: 'box', who: 'The mailbox keeper', learns: 'That a mailbox exists, when its kit changes, the unlock round.', not: 'Owner, heir, amounts, addresses or contents. It can never decrypt.' },
+  { icon: 'heir', who: 'The heir, after the unlock', learns: 'The current vault: its balance and its one incoming transfer.', not: 'Earlier vaults, or the owner’s other funds.' },
+  { icon: 'mask', who: 'Someone who steals a kit', learns: 'Nothing, before or after the unlock.', not: 'It cannot be opened without the heir key.' },
+];
+
+const sees = h(
+  'section',
+  { class: 'sees', 'aria-labelledby': 'leak' },
+  h('p', { class: 'kicker' }, 'Threat model'),
+  h('h2', { id: 'leak', class: 'big-title' }, 'Who sees ', h('em', {}, 'what.')),
+  h(
+    'ul',
+    { class: 'sees-grid' },
+    ...LEAKS.map((l) =>
+      h(
+        'li',
+        { class: 'sees-card reveal' },
+        h('span', { class: `sees-icon i-${l.icon}`, 'aria-hidden': 'true' }),
+        h('h3', {}, l.who),
+        h('p', { class: 'sees-row' }, h('span', { class: 'sees-k' }, 'Sees'), l.learns),
+        h('p', { class: 'sees-row no' }, h('span', { class: 'sees-k' }, 'Never sees'), h('span', { class: 'redacted' }, l.not)),
+      ),
+    ),
+  ),
+);
+
+/* -------------------------------------------------------------- honesty */
 
 const REAL = [
-  'Zcash mainnet transactions for funding, flips and claims, with evidence transaction ids.',
+  'Zcash transactions for funding, flips, installments and claims, with transaction ids.',
   'drand quicknet time-lock encryption, and age X25519 heir keys.',
   'A blind mailbox that cannot read what it stores.',
-  'Claims restored in third-party wallets, and kits opened with the reference tle and age tools.',
+  'A vault restored and spent in ECC’s zcash-devtool; kits opened with the reference tle and age tools.',
 ];
-
 const MOCK = [
   'In the playground the server plays the owner and holds a tiny demo vault. Your heir key is real and stays in your browser.',
   'Playground timers are minutes instead of months.',
   'The code is unaudited, and mainnet plans are capped by default.',
   'Reminders are not implemented yet.',
 ];
-
-function list(items: string[]): HTMLElement {
-  return h('ul', { class: 'checklist' }, ...items.map((t) => h('li', {}, t)));
-}
-
-const leakTable = h(
-  'table',
-  { class: 'leaks' },
-  h('caption', { class: 'sr-only' }, 'Who learns what'),
+const honesty = h(
+  'section',
+  { class: 'honesty reveal', 'aria-labelledby': 'real' },
+  h('p', { class: 'kicker' }, 'Honesty'),
+  h('h2', { id: 'real', class: 'big-title' }, 'What is real, ', h('em', {}, 'what is a mock.')),
   h(
-    'thead',
-    {},
-    h(
-      'tr',
-      {},
-      h('th', { scope: 'col' }, 'Who'),
-      h('th', { scope: 'col' }, 'Learns'),
-      h('th', { scope: 'col' }, 'Does not learn'),
-    ),
-  ),
-  h(
-    'tbody',
-    {},
-    ...LEAKS.map((r) =>
-      h(
-        'tr',
-        {},
-        h('th', { scope: 'row' }, r.who),
-        h('td', { 'data-label': 'Learns' }, r.learns),
-        h('td', { 'data-label': 'Does not learn' }, r.not),
-      ),
-    ),
+    'div',
+    { class: 'hon-cols' },
+    h('div', { class: 'hon real' }, h('h3', {}, 'Real'), h('ul', {}, ...REAL.map((t) => h('li', {}, t)))),
+    h('div', { class: 'hon mock' }, h('h3', {}, 'Mock or limited'), h('ul', {}, ...MOCK.map((t) => h('li', {}, t)))),
   ),
 );
 
-/** Real transactions from docs/evidence/EVIDENCE.md, shown as proof. */
-const PROOF: { step: string; what: string; txid: string }[] = [
-  { step: 'Fund', what: 'The owner funds a fresh vault', txid: 'c62ad1cbd16bc238ed78349999042db89990cdef992efc408f5d2b55e1fb8d68' },
-  { step: 'Flip', what: 'Funds roll to a new vault, a new kit is sealed', txid: 'd14a2d951681f8a53011cde9c6de26755b279c157212c1b8e598de41ce0a1d62' },
-  { step: 'Claim', what: 'The owner went silent; the heir opened the kit', txid: '5685741452b15ae0a8f9c458c6fa4fc1b6d6cfe45a3b2c71eebc80604c5a0407' },
-];
+/* ---------------------------------------------------------------- final */
 
-const shortId = (t: string): string => `${t.slice(0, 10)}…${t.slice(-8)}`;
-
-main.append(
+const finalGlass = new Sandglass({ autoplay: true, period: 9, className: 'final-glass' });
+const final = h(
+  'section',
+  { class: 'final reveal', 'aria-labelledby': 'final-h' },
+  h('div', { class: 'final-art' }, finalGlass.el),
+  h('h2', { id: 'final-h', class: 'mega final-title' }, 'Turn the ', h('em', {}, 'glass.')),
+  h('p', { class: 'lead' }, 'Five minutes on a real network. You play the heir; the server plays the owner.'),
   h(
-    'section',
-    { class: 'hero2' },
-    h(
-      'div',
-      { class: 'hero-copy' },
-      h('span', { class: 'eyebrow' }, 'Time-locked inheritance for Zcash'),
-      h('h1', {}, 'Pass on your shielded ZEC. ', h('em', {}, 'Privately.')),
-      h(
-        'p',
-        { class: 'lead' },
-        'Shielded Zcash has no timelocks, so there is no private way to pass it on. ' +
-          'Sandglass gives your vault a time-locked recovery path: your heir can open it only after you stop checking in ' +
-          '— and nothing on chain reveals the plan, the heir or the amounts.',
-      ),
-      h(
-        'div',
-        { class: 'actions' },
-        h('a', { class: 'btn-primary', href: './playground.html' }, 'Try the playground'),
-        h('a', { class: 'btn', href: './heir.html' }, 'Become an heir'),
-      ),
-      h(
-        'ul',
-        { class: 'trust' },
-        h('li', {}, 'No custody'),
-        h('li', {}, 'No smart contract'),
-        h('li', {}, 'No plan on chain'),
-      ),
-    ),
-    h('div', { class: 'hero-art' }, heroGlass),
-  ),
-  h('div', { id: 'live-slot' }),
-  h(
-    'section',
-    { class: 'proof', 'aria-labelledby': 'proof' },
-    h(
-      'div',
-      { class: 'proof-head' },
-      h('h2', { id: 'proof' }, 'Already ', h('em', {}, 'on chain.')),
-      h(
-        'p',
-        { class: 'muted' },
-        'A full inheritance, end to end on Zcash testnet. Each step is an ordinary shielded transaction: standard expiry, standard fee, no Sandglass-specific fields.',
-      ),
-    ),
-    h(
-      'ol',
-      { class: 'proof-list' },
-      ...PROOF.map((p) =>
-        h(
-          'li',
-          {},
-          h('span', { class: 'proof-step' }, p.step),
-          h('span', { class: 'proof-what' }, p.what),
-          h('code', { class: 'proof-tx', title: p.txid }, shortId(p.txid)),
-        ),
-      ),
-    ),
-    h('a', { class: 'proof-more', href: EVIDENCE }, 'See all evidence'),
+    'div',
+    { class: 'actions center' },
+    h('a', { class: 'btn-primary btn-lg', href: './playground.html' }, 'Open the playground', h('span', { class: 'arrow', 'aria-hidden': 'true' }, '→')),
   ),
   h(
-    'section',
-    { 'aria-labelledby': 'how' },
-    h('h2', { id: 'how', class: 'section-title' }, 'How it works'),
-    h(
-      'ol',
-      { class: 'how' },
-      ...STEPS.map((s) => h('li', {}, h('h3', {}, s.title), h('p', {}, s.body))),
-    ),
-  ),
-  h(
-    'section',
-    { 'aria-labelledby': 'leak' },
-    h('h2', { id: 'leak', class: 'section-title' }, 'Why it does not leak'),
-    h('p', { class: 'muted' }, 'Every step is an ordinary shielded transaction, built at the moment it is sent. Nothing is scheduled on chain.'),
-    leakTable,
-  ),
-  h(
-    'section',
-    { 'aria-labelledby': 'real' },
-    h('h2', { id: 'real', class: 'section-title' }, 'What is real and what is a mock'),
-    h(
-      'div',
-      { class: 'cols' },
-      h('div', { class: 'card' }, h('h3', {}, 'Real'), list(REAL)),
-      h('div', { class: 'card' }, h('h3', {}, 'Mock or limited'), list(MOCK)),
-    ),
-  ),
-  h(
-    'section',
-    { 'aria-labelledby': 'go' },
-    h('h2', { id: 'go', class: 'section-title' }, 'Go further'),
-    h(
-      'ul',
-      { class: 'linklist' },
-      h('li', {}, h('a', { href: './playground.html' }, 'Try the playground'), ' — a five-minute vault on a real network.'),
-      h('li', {}, h('a', { href: './heir.html' }, 'Become an heir'), ' — make your heir key in the browser.'),
-      h('li', {}, h('a', { href: './claim.html' }, 'Claim'), ' — open a kit once the time lock has passed.'),
-      h('li', {}, h('a', { href: EVIDENCE }, 'Evidence'), ' — transaction ids and reproducible checks.'),
-      h('li', {}, h('a', { href: REPO }, 'GitHub repository'), ' — all of the code, open source.'),
-    ),
+    'ul',
+    { class: 'final-links' },
+    h('li', {}, h('a', { href: './heir.html' }, 'Become an heir')),
+    h('li', {}, h('a', { href: './claim.html' }, 'Claim a kit')),
+    h('li', {}, h('a', { href: EVIDENCE }, 'Evidence')),
+    h('li', {}, h('a', { href: REPO }, 'Source code')),
   ),
 );
+
+main.append(hero, marquee, h('div', { id: 'live-slot' }), problem, how, spot, proof, sees, honesty, final);
+wireStory();
+revealOnScroll();
+if (!reducedMotion()) document.body.classList.add('motion');
 
 /* ------------------------------------------------------------ live vault */
 

@@ -38,6 +38,15 @@ export function svg(tag: string, attrs: Record<string, string>, ...kids: SVGElem
   return el;
 }
 
+/**
+ * Parse a CONSTANT SVG illustration written in this codebase (never user or
+ * network data). No inline style attributes: the CSP blocks them.
+ */
+export function svgFrom(markup: string): SVGSVGElement {
+  const doc = new DOMParser().parseFromString(markup, 'image/svg+xml');
+  return document.importNode(doc.documentElement, true) as unknown as SVGSVGElement;
+}
+
 /** Copy text to the clipboard, with a fallback for restricted contexts. */
 export async function copyText(text: string): Promise<boolean> {
   try {

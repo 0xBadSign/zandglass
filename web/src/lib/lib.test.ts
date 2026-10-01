@@ -84,7 +84,7 @@ describe('relay client', () => {
   const beacon = recordedBeacon();
   const ok = () => new Response(JSON.stringify(beacon), { status: 200 });
 
-  it('falls back to the next relay', async () => {
+  it('uses another relay when one fails', async () => {
     const urls: string[] = [];
     const f = (async (u: string) => {
       urls.push(u);

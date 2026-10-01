@@ -1,5 +1,10 @@
 import './style.css';
-import { clear, copyButton, h, hourglass, type Child } from './lib/dom';
+import './site.css';
+import './scenes.css';
+import './console.css';
+import { clear, copyButton, h, type Child } from './lib/dom';
+import { Sandglass, mountDust } from './lib/fx';
+import { sceneKit, sceneOpen } from './lib/scenes';
 import { BeaconNotReadyError, NetworkError, relayClient } from './lib/drand';
 import { InvalidPhraseError, isValidPhrase } from './lib/heir';
 import {
@@ -16,7 +21,8 @@ import { mountShell } from './lib/shell';
 
 const MAX_KIT_BYTES = 1024 * 1024;
 
-const main = mountShell('claim');
+const main = mountShell('claim', { wide: true });
+mountDust();
 
 type Source = { kind: 'mailbox'; origin: string; id: string; token: string } | { kind: 'file'; name: string };
 
@@ -45,6 +51,57 @@ const phraseEl = h('textarea', {
 
 const countdownEl = h('p', { class: 'countdown', id: 'countdown' });
 const lateTimeEl = h('span', { class: 'sr-only', 'aria-live': 'polite' });
+
+/* ------------------------------------------------------------ stage */
+
+const stageGlass = new Sandglass({ className: 'pg-glass' });
+const stageNet = h('span', { class: 'badge' }, 'No kit');
+const stageCaption = h('p', { class: 'stage-caption' });
+const stageBody = h('div', { class: 'stage-body' });
+const stageTime = h('p', { class: 'countdown', 'aria-hidden': 'true' });
+const stage = h(
+  'aside',
+  { class: 'app-stage claim-stage', 'aria-label': 'Your kit' },
+  h('div', { class: 'stage-top' }, h('span', { class: 'stage-k' }, 'Kit'), stageNet),
+  stageBody,
+  stageTime,
+  stageCaption,
+);
+let stageMode = '';
+
+function paintStage(): void {
+  const mode = !kit ? 'none' : result ? 'open' : isUnlocked(kit) ? 'ready' : 'locked';
+  if (kit) {
+    const net = networkLabel(kit);
+    stageNet.textContent = net.text;
+    stageNet.className = net.test ? 'badge test' : 'badge';
+  }
+  if (mode !== stageMode) {
+    stageMode = mode;
+    stage.dataset.mode = mode;
+    if (mode === 'locked') stageBody.replaceChildren(h('div', { class: 'stage-glass' }, h('div', { class: 'halo' }), stageGlass.el));
+    else if (mode === 'open') stageBody.replaceChildren(sceneOpen());
+    else {
+      const s = sceneKit();
+      if (mode === 'ready') s.classList.add('ready');
+      stageBody.replaceChildren(s);
+    }
+  }
+  if (mode === 'locked' && kit) {
+    const left = unlockSeconds(kit) - nowSeconds();
+    stageGlass.set(Math.min(0.97, Math.max(0.03, 1 - left / (86400 * 30))));
+    stageGlass.setFlowing(true);
+    stageTime.replaceChildren(h('span', { class: 'cd-label' }, 'Unlocks in'), h('span', { class: 'cd-time' }, formatLeft(left)));
+  } else {
+    stageTime.replaceChildren();
+  }
+  stageCaption.textContent = {
+    none: 'Open the claim link the owner sent you, or a kit file.',
+    locked: `Sealed to drand round ${kit?.round.toLocaleString('en-US') ?? ''}. Nobody can open it before then.`,
+    ready: 'The round has arrived. Your heir phrase opens the seal.',
+    open: 'Opened in this browser. Nothing you typed was sent anywhere.',
+  }[mode];
+}
 
 /* ------------------------------------------------------------ helpers */
 
@@ -306,7 +363,6 @@ function kitView(k: LoadedKit): HTMLElement {
   const unlocked = isUnlocked(k);
   const t = formatUnlock(unlockSeconds(k));
   const net = networkLabel(k);
-  const waited = Math.min(1, Math.max(0, 1 - (unlockSeconds(k) - nowSeconds()) / (86400 * 30)));
   const facts = h(
     'dl',
     { class: 'facts' },
@@ -340,7 +396,6 @@ function kitView(k: LoadedKit): HTMLElement {
     h(
       'div',
       { class: 'kit-head' },
-      hourglass(unlocked ? 1 : waited),
       h(
         'div',
         {},
@@ -376,6 +431,7 @@ function tick(): void {
   if (!kit) return;
   const wasLocked = countdownEl.textContent?.startsWith('Unlocks') ?? false;
   updateCountdown();
+  paintStage();
   if (wasLocked && isUnlocked(kit)) {
     lateTimeEl.textContent = 'The kit is now unlocked.';
     render();
@@ -574,34 +630,39 @@ function resultView(r: OpenedPayload): HTMLElement {
 
 function render(): void {
   clear(main);
-  main.append(
-    h('h1', {}, 'Claim your inheritance'),
+  const flow = h(
+    'div',
+    { class: 'app-flow' },
+    h('span', { class: 'eyebrow' }, 'For the heir, when the time comes'),
+    h('h1', {}, 'Claim your ', h('em', {}, 'inheritance')),
     h(
       'p',
       { class: 'lead' },
       'Open a Sandglass kit here. It works entirely in your browser, and your words and keys never leave it.',
     ),
   );
-  if (problem) main.append(problemView(problem));
+  main.append(h('div', { class: 'app-console' }, stage, flow));
+  paintStage();
+  if (problem) flow.append(problemView(problem));
   if (loading) {
-    main.append(
+    flow.append(
       h('div', { class: 'card', role: 'status' }, h('span', { class: 'spinner' }), ' Loading your kit...'),
     );
     return;
   }
   if (!kit) {
-    main.append(loaderView());
+    flow.append(loaderView());
     return;
   }
-  main.append(kitView(kit));
+  flow.append(kitView(kit));
   if (result) {
-    main.append(resultView(result));
+    flow.append(resultView(result));
     document.getElementById('result-title')?.focus();
   } else if (isUnlocked(kit)) {
-    main.append(openView());
+    flow.append(openView());
   }
   if (source?.kind === 'file' || !isUnlocked(kit) || result) {
-    main.append(
+    flow.append(
       h(
         'p',
         {},
