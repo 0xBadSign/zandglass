@@ -3603,97 +3603,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sandglass-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "rpassword",
- "sandglass-core",
- "sandglass-keeper",
- "sandglass-wallet",
- "tempfile",
- "tokio",
- "zeroize",
-]
-
-[[package]]
-name = "sandglass-core"
-version = "0.1.0"
-dependencies = [
- "age 0.12.1",
- "bech32 0.11.1",
- "bip0039",
- "drand_core",
- "hex",
- "hkdf",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "thiserror 2.0.21",
- "tlock_age",
- "ureq",
- "zeroize",
-]
-
-[[package]]
-name = "sandglass-keeper"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "axum",
- "hex",
- "rand 0.8.8",
- "rusqlite",
- "sandglass-core",
- "sandglass-wallet",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "subtle",
- "tempfile",
- "tokio",
- "tower-http",
- "ureq",
- "zcash_keys",
- "zeroize",
-]
-
-[[package]]
-name = "sandglass-wallet"
-version = "0.1.0"
-dependencies = [
- "age 0.12.1",
- "anyhow",
- "async-trait",
- "bip0039",
- "hex",
- "orchard",
- "rand 0.8.8",
- "rusqlite",
- "rustls",
- "sandglass-core",
- "secrecy 0.8.0",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.21",
- "tokio",
- "tonic",
- "zcash_address",
- "zcash_client_backend",
- "zcash_client_sqlite",
- "zcash_keys",
- "zcash_primitives",
- "zcash_proofs",
- "zcash_protocol",
- "zeroize",
- "zip32",
- "zip321",
-]
-
-[[package]]
 name = "sapling-crypto"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5109,6 +5018,97 @@ dependencies = [
  "quote",
  "syn 3.0.6",
  "synstructure",
+]
+
+[[package]]
+name = "zandglass-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "rpassword",
+ "tempfile",
+ "tokio",
+ "zandglass-core",
+ "zandglass-keeper",
+ "zandglass-wallet",
+ "zeroize",
+]
+
+[[package]]
+name = "zandglass-core"
+version = "0.1.0"
+dependencies = [
+ "age 0.12.1",
+ "bech32 0.11.1",
+ "bip0039",
+ "drand_core",
+ "hex",
+ "hkdf",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 2.0.21",
+ "tlock_age",
+ "ureq",
+ "zeroize",
+]
+
+[[package]]
+name = "zandglass-keeper"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "hex",
+ "rand 0.8.8",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "subtle",
+ "tempfile",
+ "tokio",
+ "tower-http",
+ "ureq",
+ "zandglass-core",
+ "zandglass-wallet",
+ "zcash_keys",
+ "zeroize",
+]
+
+[[package]]
+name = "zandglass-wallet"
+version = "0.1.0"
+dependencies = [
+ "age 0.12.1",
+ "anyhow",
+ "async-trait",
+ "bip0039",
+ "hex",
+ "orchard",
+ "rand 0.8.8",
+ "rusqlite",
+ "rustls",
+ "secrecy 0.8.0",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tonic",
+ "zandglass-core",
+ "zcash_address",
+ "zcash_client_backend",
+ "zcash_client_sqlite",
+ "zcash_keys",
+ "zcash_primitives",
+ "zcash_proofs",
+ "zcash_protocol",
+ "zeroize",
+ "zip32",
+ "zip321",
 ]
 
 [[package]]

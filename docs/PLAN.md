@@ -1,10 +1,10 @@
-# Sandglass: Master Plan
+# Zandglass: Master Plan
 
-**Working title:** Sandglass. Time-locked inheritance and scheduled payments for shielded Zcash: funds that a named person can claim only after a chosen time, unless the owner "flips" the sandglass. No custody, no fork, no smart contract, and nothing on chain.
+**Working title:** Zandglass. Time-locked inheritance and scheduled payments for shielded Zcash: funds that a named person can claim only after a chosen time, unless the owner "flips" the glass. No custody, no fork, no smart contract, and nothing on chain.
 
 **Plan version:** 2 (2026-09-30). Version 1 was built on pre-signed transactions; see 4.6 and D-009 for why that changed. **Executor:** a coding agent (plus subagents) following this document without asking the owner, except for the owner actions in section 14.
 
-**One-line pitch:** Shielded Zcash has no timelocks, so there is no private way to pass it on. Sandglass gives every vault a time-locked recovery path: your heir can open it only after you stop checking in, and nothing on chain reveals the plan, the heir or the amounts.
+**One-line pitch:** Shielded Zcash has no timelocks, so there is no private way to pass it on. Zandglass gives every vault a time-locked recovery path: your heir can open it only after you stop checking in, and nothing on chain reveals the plan, the heir or the amounts.
 
 ---
 
@@ -74,7 +74,7 @@ From the FAQ: prizes are paid in ZEC to a shielded address given at submission.
 
 | Field | Constraint | Our plan |
 |---|---|---|
-| Project name | required, max 64 characters | "Sandglass: time-locked inheritance for shielded Zcash" (53 characters) |
+| Project name | required, max 64 characters | "Zandglass: time-locked inheritance for shielded Zcash" (53 characters) |
 | Track | required, exactly one | Shielded Payments (D-001) |
 | Description | required, max 2,000 characters; "What it does, why it does not leak, what is real and what is a mock. Judges read this first." | Drafted in `docs/SUBMISSION.md` (T4.4) |
 | Code repository | required URL; may be private until the deadline, must be public by then | GitHub repository (O-1) |
@@ -129,11 +129,11 @@ Lesson from past Zcash hackathons: the Zcash x NEAR hackathon (March 2025) award
 
 ### 3.2 The solution: the sealed vault
 
-A **vault** is a dedicated Zcash wallet seed that holds the funds a plan covers. Sandglass encrypts the vault's seed twice:
+A **vault** is a dedicated Zcash wallet seed that holds the funds a plan covers. Zandglass encrypts the vault's seed twice:
 - to a **future moment**, with drand quicknet timelock encryption; nobody can open it before then;
 - to the **heir's key**; after that moment only a listed heir can open it.
 
-The owner "flips" the sandglass to reset the timer. A flip moves the funds to a fresh vault with a later unlock time, so every older kit opens an empty vault.
+The owner "flips" the glass to reset the timer. A flip moves the funds to a fresh vault with a later unlock time, so every older kit opens an empty vault.
 
 If the owner stops flipping, the time passes. The heir opens the kit, receives the vault's seed and moves the funds with any Zcash wallet.
 
@@ -151,11 +151,11 @@ On chain, every step is an ordinary shielded transaction built at the moment it 
 ### 3.4 Scope (MoSCoW)
 
 **Must (the submission is not complete without these):**
-- M-1 `sandglass-core`: drand round math; nested sealing (timelock and heir keys); heir keys (24-word phrase to an age X25519 identity; public "heir code"); kit format v1; mailbox client.
-- M-2 `sandglass-wallet` and the `sandglass` CLI:
+- M-1 `zandglass-core`: drand round math; nested sealing (timelock and heir keys); heir keys (24-word phrase to an age X25519 identity; public "heir code"); kit format v1; mailbox client.
+- M-2 `zandglass-wallet` and the `zandglass` CLI:
   - vault manager (one seed per epoch, encrypted at rest), sync, balances, standard sweeps;
   - commands: `heir new`, `init`, `receive`, `plan legacy`, `plan installments`, `flip`, `cancel`, `status`, `claim` (restore and sweep), `kit inspect`.
-- M-3 `sandglass-keeper`: a blind mailbox for the latest kit of each plan (it can never decrypt); the mainnet playground backend; serves the web assets.
+- M-3 `zandglass-keeper`: a blind mailbox for the latest kit of each plan (it can never decrypt); the mainnet playground backend; serves the web assets.
 - M-4 Heir page: creates a heir key in the browser (phrase and heir code). It claims a kit: countdown, then decryption in the browser after the unlock, then the vault seed with restore instructions for common wallets.
 - M-5 Mainnet playground a judge can finish in about 5 to 10 minutes.
 - M-6 Mainnet evidence: txids for funding, flips, a heir claim, installments, and a live vault that unlocks during judging. Plus an interoperability proof that a kit opens with the reference `tle` and `age` tools.
@@ -187,7 +187,7 @@ On chain, every step is an ordinary shielded transaction built at the moment it 
 | **Plan** | A legacy plan or an installment schedule |
 | **Heir key / heir phrase / heir code** | A heir's X25519 key, backed up as 24 words; the heir code is the public part the owner needs |
 | **Seal** | Encrypt a vault seed to the heir codes and then to a drand round |
-| **Kit** | The file (`*.sandglass`, JSON) holding a sealed vault plus public metadata |
+| **Kit** | The file (`*.zandglass`, JSON) holding a sealed vault plus public metadata |
 | **Mailbox** | Where the keeper holds the latest kit of a plan; the heir's claim link points to it |
 | **Flip** | The owner's check-in: move the funds to a new vault and seal it with a later unlock time |
 | **Claim** | After the unlock, a heir opens the kit and moves the funds |
@@ -199,9 +199,9 @@ On chain, every step is an ordinary shielded transaction built at the moment it 
 
 ### 4.1 Keys and objects
 
-- **Vault seed:** a BIP 39 24-word mnemonic generated by Sandglass for each epoch; the wallet uses account 0 only. It is stored encrypted on the owner's device. The birthday height is recorded.
+- **Vault seed:** a BIP 39 24-word mnemonic generated by Zandglass for each epoch; the wallet uses account 0 only. It is stored encrypted on the owner's device. The birthday height is recorded.
 - **Heir key:**
-  - 24 words (BIP 39) are turned into an X25519 secret (HKDF-SHA256, domain `sandglass-heir-v1`) and used as an **age identity**;
+  - 24 words (BIP 39) are turned into an X25519 secret (HKDF-SHA256, domain `zandglass-heir-v1`) and used as an **age identity**;
   - the **heir code** is the age recipient string (`age1...`), shown with a checksum-friendly display;
   - it is generated in the heir's browser or CLI and never sent anywhere.
 - **Kit:**
@@ -216,10 +216,10 @@ On chain, every step is an ordinary shielded transaction built at the moment it 
 - **P1 Time-gated.** Nobody, heir included, can open a kit before round R, unless a threshold of the League of Entropy drand nodes collude.
 - **P2 Heir-gated.** After R, only the holder of a listed heir key can open it (age X25519). A leaked kit is useless to anyone else.
 - **P3 Revocable.** A flip moves the funds to a fresh vault. Any older kit opens an empty vault.
-- **P4 No on-chain footprint.** Funding, flips, splits and claims are ordinary shielded transactions, built by standard wallet code when they are sent: current anchor, standard expiry, ZIP 317 fee. Flips use `OvkPolicy::Discard`, so an old vault's keys cannot see where its funds went. Nothing marks a transaction as Sandglass.
+- **P4 No on-chain footprint.** Funding, flips, splits and claims are ordinary shielded transactions, built by standard wallet code when they are sent: current anchor, standard expiry, ZIP 317 fee. Flips use `OvkPolicy::Discard`, so an old vault's keys cannot see where its funds went. Nothing marks a transaction as Zandglass.
 - **P5 Upgrade-proof.** Kits hold keys, not transactions, so network upgrades (NU7 on 2026-11-05, or later ones) never make them stale.
-- **P6 Claim with any wallet.** The heir restores the vault seed, with its birthday height, in any Zcash wallet, or uses `sandglass claim --to <address>`.
-- **P7 No lock-in.** Kits are standard files: drand tlock armour around an age file. If Sandglass disappears, heirs can still open them with the reference tools (`tle` from drand, then `age`).
+- **P6 Claim with any wallet.** The heir restores the vault seed, with its birthday height, in any Zcash wallet, or uses `zandglass claim --to <address>`.
+- **P7 No lock-in.** Kits are standard files: drand tlock armour around an age file. If Zandglass disappears, heirs can still open them with the reference tools (`tle` from drand, then `age`).
 
 ### 4.3 Legacy vault
 
@@ -257,7 +257,7 @@ Notes:
 1. The owner funds a funding vault, then splits it into N installment vaults, one seed each, holding exactly the installment amount (one ordinary transaction).
 2. Each installment vault i is sealed to the payee's heir code (here, the payee code) and to round R_i, its due time.
 3. The kits go to the payee's mailbox.
-4. The payee claims each installment when it is due, by hand or automatically: `sandglass claim --watch --to <address>` on the payee's own server.
+4. The payee claims each installment when it is due, by hand or automatically: `zandglass claim --watch --to <address>` on the payee's own server.
 5. **Cancel:** the owner sweeps the remaining installment vaults back. Future kits then open empty vaults.
 6. Each installment is an ordinary transaction; nothing on chain links installments together.
 
@@ -278,9 +278,9 @@ The idea stays as the opt-in **auto-delivery** mode (S1), for recipients who can
 
 ### 4.7 Compared with other approaches
 
-- **Timelock-encrypting a seed alone** (drand's own dead man's switch example; Chronolox): whoever holds the ciphertext gets the key after the unlock. Sandglass adds the heir-key layer (P2), revocation by rolling vaults (P3) and installments.
-- **Bitcoin timelock paths** (Liana, BIP 128): the recovery policy and the heir's claim are public on chain. With Sandglass nothing is (P4).
-- **Custodial or collaborative custody** (Casa, Nunchuk, Unchained): a company holds a key and usually knows the customer. Sandglass holds no keys and knows no one.
+- **Timelock-encrypting a seed alone** (drand's own dead man's switch example; Chronolox): whoever holds the ciphertext gets the key after the unlock. Zandglass adds the heir-key layer (P2), revocation by rolling vaults (P3) and installments.
+- **Bitcoin timelock paths** (Liana, BIP 128): the recovery policy and the heir's claim are public on chain. With Zandglass nothing is (P4).
+- **Custodial or collaborative custody** (Casa, Nunchuk, Unchained): a company holds a key and usually knows the customer. Zandglass holds no keys and knows no one.
 
 ---
 
@@ -291,15 +291,15 @@ The idea stays as the opt-in **auto-delivery** mode (S1), for recipients who can
 ```mermaid
 flowchart LR
     subgraph Owner device
-        CLI[sandglass CLI] --> W[sandglass-wallet]
-        W --> C[sandglass-core]
+        CLI[zandglass CLI] --> W[zandglass-wallet]
+        W --> C[zandglass-core]
     end
     subgraph Heir device
         HP[heir page in the browser] -.-> C2[tlock-js + age]
-        HC[sandglass claim, CLI] --> W
+        HC[zandglass claim, CLI] --> W
     end
     subgraph Hosted
-        KP[sandglass-keeper: blind mailboxes + mainnet playground + web assets]
+        KP[zandglass-keeper: blind mailboxes + mainnet playground + web assets]
     end
     W -->|gRPC| LWD[(lightwalletd: zec.rocks mainnet)]
     C -->|HTTPS| DR[(drand quicknet)]
@@ -310,26 +310,26 @@ flowchart LR
 
 | Component | Kind | Responsibility |
 |---|---|---|
-| `sandglass-core` | Rust library | drand client and round math; nested seal/open (tlock and age); heir keys; kit v1; mailbox client |
-| `sandglass-wallet` | Rust library | light-client wallet over `zcash_client_sqlite`: vault manager (epochs, encrypted seeds), sync, balances, sweep, split, claim-by-restore |
-| `sandglass-cli` | Rust binary `sandglass` | the owner's, heir's and payee's tool |
-| `sandglass-keeper` | Rust binary | blind mailbox API; mainnet playground backend; serves the built web assets |
+| `zandglass-core` | Rust library | drand client and round math; nested seal/open (tlock and age); heir keys; kit v1; mailbox client |
+| `zandglass-wallet` | Rust library | light-client wallet over `zcash_client_sqlite`: vault manager (epochs, encrypted seeds), sync, balances, sweep, split, claim-by-restore |
+| `zandglass-cli` | Rust binary `zandglass` | the owner's, heir's and payee's tool |
+| `zandglass-keeper` | Rust binary | blind mailbox API; mainnet playground backend; serves the built web assets |
 | `web/` | TypeScript (Vite) | landing page, mainnet playground UI, heir page (create a key; claim); also built as a standalone static site for GitHub Pages |
 
 ### 5.2 Repository layout
 
 ```
-sandglass/
+zandglass/
   CLAUDE.md
   README.md
   LICENSE-MIT
   LICENSE-APACHE
   Cargo.toml                 # workspace
   crates/
-    sandglass-core/
-    sandglass-wallet/
-    sandglass-cli/
-    sandglass-keeper/
+    zandglass-core/
+    zandglass-wallet/
+    zandglass-cli/
+    zandglass-keeper/
   web/                       # Vite + TypeScript
   deploy/                    # docker compose, Caddyfile
   scripts/                   # check.sh, e2e-testnet.sh, e2e-mainnet.sh, record-video.mjs
@@ -359,13 +359,13 @@ sandglass/
 - **Web:** TypeScript, Vite, `tlock-js` + `drand-client`, `age-encryption` (the TypeScript age library), a BIP 39 library, a QR library, Playwright and axe for browser tests.
 - **Style:** no inline scripts and no third-party trackers. The Content-Security-Policy allows `connect-src` only to self and the drand endpoints.
 
-### 5.4 Kit format v1 (`*.sandglass`, JSON)
+### 5.4 Kit format v1 (`*.zandglass`, JSON)
 
 Public part:
 
 ```json
 {
-  "format": "sandglass-kit",
+  "format": "zandglass-kit",
   "version": 1,
   "kind": "legacy | installment",
   "network": "main | test",
@@ -425,7 +425,7 @@ Rules:
 
 - **Vault seeds:**
   - generated per epoch;
-  - stored encrypted with an age passphrase at `~/.sandglass/<network>/vaults/`;
+  - stored encrypted with an age passphrase at `~/.zandglass/<network>/vaults/`;
   - zeroized in memory where the libraries allow;
   - the owner can export a backup of all current vault seeds.
 - **Heir keys** are generated on the heir's side only. The owner's tool accepts heir codes and nothing else.
@@ -438,14 +438,14 @@ Rules:
 
 | Step | Transaction |
 |---|---|
-| Fund | From any wallet, using the ZIP 321 request shown by `sandglass receive` |
+| Fund | From any wallet, using the ZIP 321 request shown by `zandglass receive` |
 | Flip | Sweep vault k to vault k+1, `OvkPolicy::Discard` |
 | Split (installments) | One transaction from the funding vault to N installment vault addresses |
 | Cancel | Sweep the remaining vaults back to the owner's chosen address or a fresh vault |
-| Claim | The heir's wallet, or `sandglass claim`, sweeps the vault to the heir's address |
+| Claim | The heir's wallet, or `zandglass claim`, sweeps the vault to the heir's address |
 
 - All of them are built with the standard `zcash_client_backend` proposal flow at send time, with default expiry and anchor and the ZIP 317 fee.
-- **No Sandglass-specific memo text** (memos are optional and free text from the user).
+- **No Zandglass-specific memo text** (memos are optional and free text from the user).
 
 ### 5.8 Mainnet playground (hosted, for the judges)
 
@@ -465,7 +465,7 @@ Rules:
   - at most 60 sessions a day;
   - 0.0002 ZEC per session, returned to the float by default;
   - the float holds at most what the owner funded (O-5).
-- **Labels:** "Mainnet demo. Here the server plays the owner and holds the demo vault. In real use the owner runs Sandglass on their own device. Your heir key never leaves this browser." This is the main "mock" in the submission.
+- **Labels:** "Mainnet demo. Here the server plays the owner and holds the demo vault. In real use the owner runs Zandglass on their own device. Your heir key never leaves this browser." This is the main "mock" in the submission.
 - Exactly the same core and wallet code as the CLI.
 
 ### 5.9 Heir page (static, client-side)
@@ -477,7 +477,7 @@ Rules:
 - **Claim:**
   - load a kit from a claim link (mailbox) or a file;
   - show the unlock time and a live countdown;
-  - after the unlock: fetch the beacon from drand; open the tlock layer (`tlock-js`); ask for the heir phrase; open the age layer; show the vault seed, the birthday height, the owner's message and restore steps for Zodl, Zkool, Vizor, Zingo and `sandglass claim`.
+  - after the unlock: fetch the beacon from drand; open the tlock layer (`tlock-js`); ask for the heir phrase; open the age layer; show the vault seed, the birthday height, the owner's message and restore steps for Zodl, Zkool, Vizor, Zingo and `zandglass claim`.
 - Plain-language states:
   - waiting;
   - ready;
@@ -603,7 +603,7 @@ The on-chain footprint is **none** (P4). This is verified in T4.1 by comparing o
 - **Python:** always run Python from script files. Never pipe heredocs to `python`/`python3`; it hangs on this machine.
 - **Rust:** install rustup inside WSL Ubuntu and build there.
   - The repository lives on the Windows filesystem. From WSL, use its `/mnt/c/...` path.
-  - Set `CARGO_TARGET_DIR=$HOME/.cache/sandglass-target`; `/mnt/c` is slow for build artifacts.
+  - Set `CARGO_TARGET_DIR=$HOME/.cache/zandglass-target`; `/mnt/c` is slow for build artifacts.
 - **Web:** keep one `node_modules` owner, WSL preferred. Native tools break when `node_modules` is shared across operating systems.
 - **Docker** (in WSL) for the deploy image.
 - **Interoperability tools** for tests: drand `tle` and `age` CLIs, installed in WSL.
@@ -671,13 +671,13 @@ Each task has acceptance criteria (AC). A task is done only when:
 
 ### M1: Core and CLI (2026-10-04 to 10-10)
 
-- **T1.1 `sandglass-core::drand`:** chain info, round/time conversion, beacon fetch and verification (several relays). Unit tests with fixed vectors.
-- **T1.2 `sandglass-core::seal`, `heir` and `kit`:**
+- **T1.1 `zandglass-core::drand`:** chain info, round/time conversion, beacon fetch and verification (several relays). Unit tests with fixed vectors.
+- **T1.2 `zandglass-core::seal`, `heir` and `kit`:**
   - nested seal/open;
-  - heir key from 24 words (HKDF `sandglass-heir-v1`), heir code display and parsing;
+  - heir key from 24 words (HKDF `zandglass-heir-v1`), heir code display and parsing;
   - kit v1 types and validation.
   - AC: tests, including tamper, wrong key, too early, unknown version and 3-heir kits.
-- **T1.3 `sandglass-wallet`:**
+- **T1.3 `zandglass-wallet`:**
   - vault manager (epochs, encrypted seeds, birthday heights);
   - sync over gRPC, balances;
   - sweep (`OvkPolicy::Discard`), split into N vaults, claim-by-restore.
@@ -694,7 +694,7 @@ Each task has acceptance criteria (AC). A task is done only when:
 
 ### M2: Keeper, heir page, installments (2026-10-11 to 10-16)
 
-- **T2.1 `sandglass-keeper` mailbox:** the API per 5.5, SQLite, token hashes, retention, rate limits, no IP logs.
+- **T2.1 `zandglass-keeper` mailbox:** the API per 5.5, SQLite, token hashes, retention, rate limits, no IP logs.
   - AC: integration test; the CLI `--mailbox` flow replaces kits on flip.
 - **T2.2 Heir page (`web/`):** create a heir key and claim, per 5.9.
   - AC: a Playwright test creates a heir key, claims a real unlocked kit (testnet in CI; one mainnet run recorded), and asserts that no phrase or seed leaves the page (network log).
@@ -783,7 +783,7 @@ Cut in this order: S6, S5, S4, S3, S2, S1; then T2.4 (keep one heir); then T2.3 
 
 - **Server:** Docker Compose with `keeper` (which serves the web assets) and `caddy` (TLS).
   - Build images in WSL and ship them with `docker save | ssh docker load`, or build on the server (8 GB or more of RAM).
-- **Configuration** through environment variables: `SANDGLASS_NETWORK=main`, `SANDGLASS_LWD_URL`, `SANDGLASS_DRAND_URLS`, `SANDGLASS_PUBLIC_ORIGIN`, the playground caps, and the judge-code hash. The playground float seed goes in a root-owned file mounted read-only.
+- **Configuration** through environment variables: `ZANDGLASS_NETWORK=main`, `ZANDGLASS_LWD_URL`, `ZANDGLASS_DRAND_URLS`, `ZANDGLASS_PUBLIC_ORIGIN`, the playground caps, and the judge-code hash. The playground float seed goes in a root-owned file mounted read-only.
 - **Operations:**
   - a health endpoint plus a daily check during judging;
   - daily keeper database backups;
@@ -817,7 +817,7 @@ Cut in this order: S6, S5, S4, S3, S2, S1; then T2.4 (keep one heir); then T2.3 
 |---|---|---|
 | `tlock_age` is incompatible with quicknet or `tle`/`tlock-js` | T0.7 | The `tlock` crate directly; else seal through a small Node helper using `tlock-js`. Never leave quicknet silently (log D-xxx) |
 | age libraries are incompatible between Rust and JS | T0.7 | Use the X25519 recipient format only (the most portable); test vectors decide |
-| The third-party restore fails (birthday or pool issues) | T0.6 | Include exact restore steps per wallet; always offer `sandglass claim` |
+| The third-party restore fails (birthday or pool issues) | T0.6 | Include exact restore steps per wallet; always offer `zandglass claim` |
 | Libraries lack NU7 support in time for testnet (10-06) or mainnet (11-05) | T0.3, T6.1 | A git revision of librustzcash; custom `Parameters`; for development after 10-06, use mainnet with small amounts if testnet breaks |
 | zec.rocks is unreliable | T0.4, operations | Another public lightwalletd; else our own node on the server (mainnet needs 300 GB or more of disk and 16 GB of RAM, so prefer a public alternative) |
 | The float is drained by abuse | monitoring | Judge code, rate limits, daily cap; top-ups only from O-5 funds |
@@ -913,7 +913,7 @@ Do not use the Workflow tool unless the owner asks for it.
 - touch the owner's personal wallets or seeds;
 - solve CAPTCHAs or bot checks;
 - purchase anything;
-- use mainnet funds other than the demo and evidence wallet the owner funded (O-5), or send them anywhere except through Sandglass flows, playground sessions and back to the owner;
+- use mainnet funds other than the demo and evidence wallet the owner funded (O-5), or send them anywhere except through Zandglass flows, playground sessions and back to the owner;
 - commit secrets or personal identifiers (names, emails, handles, home paths, server IPs, the judge code);
 - copy code from pre-window products or old transcripts (C-1);
 - add tokens, fees or analytics to the product during the hackathon;

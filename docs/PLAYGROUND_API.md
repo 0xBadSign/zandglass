@@ -1,6 +1,6 @@
 # Playground API v1 (contract between the keeper and the web UI)
 
-The playground lets a judge try Sandglass on a real network in a few minutes.
+The playground lets a judge try Zandglass on a real network in a few minutes.
 The server plays the **owner** with a small float wallet. The visitor plays the
 **heir**: the heir key is created in the visitor's browser and never leaves it.
 All endpoints are under the keeper origin and return JSON. Errors use
@@ -12,21 +12,21 @@ All endpoints are under the keeper origin and return JSON. Errors use
 
 | Variable | Meaning |
 |---|---|
-| `SANDGLASS_PLAYGROUND_NETWORK` | `main` or `test`; unset disables the playground |
-| `SANDGLASS_PLAYGROUND_FLOAT_SEED_FILE` | file with the float wallet's 24 words (root-only, read once, kept in memory only) |
-| `SANDGLASS_PLAYGROUND_FLOAT_BIRTHDAY` | float wallet birthday height |
-| `SANDGLASS_PLAYGROUND_DATA` | directory for the float wallet, the session vaults and the session database |
-| `SANDGLASS_PLAYGROUND_SECRET` | passphrase (at least 12 characters) that encrypts the session vault seeds on disk |
-| `SANDGLASS_PLAYGROUND_JUDGE_CODE_SHA256` | hex SHA-256 of the judge code |
-| `SANDGLASS_PUBLIC_ORIGIN` | public origin of the site, used in claim links (`https://...`) |
-| `SANDGLASS_EXPLORER_TX_URL` | optional block explorer template containing `{txid}`; without it `explorer` is `null` |
-| `SANDGLASS_PLAYGROUND_AMOUNT_ZAT` | per session, default 20000 (0.0002 ZEC) |
-| `SANDGLASS_PLAYGROUND_MAX_ACTIVE` | default 10 |
-| `SANDGLASS_PLAYGROUND_MAX_PER_DAY` | default 60 (UTC day) |
-| `SANDGLASS_PLAYGROUND_MAX_KEEPS_PER_DAY` | default 5 (sessions whose funds the visitor keeps) |
-| `SANDGLASS_PLAYGROUND_MAX_FLIPS` | default 3, flips per session |
-| `SANDGLASS_PLAYGROUND_MIN_CONFIRMATIONS` | default 1, at least 1. Confirmations before funds count as spendable, for the float and every session vault. The wallet library's own default (3 trusted, 10 untrusted, about 12 minutes on testnet) is too slow for a demo; the CLI keeps that default |
-| `SANDGLASS_LWD_URL` | lightwalletd URL (default per network) |
+| `ZANDGLASS_PLAYGROUND_NETWORK` | `main` or `test`; unset disables the playground |
+| `ZANDGLASS_PLAYGROUND_FLOAT_SEED_FILE` | file with the float wallet's 24 words (root-only, read once, kept in memory only) |
+| `ZANDGLASS_PLAYGROUND_FLOAT_BIRTHDAY` | float wallet birthday height |
+| `ZANDGLASS_PLAYGROUND_DATA` | directory for the float wallet, the session vaults and the session database |
+| `ZANDGLASS_PLAYGROUND_SECRET` | passphrase (at least 12 characters) that encrypts the session vault seeds on disk |
+| `ZANDGLASS_PLAYGROUND_JUDGE_CODE_SHA256` | hex SHA-256 of the judge code |
+| `ZANDGLASS_PUBLIC_ORIGIN` | public origin of the site, used in claim links (`https://...`) |
+| `ZANDGLASS_EXPLORER_TX_URL` | optional block explorer template containing `{txid}`; without it `explorer` is `null` |
+| `ZANDGLASS_PLAYGROUND_AMOUNT_ZAT` | per session, default 20000 (0.0002 ZEC) |
+| `ZANDGLASS_PLAYGROUND_MAX_ACTIVE` | default 10 |
+| `ZANDGLASS_PLAYGROUND_MAX_PER_DAY` | default 60 (UTC day) |
+| `ZANDGLASS_PLAYGROUND_MAX_KEEPS_PER_DAY` | default 5 (sessions whose funds the visitor keeps) |
+| `ZANDGLASS_PLAYGROUND_MAX_FLIPS` | default 3, flips per session |
+| `ZANDGLASS_PLAYGROUND_MIN_CONFIRMATIONS` | default 1, at least 1. Confirmations before funds count as spendable, for the float and every session vault. The wallet library's own default (3 trusted, 10 untrusted, about 12 minutes on testnet) is too slow for a demo; the CLI keeps that default |
+| `ZANDGLASS_LWD_URL` | lightwalletd URL (default per network) |
 
 ## Behaviour notes
 
@@ -35,7 +35,7 @@ All endpoints are under the keeper origin and return JSON. Errors use
   the defaults 20000 + 4 x 10000 = 60000 zat. The float gets back what is left
   after the sweeps. `balance_zat` is the vault's real balance.
 - **Seeds.** Each session vault has a fresh seed. The server keeps it on disk
-  encrypted with an age passphrase (`SANDGLASS_PLAYGROUND_SECRET`, via the wallet
+  encrypted with an age passphrase (`ZANDGLASS_PLAYGROUND_SECRET`, via the wallet
   store) until the session is purged, because the server must be able to sweep
   the vault. The float seed is never written by the keeper.
 - **Wallet queue.** All wallet operations run one at a time behind a single

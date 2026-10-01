@@ -5,7 +5,7 @@
 // of every phase and every txid shown, and takes screenshots.
 //
 //   cd web && npx vite build
-//   (start the keeper with SANDGLASS_WEB_DIR=web/dist, see docs/PLAYGROUND_API.md)
+//   (start the keeper with ZANDGLASS_WEB_DIR=web/dist, see docs/PLAYGROUND_API.md)
 //   JUDGE_CODE=... node e2e-live/rehearsal.mjs
 //
 // Environment:

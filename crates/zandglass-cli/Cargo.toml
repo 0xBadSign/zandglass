@@ -1,0 +1,27 @@
+[package]
+name = "zandglass-cli"
+description = "The zandglass command line: create vaults, flip, claim."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "zandglass"
+path = "src/main.rs"
+
+[dependencies]
+zandglass-core = { path = "../zandglass-core" }
+zandglass-wallet = { path = "../zandglass-wallet" }
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+rpassword = "7"
+tempfile = "3"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "signal"] }
+zeroize = "1.9.0"
+
+[dev-dependencies]
+zandglass-keeper = { path = "../zandglass-keeper" }
+
+[lints]
+workspace = true

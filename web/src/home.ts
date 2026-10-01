@@ -3,12 +3,12 @@ import './site.css';
 import './scenes.css';
 import './landing.css';
 import { h } from './lib/dom';
-import { Sandglass, drandTicker, mountDust, reducedMotion, revealOnScroll } from './lib/fx';
+import { GlassCanvas, drandTicker, mountDust, reducedMotion, revealOnScroll } from './lib/fx';
 import { formatCountdown, networkLabel, parseLiveVault, type LiveVault } from './lib/playground';
 import { sceneFlip, sceneHeir, sceneOpen, sceneSeal } from './lib/scenes';
 import { mountShell } from './lib/shell';
 
-const REPO = 'https://github.com/0xnesQuit/sandglass';
+const REPO = 'https://github.com/0xnesQuit/zandglass';
 const EVIDENCE = `${REPO}/blob/main/docs/evidence/EVIDENCE.md`;
 
 const main = mountShell('home', { wide: true });
@@ -16,7 +16,7 @@ mountDust();
 
 /* ------------------------------------------------------------------ hero */
 
-const glass = new Sandglass({ autoplay: true, period: 13, className: 'hero-glass' });
+const glass = new GlassCanvas({ autoplay: true, period: 13, className: 'hero-glass' });
 
 const hero = h(
   'section',
@@ -69,7 +69,7 @@ const problem = h(
   h(
     'p',
     { class: 'statement-sub' },
-    'Writing the seed in a will gives it to a lawyer today. Telling your heir gives it to them today. Sandglass gives it to them ',
+    'Writing the seed in a will gives it to a lawyer today. Telling your heir gives it to them today. Zandglass gives it to them ',
     h('em', {}, 'later'),
     ', and only if you go silent.',
   ),
@@ -86,7 +86,7 @@ const STEPS = [
   },
   {
     n: '02',
-    title: 'Sandglass seals a vault',
+    title: 'Zandglass seals a vault',
     body: 'Your funds move into a fresh vault. Its seed is locked twice: to a future drand round, and to the heir code. You hold the kit.',
     scene: sceneSeal,
   },
@@ -185,7 +185,7 @@ const tiles = Array.from({ length: TILE_COUNT }, (_, i) => {
       picks === 1
         ? 'Ordinary shielded transaction. Try another.'
         : picks === 2
-          ? 'Ordinary again. A Sandglass flip uses the standard fee, expiry and anchor of any wallet.'
+          ? 'Ordinary again. A Zandglass flip uses the standard fee, expiry and anchor of any wallet.'
           : 'You cannot tell, and neither can anyone watching the chain. That is the point.';
     if (picks >= 3) spot.classList.add('solved');
   });
@@ -202,7 +202,7 @@ const spot = h(
     h(
       'p',
       { class: 'muted' },
-      'A block of shielded transactions (an illustration). On the real chain, Sandglass funding, flips and claims are built by the standard Zcash wallet library at send time: nothing is scheduled, pre-signed or marked.',
+      'A block of shielded transactions (an illustration). On the real chain, Zandglass funding, flips and claims are built by the standard Zcash wallet library at send time: nothing is scheduled, pre-signed or marked.',
     ),
     spotMsg,
   ),
@@ -302,7 +302,7 @@ const honesty = h(
 
 /* ---------------------------------------------------------------- final */
 
-const finalGlass = new Sandglass({ autoplay: true, period: 9, className: 'final-glass' });
+const finalGlass = new GlassCanvas({ autoplay: true, period: 9, className: 'final-glass' });
 const final = h(
   'section',
   { class: 'final reveal', 'aria-labelledby': 'final-h' },

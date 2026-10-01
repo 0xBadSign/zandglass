@@ -1,4 +1,4 @@
-# Sandglass: Progress
+# Zandglass: Progress
 
 Live state of the project. The agent updates it at the end of every work unit, newest first. Plan: `docs/PLAN.md` (version 2). Operating rules: `CLAUDE.md`.
 
@@ -22,11 +22,11 @@ Live state of the project. The agent updates it at the end of every work unit, n
 
 | ID | Action | Due | Status |
 |---|---|---|---|
-| O-1 | GitHub access on this PC (`gh auth login`); repository under the owner's account, private until 10-26 | 2026-10-03 | done 2026-09-30: account `0xnesQuit`, private repo `0xnesQuit/sandglass` |
+| O-1 | GitHub access on this PC (`gh auth login`); repository under the owner's account, private until 10-26 | 2026-10-03 | done 2026-09-30: account `0xnesQuit`, private repo `0xnesQuit/zandglass` |
 | O-2 | Server: reuse the existing VPS (install the agent's new SSH public key) or buy a Hetzner CX33 | 2026-10-12 | done 2026-10-01: existing VPS reachable with the deploy key (4 vCPU, 6 GB RAM, 50 GB; details in .private/SERVER.md) |
-| O-3 | (Optional) domain | 2026-10-14 | open |
+| O-3 | (Optional) domain | 2026-10-14 | done 2026-10-01: `zandglass.cash`, nameservers on Cloudflare |
 | O-4 | (If needed) testnet TAZ to the agent's development address | 2026-10-02 | done 2026-09-30: owner sent 1 TAZ |
-| O-5 | 0.02 ZEC (0.01 is enough to start) to the mainnet demo and evidence wallet (what is left is returned) | 2026-10-08 | open: address `u1n5kwtcm5ey6t0lkyn674ghr2nqqefh82zg4rtngxkmlh3nd2tm8wpt8uc2cvrawmhhetax2wvfrf7tn50n4p7nm5kl9t8mfjeqtg8sjc` (birthday 3501739) |
+| O-5 | 0.02 ZEC (0.01 is enough to start) to the mainnet demo and evidence wallet (what is left is returned) | 2026-10-08 | open: NEW address `u1zhzeajwadh8vr6rtjmyf3ykkscyu79vujvych0wxuhpwn450whzymh99cmujj0za86cuy8gk5qymv4dr65ymfc0nhafndczy9qgzukxx` (birthday 3502506). The earlier address is abandoned (D-015): never send to it |
 | O-6 | Save a draft (10-25) and SUBMIT (10-27) with texts from `docs/SUBMISSION.md` and the judge code from `.private/`; prize address; repository-public box | 10-25 / 10-27 | open |
 | O-7 | (Optional) video voiceover | 2026-10-24 | open |
 
@@ -47,7 +47,7 @@ Live state of the project. The agent updates it at the end of every work unit, n
 ### M1 Core and CLI (10-04 to 10-10)
 - [x] T1.1 core::drand
 - [x] T1.2 core::seal, heir keys, kit v1
-- [x] T1.3 sandglass-wallet: encrypted store, flip, cancel, claim (split moves to T2.3)
+- [x] T1.3 zandglass-wallet: encrypted store, flip, cancel, claim (split moves to T2.3)
 - [x] T1.4 CLI commands (terminal QR not done; low priority)
 - [ ] T1.5 End to end: testnet DONE (evidence 2026-09-30); mainnet pending O-5; third-party wallet restore pending
 - [ ] T1.6 CI
@@ -106,17 +106,19 @@ Live state of the project. The agent updates it at the end of every work unit, n
 | ID | Date | Decision | Why |
 |---|---|---|---|
 | D-001 | 2026-09-30 | Track: Shielded Payments (revised the same day, from Core & Tooling) | After D-009 the product is a user-facing way to move shielded money privately: inheritance, allowances, subscriptions. It stands out there against POS and payroll entries. The Grand Prize is cross-track. |
-| D-002 | 2026-09-30 | Working name: Sandglass | "Heirloom" is used by several crypto inheritance projects. The sandglass metaphor gives the UX its verbs (seal, flip, the sand runs out). A defunct Solana yield protocol used the name until June 2026; there is no conflict on Zcash. |
+| D-002 | 2026-09-30 | Working name: Sandglass (renamed to Zandglass, D-014) | "Heirloom" is used by several crypto inheritance projects. The sandglass metaphor gives the UX its verbs (seal, flip, the sand runs out). A defunct Solana yield protocol used the name until June 2026; there is no conflict on Zcash. |
 | D-003 | 2026-09-30 | Mainnet is the product's default network. Testnet is only for development and CI. Mainnet plans are capped at 0.25 ZEC unless `--accept-unaudited`. | Owner instruction: finish and submit on mainnet. The cap protects early users until an audit. |
 | D-004 | 2026-09-30 | The playground runs on mainnet: the server plays the owner with a small float (0.0002 ZEC per session, returned by default; judge code, caps); the heir key is generated in the visitor's browser and never leaves it | Judges can use it on mainnet without buying ZEC; the float is the owner's demo money, not strangers' funds; disclosed as the main mock |
 | D-005 | 2026-09-30 | Sealed object = the vault seed, encrypted to heir codes (age X25519) and then to a drand quicknet round (tlock) | AND-gate (time and heir); revocable by rolling vaults; upgrade-proof; claim with any wallet; standard formats (no lock-in) |
 | D-006 | 2026-09-30 | Judging criteria found in the site's data file: Privacy ("Leaks are disqualifying, not deductions"), Usefulness ("use this on Monday"), Execution ("Working beats ambitious"), Originality ("not repackaged") | Drives D-007, D-009, the privacy review (C-11) and the cut order |
 | D-007 | 2026-09-30 | Every judge-facing part (demo, evidence, video) is on mainnet | The rules say nothing about testnet; the criteria favour real use |
-| D-008 | 2026-09-30 | Heir key = 24 words, HKDF (`sandglass-heir-v1`), X25519 age identity; heir code = the age recipient string | Standard, portable, openable with the reference `age` tool; phrase backup is familiar to crypto users |
-| D-013 | 2026-09-30 | Commits use a repo-local neutral identity (`Sandglass contributors <dev@sandglass.invalid>`) until O-1; since O-1 commits use the GitHub noreply address of the owner account | C-9: the global git identity carries the owner's real name and email |
+| D-008 | 2026-09-30 | Heir key = 24 words, HKDF (`zandglass-heir-v1`), X25519 age identity; heir code = the age recipient string | Standard, portable, openable with the reference `age` tool; phrase backup is familiar to crypto users |
+| D-013 | 2026-09-30 | Commits use a repo-local neutral identity (`Zandglass contributors <dev@zandglass.invalid>`) until O-1; since O-1 commits use the GitHub noreply address of the owner account | C-9: the global git identity carries the owner's real name and email |
 | D-012 | 2026-09-30 | drand quicknet verified: chain `52db9ba7…e971`, genesis 1692803367, period 3, scheme `bls-unchained-g1-rfc9380`, public key `83cf0f28…ece45a` | T0.4 |
 | D-011 | 2026-09-30 | Build on the released cohort (`zcash_client_backend` 0.24.0, `zcash_client_sqlite` 0.22.0, `zcash_primitives` 0.30.1, `zcash_protocol` 0.10.6, `zcash_keys` 0.16.1, `orchard` 0.15.5, `zip321` 0.9.0). Released crates have no NU7 (still `zcash_unstable`); librustzcash main has `BranchId::Nu7 = 0x77190AD9` but no testnet or mainnet height. After testnet NU7 (10-06), if no release carries the height, continue development on mainnet with small amounts; bump before mainnet NU7 (T6.1). | The sealed-vault design builds only ordinary transactions, so NU7 only matters for the wallet's transaction builder |
 | D-010 | 2026-09-30 | Coding subagents run on the Sonnet model; the main agent reviews and integrates | Owner instruction |
+| D-015 | 2026-10-01 | The first mainnet float wallet is abandoned and replaced. A WSL path mix-up had created it inside the repository, and its seed was committed (2026-09-30, private repo). It never held funds (balance checked: 0). The new wallet lives in WSL `~/zandglass-evidence/main-float` (0700); `check.sh` now rejects seed-like files and BIP 39-looking lines. The dead seed is still in git history: rewrite history before the repository goes public (owner approval needed for the force push). | Escalated to the owner the same day |
+| D-014 | 2026-10-01 | Product renamed Sandglass -> Zandglass (Z for Zcash; keeps the hourglass metaphor). Everything is renamed: crates, binary, env vars (`ZANDGLASS_*`), kit format and heir-key domain strings (test vectors regenerated), kit files (`.zandglass`), GitHub repository. Domain: `zandglass.cash` (O-3). | Owner choice; a "zk" name was rejected because Zandglass makes no zero-knowledge claim of its own |
 | D-009 | 2026-09-30 | Pre-signed transactions (plan v1) demoted to opt-in "auto-delivery" (S1) | Expiry 0 and old anchors are on-chain fingerprints (leaks disqualify); signatures go stale at network upgrades |
 
 ---
@@ -130,17 +132,17 @@ None yet.
 ## Session log (newest first)
 
 ### 2026-09-30 (3): M0 build start
-- T0.1 scaffold (0ab0ccf), T0.2 toolchain, T0.3 dependencies (D-011), T0.4 connectivity (D-012) done. The GitHub private repo `0xnesQuit/sandglass` was created and pushed (O-1 done).
+- T0.1 scaffold (0ab0ccf), T0.2 toolchain, T0.3 dependencies (D-011), T0.4 connectivity (D-012) done. The GitHub private repo `0xnesQuit/zandglass` was created and pushed (O-1 done).
 - Spike A (Sonnet subagent, merged):
-  - `crates/sandglass-wallet` vault, sync, sweep, restore; the `spike_vault` example;
+  - `crates/zandglass-wallet` vault, sync, sweep, restore; the `spike_vault` example;
   - `info` works on mainnet and testnet;
-  - testnet vault `utest1p2awydq35puydeurknpfd065drawhcrn783zltwqfydge2fh27ht8ysp4rpgfmgxk4zrn9xlxd44v4spv94ytrdudpfwz3cngykytvwq` (birthday 4423551, seed in WSL `~/sandglass-spikeA/vault1`).
+  - testnet vault `utest1p2awydq35puydeurknpfd065drawhcrn783zltwqfydge2fh27ht8ysp4rpgfmgxk4zrn9xlxd44v4spv94ytrdudpfwz3cngykytvwq` (birthday 4423551, seed in WSL `~/zandglass-spikeA/vault1`).
   - Sweep is not yet run with real funds.
 - Spike B (Sonnet subagent, merged):
   - drand, heir and seal modules; kit vectors;
   - interoperability in all directions (Rust, `tle`+`age`, tlock-js+age-encryption);
   - the merge needed bip0039 0.12, hkdf 0.12 and sha2 0.10 because `zcash_primitives` pins `crypto-common =0.2.0-rc.1`.
-- Mainnet demo and evidence wallet created (seed in WSL `~/sandglass-evidence/main-float`); its address was handed to the owner for O-5.
+- Mainnet demo and evidence wallet created (seed in WSL `~/zandglass-evidence/main-float`); its address was handed to the owner for O-5.
 - The Valar testnet faucet (API, no bot check) returned `global_cap` (retry after about 9 h, around 2026-10-01 06:00 UTC).
 - `check.sh`: 24 tests plus all gates pass on `main`.
 - Next: retry the faucet, then T0.6 (fund, sweep, restore). Meanwhile M1 T1.3 hardening (encrypted seed storage) and T1.4 CLI.

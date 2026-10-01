@@ -1,6 +1,6 @@
 # Third-party software
 
-Sandglass is licensed MIT OR Apache-2.0. All third-party code arrives as libraries through package managers (crates.io and npm). There are no vendored copies, no patched forks and no `[patch]` sections in the workspace. License data below comes from `cargo metadata --locked` and from `web/package-lock.json` as of 2026-10-01; regenerate it when dependencies change.
+Zandglass is licensed MIT OR Apache-2.0. All third-party code arrives as libraries through package managers (crates.io and npm). There are no vendored copies, no patched forks and no `[patch]` sections in the workspace. License data below comes from `cargo metadata --locked` and from `web/package-lock.json` as of 2026-10-01; regenerate it when dependencies change.
 
 Counts: the Rust lockfile holds 513 third-party packages and the web lockfile 161 (55 of them production dependencies, the rest are build and test tools).
 

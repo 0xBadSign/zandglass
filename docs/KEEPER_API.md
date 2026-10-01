@@ -1,6 +1,6 @@
 # Keeper API v1 (blind mailbox)
 
-The keeper (`sandglass-keeper`) stores the latest kit of a plan so that an heir can open a claim link without the owner handing over a file. It is **blind**: it stores the kit as it received it and has no key that opens one, before or after the unlock. Using a keeper is optional; kits are ordinary files.
+The keeper (`zandglass-keeper`) stores the latest kit of a plan so that an heir can open a claim link without the owner handing over a file. It is **blind**: it stores the kit as it received it and has no key that opens one, before or after the unlock. Using a keeper is optional; kits are ordinary files.
 
 The playground endpoints (`/v1/playground/*`) are documented in [PLAYGROUND_API.md](PLAYGROUND_API.md). This document covers the mailbox endpoints and the server itself.
 
@@ -28,11 +28,11 @@ Example:
 curl -s -X POST https://<keeper>/v1/mailboxes
 # {"id":"...","write_token":"...","read_token":"..."}
 curl -s -X PUT  https://<keeper>/v1/mailboxes/<id>/kit -H "Authorization: Bearer <write_token>" \
-     -H "Content-Type: application/json" --data-binary @kit.sandglass
+     -H "Content-Type: application/json" --data-binary @kit.zandglass
 curl -s https://<keeper>/v1/mailboxes/<id>/kit -H "Authorization: Bearer <read_token>"
 ```
 
-The CLI does this for you: `sandglass plan legacy --mailbox https://<keeper> ...` creates the mailbox and prints the claim link once; every `flip` replaces the kit; `cancel` deletes the mailbox; `claim <claim link>` reads it.
+The CLI does this for you: `zandglass plan legacy --mailbox https://<keeper> ...` creates the mailbox and prints the claim link once; every `flip` replaces the kit; `cancel` deletes the mailbox; `claim <claim link>` reads it.
 
 ## Errors
 
@@ -53,7 +53,7 @@ Errors are `{ "error": "<code>", "message": "<plain English>" }`.
 
 - Kit size: 64 KiB (`MAX_KIT_BYTES`).
 - Rate limit per client address, in memory only (IPv6 addresses are grouped by /64): a burst of 60 requests, then 2 per second. Creating a mailbox (and a playground session) has its own bucket: a burst of 10, then 1 per minute.
-- With `SANDGLASS_TRUST_PROXY=1` the last entry of `X-Forwarded-For` is used as the client address. Enable it only behind a reverse proxy you control.
+- With `ZANDGLASS_TRUST_PROXY=1` the last entry of `X-Forwarded-For` is used as the client address. Enable it only behind a reverse proxy you control.
 
 ## CORS
 
@@ -71,12 +71,12 @@ A mailbox is deleted 180 days after its last update (creation counts as an updat
 
 ## Running the server
 
-`sandglass-keeper` reads its configuration from the environment:
+`zandglass-keeper` reads its configuration from the environment:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `SANDGLASS_LISTEN` | `127.0.0.1:8787` | Address to bind |
-| `SANDGLASS_DB` | `./keeper.sqlite` | SQLite database file |
-| `SANDGLASS_TRUST_PROXY` | off | `1` to use `X-Forwarded-For` for rate limiting |
-| `SANDGLASS_WEB_DIR` | none | Directory of static files (the built `web/dist`) served at `/` |
-| `SANDGLASS_PLAYGROUND_*` | off | Enables the playground; see [PLAYGROUND_API.md](PLAYGROUND_API.md) |
+| `ZANDGLASS_LISTEN` | `127.0.0.1:8787` | Address to bind |
+| `ZANDGLASS_DB` | `./keeper.sqlite` | SQLite database file |
+| `ZANDGLASS_TRUST_PROXY` | off | `1` to use `X-Forwarded-For` for rate limiting |
+| `ZANDGLASS_WEB_DIR` | none | Directory of static files (the built `web/dist`) served at `/` |
+| `ZANDGLASS_PLAYGROUND_*` | off | Enables the playground; see [PLAYGROUND_API.md](PLAYGROUND_API.md) |

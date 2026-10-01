@@ -1,6 +1,6 @@
 /**
  * Heir keys. A heir key is 24 BIP 39 words. The words become an X25519 secret
- * (HKDF-SHA256 over the BIP 39 seed, domain "sandglass-heir-v1") that is used
+ * (HKDF-SHA256 over the BIP 39 seed, domain "zandglass-heir-v1") that is used
  * as an age identity. The heir code is the matching age recipient (`age1...`).
  * Nothing here touches the network or storage.
  */
@@ -11,7 +11,7 @@ import { generateMnemonic, mnemonicToSeedSync, validateMnemonic } from '@scure/b
 import { wordlist } from '@scure/bip39/wordlists/english.js';
 import { identityToRecipient } from 'age-encryption';
 
-const DOMAIN = 'sandglass-heir-v1';
+const DOMAIN = 'zandglass-heir-v1';
 
 export class InvalidPhraseError extends Error {
   constructor(message = 'invalid heir phrase') {
@@ -35,7 +35,7 @@ export function isValidPhrase(input: string): boolean {
   return phrase.split(' ').length === 24 && validateMnemonic(phrase, wordlist);
 }
 
-/** phrase -> BIP 39 seed -> HKDF-SHA256("sandglass-heir-v1") -> AGE-SECRET-KEY-1... */
+/** phrase -> BIP 39 seed -> HKDF-SHA256("zandglass-heir-v1") -> AGE-SECRET-KEY-1... */
 export function identityFromPhrase(input: string): string {
   const phrase = normalizePhrase(input);
   if (!isValidPhrase(phrase)) throw new InvalidPhraseError();

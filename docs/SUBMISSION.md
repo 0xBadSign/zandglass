@@ -6,7 +6,7 @@ Fill the placeholders marked `<...>` before submitting. The judge code lives in
 
 ## Project name (max 64)
 
-Sandglass: time-locked inheritance for shielded Zcash
+Zandglass: time-locked inheritance for shielded Zcash
 
 ## Track
 
@@ -14,9 +14,9 @@ Shielded Payments
 
 ## Description (max 2,000 characters)
 
-Shielded Zcash has no timelocks, so there is no private way to pass it on: if you die, your heirs cannot even see that the funds exist. Sandglass gives a vault a time-locked recovery path that only your heir can use, only after you stop checking in.
+Shielded Zcash has no timelocks, so there is no private way to pass it on: if you die, your heirs cannot even see that the funds exist. Zandglass gives a vault a time-locked recovery path that only your heir can use, only after you stop checking in.
 
-How it works: your heir makes a key in the browser and sends you a public heir code. Sandglass moves your funds into a dedicated vault (a fresh Zcash seed) and seals that seed twice: to the heir code (age, X25519) and to a future moment (drand quicknet timelock). While you are around you "flip": the funds move to a fresh vault and a new kit is sealed, so old kits open empty vaults. If you stop, the sand runs out and the heir opens the kit in the browser and restores the vault in any Zcash wallet. Installments (cancelable scheduled payments) use the same mechanism.
+How it works: your heir makes a key in the browser and sends you a public heir code. Zandglass moves your funds into a dedicated vault (a fresh Zcash seed) and seals that seed twice: to the heir code (age, X25519) and to a future moment (drand quicknet timelock). While you are around you "flip": the funds move to a fresh vault and a new kit is sealed, so old kits open empty vaults. If you stop, the sand runs out and the heir opens the kit in the browser and restores the vault in any Zcash wallet. Installments (cancelable scheduled payments) use the same mechanism.
 
 Why it does not leak: there is no smart contract and nothing pre-signed. Funding, flips and claims are ordinary shielded transactions built by the standard librustzcash flow at send time (default expiry and anchor, ZIP 317 fee, OvkPolicy::Discard), so nothing on chain reveals the plan, the heir or the amounts. Before the unlock nobody can open a kit; after it, only a listed heir. The mailbox keeper stores ciphertext it can never open and logs no requests. The web pages never send the phrase or the seed (checked in automated browser tests).
 
@@ -27,7 +27,7 @@ Playground judge code: <JUDGE CODE>
 
 ## Code repository
 
-https://github.com/0xnesQuit/sandglass
+https://github.com/0xnesQuit/zandglass
 
 ## Working demo
 

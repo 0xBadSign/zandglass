@@ -1,4 +1,4 @@
-# How Sandglass works
+# How Zandglass works
 
 This document describes what the code in this repository does. Where `docs/PLAN.md` differs, the code is described here and the difference is noted.
 
@@ -6,16 +6,16 @@ This document describes what the code in this repository does. Where `docs/PLAN.
 
 | Object | What it is | Where it lives |
 |---|---|---|
-| **Vault seed** | A BIP 39 24-word mnemonic generated per epoch. The wallet uses account 0 only. The vault address is a shielded-only unified address with an Orchard receiver and no transparent receiver. | The owner's store, encrypted: `~/.sandglass/<network>/vaults/<plan>/e<N>/seed.age` (age passphrase encryption, scrypt). Also inside every kit, sealed. |
+| **Vault seed** | A BIP 39 24-word mnemonic generated per epoch. The wallet uses account 0 only. The vault address is a shielded-only unified address with an Orchard receiver and no transparent receiver. | The owner's store, encrypted: `~/.zandglass/<network>/vaults/<plan>/e<N>/seed.age` (age passphrase encryption, scrypt). Also inside every kit, sealed. |
 | **Birthday height** | The block height a wallet restore starts scanning from. New vaults use the chain tip minus 100 blocks. | In the plan record and in the kit payload. |
-| **Heir key** | 24 BIP 39 words, turned into an age X25519 identity (see `docs/KIT_FORMAT.md`). Created by the heir only (`sandglass heir new`, or the heir page in the browser). | The heir's head, paper or password manager. Never sent anywhere. |
+| **Heir key** | 24 BIP 39 words, turned into an age X25519 identity (see `docs/KIT_FORMAT.md`). Created by the heir only (`zandglass heir new`, or the heir page in the browser). | The heir's head, paper or password manager. Never sent anywhere. |
 | **Heir code** | The matching public age recipient string (`age1...`). The owner's tool accepts heir codes and nothing else. | Plan record (public). |
 | **Plan** | Heir codes (1 to 3), a period, an optional message, the current epoch, optional mailbox data. | `plans.json` in the store. It holds no seeds. |
 | **Epoch** | One vault of a plan. Epoch 1 is the first vault; every flip creates the next. | One directory per epoch. |
-| **Kit** | A JSON file `<plan>-e<epoch>.sandglass`: public metadata plus the sealed vault seed. | Given to the heir, or uploaded to the keeper mailbox. |
+| **Kit** | A JSON file `<plan>-e<epoch>.zandglass`: public metadata plus the sealed vault seed. | Given to the heir, or uploaded to the keeper mailbox. |
 | **Mailbox** | A slot on a keeper that holds the latest kit of a plan. The heir's claim link points to it. | The keeper (optional). |
 
-The owner's store is created by `sandglass init`. It is protected by a passphrase (prompted, or the `SANDGLASS_PASSPHRASE` environment variable for automation). A store exists per network (`main` or `test`).
+The owner's store is created by `zandglass init`. It is protected by a passphrase (prompted, or the `ZANDGLASS_PASSPHRASE` environment variable for automation). A store exists per network (`main` or `test`).
 
 ## 2. The nested seal
 
@@ -28,13 +28,13 @@ kit       = { public metadata..., "sealed": sealed }
 
 - **Inner layer (heir-gated).** The payload is encrypted with the `age` crate to up to three heir codes. Any one of the heirs can open it.
 - **Outer layer (time-gated).** The age file is encrypted with `tlock_age` to a round of drand quicknet. The result is an ASCII-armoured age file whose header carries the round number and the chain hash. Nobody can compute the key before drand publishes that round's beacon (its BLS signature). A threshold of the League of Entropy drand nodes could in theory publish early; that would remove only the time gate, not the heir gate.
-- Both layers are standard formats. `tle --decrypt` followed by `age --decrypt -i <identity>` opens a kit without any Sandglass code (`docs/KIT_FORMAT.md`).
+- Both layers are standard formats. `tle --decrypt` followed by `age --decrypt -i <identity>` opens a kit without any Zandglass code (`docs/KIT_FORMAT.md`).
 - Opening: the library requires the beacon of exactly round R. A beacon of a later round is rejected (`WrongBeaconRound`), because the tlock key is round-specific.
 - The seal is built in memory; the plaintext payload and the vault seed are zeroized after use where the libraries allow.
 
 ## 3. Flips and epochs
 
-`sandglass flip` is the owner's check-in. In order:
+`zandglass flip` is the owner's check-in. In order:
 
 1. Sync the current vault and require that it holds funds, all of them confirmed (`vault_empty`, `insufficient_funds` otherwise).
 2. On mainnet, refuse if the balance is above 0.25 ZEC and `--accept-unaudited` was not given (`amount_over_cap`).
@@ -52,7 +52,7 @@ Properties:
 - **The owner can race.** After the unlock time the funds still sit in a vault whose seed the owner also knows. The owner can move them until the heir does. This is intentional and the same as Bitcoin timelock recovery.
 - **Flip after unlock.** The CLI prints a note that the heir could already claim, and flips only if the funds are still there.
 
-`sandglass cancel <plan> --to <address>` sweeps the current vault to an address you choose, marks the plan cancelled and deletes the mailbox (the keeper also deletes it by itself after 180 days). The plan text says the funds may go to "a fresh vault"; the code sends them to the address you give.
+`zandglass cancel <plan> --to <address>` sweeps the current vault to an address you choose, marks the plan cancelled and deletes the mailbox (the keeper also deletes it by itself after 180 days). The plan text says the funds may go to "a fresh vault"; the code sends them to the address you give.
 
 ## 4. Installments
 
@@ -62,8 +62,8 @@ The kit format already carries `kind: "installment"` and a `sequence` (index, co
 
 | Path | What happens |
 |---|---|
-| `sandglass claim <kit file or claim link> --phrase-file <file> --to <address>` | Refuses before the unlock time unless `--wait` is given. Derives the heir identity from the phrase file, fetches the beacon of round R (retrying for about 30 seconds if the beacon lags the clock), opens both layers, restores the vault seed into a throwaway wallet directory under the system temp directory, syncs, sweeps everything to `<address>` and deletes the directory. The seed is not written to disk. |
-| `sandglass claim` without `--to` | Opens the kit and prints the owner's message, the vault seed, the birthday height, the network and restore hints. The heir restores the seed in any Zcash wallet, setting the birthday height. |
+| `zandglass claim <kit file or claim link> --phrase-file <file> --to <address>` | Refuses before the unlock time unless `--wait` is given. Derives the heir identity from the phrase file, fetches the beacon of round R (retrying for about 30 seconds if the beacon lags the clock), opens both layers, restores the vault seed into a throwaway wallet directory under the system temp directory, syncs, sweeps everything to `<address>` and deletes the directory. The seed is not written to disk. |
+| `zandglass claim` without `--to` | Opens the kit and prints the owner's message, the vault seed, the birthday height, the network and restore hints. The heir restores the seed in any Zcash wallet, setting the birthday height. |
 | Heir page (`/claim`) | Loads a kit from a claim link (`#m=<id>&r=<read token>`, optional `&k=<keeper origin>`) or a file, shows a countdown, fetches the beacon from drand and decrypts in the browser, then shows the seed, birthday and restore steps. It does not sweep for the heir. |
 | By hand | `tle --decrypt` then `age --decrypt -i`, see `docs/KIT_FORMAT.md`. |
 
@@ -79,7 +79,7 @@ What an upgrade does require is a wallet-library bump. The released `zcash_clien
 
 ## 7. Time math
 
-drand quicknet: chain hash `52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971`, genesis time 1692803367 (unix), period 3 seconds, scheme `bls-unchained-g1-rfc9380`. These are pinned in `sandglass-core::drand` and were checked against the network's `/info` endpoint (D-012).
+drand quicknet: chain hash `52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971`, genesis time 1692803367 (unix), period 3 seconds, scheme `bls-unchained-g1-rfc9380`. These are pinned in `zandglass-core::drand` and were checked against the network's `/info` endpoint (D-012).
 
 ```
 round_at(t)      = floor((t - genesis) / 3) + 1        // the round published at time t (0 before genesis)

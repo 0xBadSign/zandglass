@@ -117,7 +117,7 @@ section > .section-title + .muted {
   filter: blur(6px);
 }
 
-/* the animated sandglass */
+/* the animated zandglass */
 
 .sg-art {
   width: min(19rem, 70vw);

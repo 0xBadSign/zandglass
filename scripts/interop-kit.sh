@@ -10,9 +10,9 @@ cd "$ROOT"
 # shellcheck disable=SC1091
 [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
 export PATH="$HOME/.local/bin:$PATH"
-export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$HOME/.cache/sandglass-target}"
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$HOME/.cache/zandglass-target}"
 
-V=crates/sandglass-core/tests/vectors
+V=crates/zandglass-core/tests/vectors
 IDENTITY="$V/TEST_ONLY_identity.txt"
 PAYLOAD="$V/payload.txt"
 ROUND="$(tr -d '\n' < "$V/round.txt")"
@@ -21,7 +21,7 @@ trap 'rm -rf "$TMP"' EXIT
 
 step() { printf '\n== %s\n' "$1"; }
 same() { cmp -s "$1" "$2" && echo "   OK: payload matches ($3)" || { echo "   FAIL: $3"; exit 1; }; }
-rust_open() { cargo run -q -p sandglass-core --example open_kit -- "$@"; }
+rust_open() { cargo run -q -p zandglass-core --example open_kit -- "$@"; }
 
 command -v age >/dev/null || { echo "age not found"; exit 1; }
 command -v tle >/dev/null || { echo "tle not found"; exit 1; }
@@ -40,7 +40,7 @@ age --decrypt -i "$IDENTITY" < "$TMP/inner.age" > "$TMP/out2"
 same "$TMP/out2" "$PAYLOAD" "tle + age"
 
 step "3. TypeScript opens the committed vector, and seals a kit (tlock-js + age-encryption)"
-( cd web && SANDGLASS_NETWORK_TESTS=1 KIT_OUT="$TMP/ts.kit" npx vitest run src/kit-interop.test.ts --reporter=dot 2>&1 | grep -v 'beacon received' )
+( cd web && ZANDGLASS_NETWORK_TESTS=1 KIT_OUT="$TMP/ts.kit" npx vitest run src/kit-interop.test.ts --reporter=dot 2>&1 | grep -v 'beacon received' )
 echo "   OK: vitest interop tests passed"
 
 step "4. CLI-sealed kit: age -r <heir code> | tle --encrypt -r <round> --armor"
@@ -59,6 +59,6 @@ rust_open "$TMP/ts.kit" "$IDENTITY" "$V/beacon.json" > "$TMP/out5b"
 same "$TMP/out5b" <(printf 'TEST ONLY payload sealed by TypeScript\n') "TS-sealed, rust opens"
 
 step "6. Rust network tests (ignored by default): live beacon fetch and vector"
-cargo test -q -p sandglass-core -- --ignored 2>&1 | grep "test result"
+cargo test -q -p zandglass-core -- --ignored 2>&1 | grep "test result"
 
 printf '\nALL KIT INTEROP CHECKS PASSED\n'

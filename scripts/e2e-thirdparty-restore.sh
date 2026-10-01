@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Evidence: an heir restores a Sandglass vault seed in a THIRD-PARTY wallet
+# Evidence: an heir restores a Zandglass vault seed in a THIRD-PARTY wallet
 # (ECC's zcash-devtool) and spends from it. Testnet.
 #
 #   FUNDER_DIR=<spike_vault dir with TAZ> RETURN_TO=<testnet UA> DEVTOOL=<path> \
@@ -10,15 +10,15 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 # shellcheck disable=SC1091
 [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
-export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$HOME/.cache/sandglass-target}"
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$HOME/.cache/zandglass-target}"
 
 : "${FUNDER_DIR:?}" "${RETURN_TO:?}" "${DEVTOOL:?}"
-WORK="${WORK:-$HOME/sandglass-e2e/restore-$(date -u +%Y%m%dT%H%M%SZ)}"
+WORK="${WORK:-$HOME/zandglass-e2e/restore-$(date -u +%Y%m%dT%H%M%SZ)}"
 mkdir -p "$WORK"
-export SANDGLASS_HOME="$WORK/home" SANDGLASS_PASSPHRASE="e2e-only-passphrase"
+export ZANDGLASS_HOME="$WORK/home" ZANDGLASS_PASSPHRASE="e2e-only-passphrase"
 
-cargo build -q -p sandglass-cli --bin sandglass -p sandglass-wallet --example spike_vault
-SG="$CARGO_TARGET_DIR/debug/sandglass --network test"
+cargo build -q -p zandglass-cli --bin zandglass -p zandglass-wallet --example spike_vault
+SG="$CARGO_TARGET_DIR/debug/zandglass --network test"
 SPIKE="$CARGO_TARGET_DIR/debug/examples/spike_vault --network test"
 log() { printf '\n=== %s | %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 
@@ -28,7 +28,7 @@ HEIR_CODE=$(grep -o 'age1[0-9a-z]*' "$WORK/heir.txt" | head -1)
 $SG init
 $SG plan legacy --heir "$HEIR_CODE" --every 5m --message "Restore me in any wallet" --out "$WORK" > "$WORK/plan.txt"
 VAULT=$($SG receive | grep -o 'utest1[0-9a-z]*' | head -1)
-KIT=$(ls "$WORK"/*-e1.sandglass)
+KIT=$(ls "$WORK"/*-e1.zandglass)
 
 log "fund the vault"
 $SPIKE sweep "$FUNDER_DIR" "$VAULT" | tee "$WORK/fund.txt"

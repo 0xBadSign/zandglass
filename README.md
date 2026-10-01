@@ -1,8 +1,8 @@
-# Sandglass
+# Zandglass
 
-**Time-locked inheritance for shielded Zcash.** Shielded Zcash has no timelocks, so there is no private way to pass it on. Sandglass gives a vault a time-locked recovery path: your heir can open it only after you stop checking in, and nothing on chain reveals the plan, the heir or the amounts.
+**Time-locked inheritance for shielded Zcash.** Shielded Zcash has no timelocks, so there is no private way to pass it on. Zandglass gives a vault a time-locked recovery path: your heir can open it only after you stop checking in, and nothing on chain reveals the plan, the heir or the amounts.
 
-> **Unaudited software.** Sandglass has not been audited. On mainnet the CLI prints a warning and refuses to flip a vault that holds more than 0.25 ZEC unless you pass `--accept-unaudited`. Do not use it with funds you cannot afford to lose. Built for the Zecathon hackathon (build window 2026-09-28 to 2026-10-28).
+> **Unaudited software.** Zandglass has not been audited. On mainnet the CLI prints a warning and refuses to flip a vault that holds more than 0.25 ZEC unless you pass `--accept-unaudited`. Do not use it with funds you cannot afford to lose. Built for the Zecathon hackathon (build window 2026-09-28 to 2026-10-28).
 
 ## The problem
 
@@ -13,11 +13,11 @@
 ## How it works
 
 1. **Heir code.** Your heir creates a heir key (24 words) and gives you the public heir code (`age1...`). The phrase never leaves the heir.
-2. **Seal.** Sandglass creates a **vault**: a dedicated Zcash wallet seed. It encrypts that seed twice, first to the heir code (age, X25519) and then to a future moment with [drand](https://drand.love) timelock encryption (tlock). The result is a **kit**: a small JSON file.
-3. **Flip.** While you are around, you **flip** the sandglass now and then. Your funds move to a fresh vault (an ordinary shielded transaction) and a new kit is sealed with a later unlock time. Every older kit now opens an empty vault.
-4. **The sand runs out.** If you stop flipping, the time passes. The heir opens the latest kit with the heir phrase, restores the vault seed in any Zcash wallet (or runs `sandglass claim`) and moves the funds.
+2. **Seal.** Zandglass creates a **vault**: a dedicated Zcash wallet seed. It encrypts that seed twice, first to the heir code (age, X25519) and then to a future moment with [drand](https://drand.love) timelock encryption (tlock). The result is a **kit**: a small JSON file.
+3. **Flip.** While you are around, you **flip** the glass now and then. Your funds move to a fresh vault (an ordinary shielded transaction) and a new kit is sealed with a later unlock time. Every older kit now opens an empty vault.
+4. **The sand runs out.** If you stop flipping, the time passes. The heir opens the latest kit with the heir phrase, restores the vault seed in any Zcash wallet (or runs `zandglass claim`) and moves the funds.
 
-There is no smart contract, no custody and no fork. Kits are standard files: if Sandglass disappears, the reference tools `tle` and `age` still open them (see [docs/KIT_FORMAT.md](docs/KIT_FORMAT.md)).
+There is no smart contract, no custody and no fork. Kits are standard files: if Zandglass disappears, the reference tools `tle` and `age` still open them (see [docs/KIT_FORMAT.md](docs/KIT_FORMAT.md)).
 
 ```mermaid
 sequenceDiagram
@@ -40,7 +40,7 @@ sequenceDiagram
     D-->>H: beacon for round R is published
     H->>K: fetch latest kit (claim link)
     H->>H: open timelock (drand beacon), then age layer (heir phrase)
-    H->>Z: restore seed in any wallet, or sandglass claim, and move funds
+    H->>Z: restore seed in any wallet, or zandglass claim, and move funds
 ```
 
 ## Why it does not leak
@@ -69,31 +69,31 @@ Needs Rust stable and `protoc`. The commands below use testnet. Leave out `--net
 
 ```bash
 # 1. Build
-cargo build --release -p sandglass-cli
+cargo build --release -p zandglass-cli
 export PATH="$PWD/target/release:$PATH"
 
 # 2. The heir creates a key (on the heir's own device). The phrase is shown once.
-sandglass heir new --save heir.phrase
+zandglass heir new --save heir.phrase
 #    Give the printed heir code (age1...) to the owner.
 
 # 3. The owner creates the encrypted store (asks for a passphrase)
-sandglass init --network test
+zandglass init --network test
 
 # 4. The owner creates a legacy plan: flip every 10 minutes
-sandglass plan legacy --heir <heir code> --every 10m --network test --out kits
+zandglass plan legacy --heir <heir code> --every 10m --network test --out kits
 #    Prints the kit file, the vault address and a ZIP 321 payment request (zcash:...).
 
 # 5. Fund the vault from any wallet by opening the printed ZIP 321 URI, then check
-sandglass status --sync --network test
+zandglass status --sync --network test
 
 # 6. Check in before the unlock time: moves the funds to a new vault, seals a new kit
-sandglass flip --network test --out kits
+zandglass flip --network test --out kits
 
 # 7. The heir claims after the unlock time (the newest kit, or the claim link)
-sandglass claim kits/<plan>-e2.sandglass --phrase-file heir.phrase --to <address> --network test --wait
+zandglass claim kits/<plan>-e2.zandglass --phrase-file heir.phrase --to <address> --network test --wait
 ```
 
-Add `--mailbox https://<keeper>` to `plan legacy` to upload every kit to a keeper mailbox and print a claim link for the heir (`sandglass claim <claim link> ...` works with it). `claim` without `--to` prints the vault seed and birthday height so the heir can restore them in any Zcash wallet. End-to-end script with real testnet transactions: `scripts/e2e-testnet.sh`.
+Add `--mailbox https://<keeper>` to `plan legacy` to upload every kit to a keeper mailbox and print a claim link for the heir (`zandglass claim <claim link> ...` works with it). `claim` without `--to` prints the vault seed and birthday height so the heir can restore them in any Zcash wallet. End-to-end script with real testnet transactions: `scripts/e2e-testnet.sh`.
 
 ## Documentation
 
@@ -110,10 +110,10 @@ Add `--mailbox https://<keeper>` to `plan legacy` to upload every kit to a keepe
 
 | Path | What |
 |---|---|
-| `crates/sandglass-core` | drand rounds, sealed kits, heir keys, mailbox client |
-| `crates/sandglass-wallet` | vault manager and light-client wallet |
-| `crates/sandglass-cli` | the `sandglass` command |
-| `crates/sandglass-keeper` | blind mailboxes and the hosted playground |
+| `crates/zandglass-core` | drand rounds, sealed kits, heir keys, mailbox client |
+| `crates/zandglass-wallet` | vault manager and light-client wallet |
+| `crates/zandglass-cli` | the `zandglass` command |
+| `crates/zandglass-keeper` | blind mailboxes and the hosted playground |
 | `web/` | landing page, playground and heir page |
 | `scripts/` | `check.sh`, `e2e-testnet.sh`, `interop-kit.sh` |
 

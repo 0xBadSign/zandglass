@@ -1,10 +1,10 @@
 # Privacy and security model
 
-Sandglass is judged, first of all, on whether it leaks. This document states the threat model, who learns what, what metadata remains, and what the design trusts. It is written to be checked against the code, the evidence file and the tests it cites. The software is unaudited.
+Zandglass is judged, first of all, on whether it leaks. This document states the threat model, who learns what, what metadata remains, and what the design trusts. It is written to be checked against the code, the evidence file and the tests it cites. The software is unaudited.
 
 ## 1. Goal and threat model
 
-**Goal.** Let a named person (an heir) claim shielded funds only after a chosen time, unless the owner keeps checking in, without anything on chain that marks a transaction as Sandglass, and without any party we operate being able to open a kit.
+**Goal.** Let a named person (an heir) claim shielded funds only after a chosen time, unless the owner keeps checking in, without anything on chain that marks a transaction as Zandglass, and without any party we operate being able to open a kit.
 
 **Adversaries considered**
 
@@ -38,26 +38,26 @@ Sandglass is judged, first of all, on whether it leaks. This document states the
 - **R2 Mailbox metadata.** The keeper sees when a kit is replaced (flip times) and the public part of the kit, including the epoch number, so it can count flips of a mailbox, and the unlock time. The keeper never sees an identity, and keeps no request logs (its own code; a reverse proxy in front of it is the operator's responsibility). Mitigation: skip the mailbox and hand kit files to heirs directly.
 - **R3 drand fetch timing.** A claimant fetches the beacon of round R, which is public and cacheable. The fetch reveals to a relay (and to whoever watches the heir's network) that someone is opening a kit around that time. The heir page and the CLI try several relays in order.
 - **R4 Owner race after the unlock.** By design. Mitigation: flip on time. Reminders are not implemented.
-- **R5 Pool transitions (reviewed).** Vault addresses carry an Orchard receiver. After NU6.3 the library delivers payments to that receiver through the Ironwood bundle and keeps change in the pool of the inputs, so a flip spends Ironwood notes and creates Ironwood notes, like any up-to-date wallet. Sandglass's own fallback change pool follows NU6.3 (Ironwood from activation on). The funding transaction from an older wallet that still holds Orchard notes crosses the turnstile like any other payment from that wallet.
+- **R5 Pool transitions (reviewed).** Vault addresses carry an Orchard receiver. After NU6.3 the library delivers payments to that receiver through the Ironwood bundle and keeps change in the pool of the inputs, so a flip spends Ironwood notes and creates Ironwood notes, like any up-to-date wallet. Zandglass's own fallback change pool follows NU6.3 (Ironwood from activation on). The funding transaction from an older wallet that still holds Orchard notes crosses the turnstile like any other payment from that wallet.
 - **R6 Installment splits.** One transaction creates N+1 outputs, which shows as a larger action count (amounts stay hidden). Ordinary batch payments look the same; prefer small N.
-- **R7 Birthday queries.** The owner and the heir both ask lightwalletd for the tree state at the vault's birthday. Sandglass randomises the birthday (tip - 100 - up to 200 blocks) so the query is not an exact link; using different lightwalletd servers or Tor removes it.
+- **R7 Birthday queries.** The owner and the heir both ask lightwalletd for the tree state at the vault's birthday. Zandglass randomises the birthday (tip - 100 - up to 200 blocks) so the query is not an exact link; using different lightwalletd servers or Tor removes it.
 - **Playground.** In the hosted playground the server plays the owner, so it holds each session vault's seed (encrypted on disk) for the length of the session, and it learns the destination address if the visitor chooses "send to my address". This is the main mock and it is labelled as such in the UI (see `docs/PLAYGROUND_API.md`).
 
 ## 4. Fingerprint analysis
 
-Every Sandglass transaction is built by the standard `zcash_client_backend` flow (`propose_send_max_transfer` or `propose_standard_transfer_to_address`, then `create_proposed_transactions`) at the moment it is sent. The code sets no expiry, anchor, fee or memo of its own. Fields from the testnet flip in `docs/evidence/EVIDENCE.md` (tx `cbc4dcbab10480fa6dc7b67e575fe439a6288292191f391e844245abbe66e0c3`):
+Every Zandglass transaction is built by the standard `zcash_client_backend` flow (`propose_send_max_transfer` or `propose_standard_transfer_to_address`, then `create_proposed_transactions`) at the moment it is sent. The code sets no expiry, anchor, fee or memo of its own. Fields from the testnet flip in `docs/evidence/EVIDENCE.md` (tx `cbc4dcbab10480fa6dc7b67e575fe439a6288292191f391e844245abbe66e0c3`):
 
-| Field | Sandglass transaction | A pre-signed transaction (rejected design) |
+| Field | Zandglass transaction | A pre-signed transaction (rejected design) |
 |---|---|---|
 | Expiry height | 4423823 = target height 4423783 + 40, the library default | 0 (no expiry), which is rare |
 | Anchor | Height 4423780, 3 blocks below the target height: the default confirmations policy, a recent anchor | Old, fixed at signing time |
 | Fee | 10,000 zat, the ZIP 317 fee for the minimum two logical actions | Whatever was fixed at signing time |
 | Outputs recoverable by the sender's keys | No (`OvkPolicy::Discard`) | Depends |
-| Memo | None added by Sandglass | |
+| Memo | None added by Zandglass | |
 | Broadcast time | When the owner (or heir) runs the command | Anyone, any time after unlock |
 | Consensus branch | The current one at send time | Fixed at signing time, so stale after an upgrade |
 
-The end-to-end run (plan `3166779e`) logs the same standard fields for its funding transaction (expiry = target + 40, fee 10,000 zat), and lists its flip and claim transactions. A systematic comparison of many transactions against ordinary wallets (task T4.1) has not been done yet. By construction the fields come from the same library code as any other wallet that uses `zcash_client_backend`; the claim is that Sandglass adds nothing of its own, not that the default values are shared by every wallet.
+The end-to-end run (plan `3166779e`) logs the same standard fields for its funding transaction (expiry = target + 40, fee 10,000 zat), and lists its flip and claim transactions. A systematic comparison of many transactions against ordinary wallets (task T4.1) has not been done yet. By construction the fields come from the same library code as any other wallet that uses `zcash_client_backend`; the claim is that Zandglass adds nothing of its own, not that the default values are shared by every wallet.
 
 ## 5. Why the pre-signed design was rejected
 
@@ -75,7 +75,7 @@ The sealed-vault design stores keys, so nothing about it needs to be pre-built. 
 - **lightwalletd.** Any server will do (`https://zec.rocks:443` by default); it learns network metadata (R1) but cannot spend.
 - **Cryptography.** age (X25519, ChaCha20-Poly1305), tlock over BLS12-381, Zcash shielded protocols, and the libraries that implement them. None of it has been audited for this project.
 - **The keeper is untrusted for secrecy of kits.** It stores only ciphertext and the public part. It is trusted only for availability: if it disappears or deletes a mailbox, the owner still has the kit files and can give them to the heirs.
-- **Whoever serves the web pages is trusted for the page code.** The heir types the phrase into the heir page. If the keeper also serves the pages, a malicious operator could ship code that exfiltrates the phrase. Heirs who do not want to trust the host can use the CLI (`sandglass claim`), a self-built copy of `web/`, or the reference tools (`tle`, `age`).
+- **Whoever serves the web pages is trusted for the page code.** The heir types the phrase into the heir page. If the keeper also serves the pages, a malicious operator could ship code that exfiltrates the phrase. Heirs who do not want to trust the host can use the CLI (`zandglass claim`), a self-built copy of `web/`, or the reference tools (`tle`, `age`).
 
 ## 7. What the web pages send
 

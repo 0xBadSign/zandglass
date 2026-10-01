@@ -1,10 +1,10 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/sandglass-core",
-    "crates/sandglass-wallet",
-    "crates/sandglass-cli",
-    "crates/sandglass-keeper",
+    "crates/zandglass-core",
+    "crates/zandglass-wallet",
+    "crates/zandglass-cli",
+    "crates/zandglass-keeper",
 ]
 
 [workspace.package]

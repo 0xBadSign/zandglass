@@ -3,7 +3,7 @@ import './site.css';
 import './scenes.css';
 import './console.css';
 import { clear, copyButton, h, type Child } from './lib/dom';
-import { Sandglass, mountDust } from './lib/fx';
+import { GlassCanvas, mountDust } from './lib/fx';
 import { sceneOpen } from './lib/scenes';
 import { BeaconNotReadyError, NetworkError, relayClient } from './lib/drand';
 import { generatePhrase, heirCodeFromPhrase } from './lib/heir';
@@ -42,7 +42,7 @@ const main = mountShell('playground', { wide: true });
 mountDust();
 const API = apiBase(window.location.search, window.location.origin);
 const POLL = pollMs(window.location.search);
-const JUDGE_KEY = 'sandglass-judge-code';
+const JUDGE_KEY = 'zandglass-judge-code';
 
 type Step = 'code' | 'heir' | 'vault' | 'open';
 const STEPS: { id: Step; label: string }[] = [
@@ -77,7 +77,7 @@ let pollTimer: number | undefined;
 // Persistent live elements, re-attached by render() so polling never steals focus.
 const problemBox = h('div', { id: 'problems' });
 const countdownEl = h('p', { class: 'countdown big', role: 'timer', id: 'countdown' });
-const glass = new Sandglass({ className: 'pg-glass' });
+const glass = new GlassCanvas({ className: 'pg-glass' });
 glass.set(0);
 glass.setFlowing(false);
 const stageNet = h('span', { class: 'badge', id: 'stage-net' });
@@ -189,7 +189,7 @@ function banner(): HTMLElement {
       h(
         'p',
         {},
-        'Here the server plays the owner and holds the demo vault. In real use the owner runs Sandglass on their own device. ' +
+        'Here the server plays the owner and holds the demo vault. In real use the owner runs Zandglass on their own device. ' +
           'Your heir key never leaves this browser.',
       ),
     ),
@@ -507,7 +507,7 @@ function cd(label: string, time: string): void {
   countdownEl.replaceChildren(h('span', { class: 'cd-label' }, label), h('span', { class: 'cd-time' }, time));
 }
 
-/** The left-hand stage: the sandglass, the countdown and the chain of vaults. */
+/** The left-hand stage: the glass, the countdown and the chain of vaults. */
 function paintStage(): void {
   const net = networkLabel(networkName());
   stageNet.textContent = net.text;

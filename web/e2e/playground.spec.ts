@@ -30,7 +30,7 @@ async function kitFor(heirCode: string): Promise<string> {
   const inner = await enc.encrypt(JSON.stringify({ ...TEST_PAYLOAD, network: 'main' }));
   const sealed = await timelockEncrypt(beacon.round, Buffer.from(inner), recordedClient());
   return JSON.stringify({
-    format: 'sandglass-kit',
+    format: 'zandglass-kit',
     version: 1,
     kind: 'legacy',
     network: 'main',
@@ -319,7 +319,7 @@ test('playground: full judge flow with a flip, in-browser open and return', asyn
   await axe(page);
 
   // The judge code is only in sessionStorage; the heir words nowhere.
-  expect(await page.evaluate(() => Object.keys(sessionStorage))).toEqual(['sandglass-judge-code']);
+  expect(await page.evaluate(() => Object.keys(sessionStorage))).toEqual(['zandglass-judge-code']);
   expect(await page.evaluate(() => localStorage.length)).toBe(0);
   expectNoLeak(seen, mock, [words, TEST_PAYLOAD.vault_seed]);
 });

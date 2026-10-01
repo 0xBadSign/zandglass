@@ -1,7 +1,7 @@
 // Demo-video recorder: drives the real UI against a running keeper and records
 // raw clips with Playwright `recordVideo` (1280x720, dark). Not part of the test suite.
 //
-//   cd web && npx vite build   (start the keeper with SANDGLASS_WEB_DIR=web/dist)
+//   cd web && npx vite build   (start the keeper with ZANDGLASS_WEB_DIR=web/dist)
 //   JUDGE_CODE=... node e2e-live/record.mjs
 //
 // Environment:
@@ -231,11 +231,11 @@ if (SEGMENTS.includes('cards')) {
   const idx = await (await fetch(`${BASE}/`)).text();
   const css = [...idx.matchAll(/href="([^"]+\.css)"/g)].map((m) => `<link rel="stylesheet" href="${m[1]}">`).join('');
   const cards = {
-    title: `<p class="k">SANDGLASS</p><h1>Pass on your shielded ZEC. <em>Privately.</em></h1><p class="s">Time-locked inheritance for Zcash. A dead man's switch with nothing on chain.</p>`,
+    title: `<p class="k">ZANDGLASS</p><h1>Pass on your shielded ZEC. <em>Privately.</em></h1><p class="s">Time-locked inheritance for Zcash. A dead man's switch with nothing on chain.</p>`,
     problem: `<p class="k">THE PROBLEM</p><h2>Shielded Zcash has <em>no timelocks.</em></h2><ul><li>No private way to leave your coins to someone.</li><li>Heirs cannot even find shielded funds without keys.</li><li>Bitcoin-style inheritance publishes the plan on chain.</li></ul>`,
     leak: `<p class="k">WHY IT DOES NOT LEAK</p><h2>Nothing on chain <em>but ordinary transactions.</em></h2><ul><li>Fund, flip and claim are plain shielded transactions.</li><li>No contract, no script, no heir address, no amounts.</li><li>The keeper is a blind mailbox: it cannot open a kit.</li></ul>`,
     real: `<p class="k">WHAT IS REAL, WHAT IS A MOCK</p><h2>Real <em>crypto.</em> One mocked step.</h2><ul><li>Real: age + drand timelock, real Zcash transactions, real browser claim.</li><li>Mock: the playground lends demo coins, then takes them back.</li><li>Not audited. Testnet in this draft; mainnet for the final.</li></ul>`,
-    cta: `<p class="k">EVIDENCE</p><h2>Testnet and mainnet txids are in <em>docs/evidence</em></h2><p class="s">Try it yourself in the playground. The judge code is in the submission description.</p><p class="s url">Source, docs and evidence: the Sandglass repository</p>`,
+    cta: `<p class="k">EVIDENCE</p><h2>Testnet and mainnet txids are in <em>docs/evidence</em></h2><p class="s">Try it yourself in the playground. The judge code is in the submission description.</p><p class="s url">Source, docs and evidence: the Zandglass repository</p>`,
   };
   const context = await browser.newContext({ viewport: SIZE, deviceScaleFactor: 1, colorScheme: 'dark' });
   const page = await context.newPage();

@@ -79,7 +79,7 @@ async function axe(page: Page): Promise<void> {
   await page.emulateMedia({ colorScheme: 'light' });
 }
 
-async function openKitFile(page: Page, kit: string, name = 'kit.sandglass'): Promise<void> {
+async function openKitFile(page: Page, kit: string, name = 'kit.zandglass'): Promise<void> {
   await page.setInputFiles('#kit-file', { name, mimeType: 'application/json', buffer: Buffer.from(kit) });
 }
 
@@ -153,7 +153,7 @@ test('claim page: JSON kit shows message, seed, height and restore steps', async
   await page.getByRole('button', { name: 'Show the seed' }).click();
   await expect(page.locator('#seed')).toHaveText(TEST_PAYLOAD.vault_seed);
   await expect(page.getByText('3,500,000')).toBeVisible();
-  for (const wallet of ['Zodl', 'Zkool', 'Vizor', 'Zingo', 'Sandglass command line']) {
+  for (const wallet of ['Zodl', 'Zkool', 'Vizor', 'Zingo', 'Zandglass command line']) {
     await expect(page.getByText(wallet, { exact: true })).toBeVisible();
   }
   await expect(page.getByText('Wallet looks empty?')).toBeVisible();
@@ -212,7 +212,7 @@ test('claim page: wrong key, damaged kit, network error and missing mailbox', as
 
   // Damaged file.
   await page.getByRole('button', { name: 'Open a different kit' }).click();
-  await openKitFile(page, '{"format":"sandglass-kit","version":1');
+  await openKitFile(page, '{"format":"zandglass-kit","version":1');
   await expect(page.getByText('This kit looks damaged')).toBeVisible();
 
   // Missing mailbox.

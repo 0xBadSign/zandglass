@@ -1,4 +1,4 @@
-# Sandglass: agent operating manual
+# Zandglass: agent operating manual
 
 Time-locked inheritance and scheduled payments for shielded Zcash, built for the Zecathon hackathon. The deadline is **2026-10-28 23:59 UTC**, and the owner submits by 10-27. The product runs on **mainnet**; testnet is for development only.
 
@@ -33,17 +33,17 @@ Time-locked inheritance and scheduled payments for shielded Zcash, built for the
 - Touch the owner's personal wallets or seeds.
 - Solve CAPTCHAs or bot checks.
 - Purchase anything.
-- Use mainnet funds other than the demo and evidence wallet the owner funded (O-5). Send them only through Sandglass flows, playground sessions and back to the owner.
+- Use mainnet funds other than the demo and evidence wallet the owner funded (O-5). Send them only through Zandglass flows, playground sessions and back to the owner.
 - Commit secrets or personal identifiers (names, emails, handles, home paths, server IPs, the judge code). Secrets live in `.private/` (gitignored) or environment variables.
 - Copy code from pre-window products or old transcripts: all code is written from 2026-09-28 on (compliance C-1).
 - Add tokens, fees or analytics during the hackathon.
 - Push to `main` after the `zecathon-submission` tag. Operational fixes go on the `ops` branch.
 
 ## Environment notes
-- Windows 11 with Git Bash and PowerShell. Rust, Docker and the web build run in WSL Ubuntu. Set `CARGO_TARGET_DIR=$HOME/.cache/sandglass-target` in WSL.
+- Windows 11 with Git Bash and PowerShell. Rust, Docker and the web build run in WSL Ubuntu. Set `CARGO_TARGET_DIR=$HOME/.cache/zandglass-target` in WSL.
 - Run Python from script files only; heredocs piped to `python` hang on this machine.
 - Keep `node_modules` owned by one OS (prefer WSL); native build tools break across operating systems.
-- Disk: C: is small. All agents use the SAME `CARGO_TARGET_DIR` (`$HOME/.cache/sandglass-target`; cargo locks it). Never create per-agent target dirs (they filled the disk on 2026-10-01). After big deletions run `wsl -u root -- fstrim -v /`. Remove merged agent worktrees (`git worktree remove`).
+- Disk: C: is small. All agents use the SAME `CARGO_TARGET_DIR` (`$HOME/.cache/zandglass-target`; cargo locks it). Never create per-agent target dirs (they filled the disk on 2026-10-01). After big deletions run `wsl -u root -- fstrim -v /`. Remove merged agent worktrees (`git worktree remove`).
 - Limit build parallelism with `CARGO_BUILD_JOBS=4`: WSL has 7 GB of RAM and crashed once under parallel builds.
 
 ## Commits

@@ -1,1 +1,0 @@
-TEST ONLY sandglass vector payload: not a real seed.

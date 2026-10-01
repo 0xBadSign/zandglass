@@ -82,7 +82,7 @@ function str(v: unknown): string | null {
   return typeof v === 'string' ? v : null;
 }
 
-/** Parse a `*.sandglass` JSON kit, or a bare tlock armour string. */
+/** Parse a `*.zandglass` JSON kit, or a bare tlock armour string. */
 export function parseKit(text: string): LoadedKit {
   const t = text.replace(/^﻿/, '').trim();
   if (t.startsWith(BEGIN)) {
@@ -97,7 +97,7 @@ export function parseKit(text: string): LoadedKit {
   }
   if (typeof json !== 'object' || json === null) throw new KitDamagedError();
   const k = json as Record<string, unknown>;
-  if (k['format'] !== 'sandglass-kit') throw new KitDamagedError();
+  if (k['format'] !== 'zandglass-kit') throw new KitDamagedError();
   if (k['version'] !== 1) throw new KitDamagedError('unsupported kit version');
   const sealed = str(k['sealed']);
   if (!sealed) throw new KitDamagedError();

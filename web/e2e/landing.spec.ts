@@ -33,7 +33,7 @@ test('landing: content, links, live vault, axe, no horizontal scroll', async ({ 
   // Four steps, in order.
   await expect(page.locator('.story-step h3')).toHaveText([
     'Your heir makes a key',
-    'Sandglass seals a vault',
+    'Zandglass seals a vault',
     'You flip, now and then',
     'The sand runs out',
   ]);
@@ -52,8 +52,8 @@ test('landing: content, links, live vault, axe, no horizontal scroll', async ({ 
   expect(await href('Try the playground')).toBe('./playground');
   expect(await href('Become an heir')).toBe('./heir');
   expect(await href('Claim')).toBe('./claim');
-  expect(await href('Source code')).toBe('https://github.com/0xnesQuit/sandglass');
-  expect(await href('Evidence')).toBe('https://github.com/0xnesQuit/sandglass/blob/main/docs/evidence/EVIDENCE.md');
+  expect(await href('Source code')).toBe('https://github.com/0xnesQuit/zandglass');
+  expect(await href('Evidence')).toBe('https://github.com/0xnesQuit/zandglass/blob/main/docs/evidence/EVIDENCE.md');
 
   // The live vault card counts down.
   const card = page.locator('.live-card');

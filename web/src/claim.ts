@@ -3,7 +3,7 @@ import './site.css';
 import './scenes.css';
 import './console.css';
 import { clear, copyButton, h, type Child } from './lib/dom';
-import { Sandglass, mountDust } from './lib/fx';
+import { GlassCanvas, mountDust } from './lib/fx';
 import { sceneKit, sceneOpen } from './lib/scenes';
 import { BeaconNotReadyError, NetworkError, relayClient } from './lib/drand';
 import { InvalidPhraseError, isValidPhrase } from './lib/heir';
@@ -54,7 +54,7 @@ const lateTimeEl = h('span', { class: 'sr-only', 'aria-live': 'polite' });
 
 /* ------------------------------------------------------------ stage */
 
-const stageGlass = new Sandglass({ className: 'pg-glass' });
+const stageGlass = new GlassCanvas({ className: 'pg-glass' });
 const stageNet = h('span', { class: 'badge' }, 'No kit');
 const stageCaption = h('p', { class: 'stage-caption' });
 const stageBody = h('div', { class: 'stage-body' });
@@ -171,7 +171,7 @@ function setKit(text: string, src: Source): void {
       tone: 'bad',
       title: 'This kit looks damaged',
       body:
-        'The file is not a complete Sandglass kit. It may have been cut short or changed on the way. ' +
+        'The file is not a complete Zandglass kit. It may have been cut short or changed on the way. ' +
         'Ask the owner for the claim link or a fresh copy of the file. Nothing was opened.',
     };
   }
@@ -228,7 +228,7 @@ async function loadMailbox(m: { id: string; token: string; origin: string }): Pr
 async function loadFile(file: File): Promise<void> {
   if (file.size > MAX_KIT_BYTES) {
     kit = null;
-    problem = { tone: 'bad', title: 'This kit looks damaged', body: 'That file is too large to be a Sandglass kit.' };
+    problem = { tone: 'bad', title: 'This kit looks damaged', body: 'That file is too large to be a Zandglass kit.' };
     render();
     return;
   }
@@ -320,7 +320,7 @@ function loaderView(): HTMLElement {
   const input = h('input', {
     type: 'file',
     id: 'kit-file',
-    accept: '.sandglass,.json,.txt,application/json,text/plain',
+    accept: '.zandglass,.json,.txt,application/json,text/plain',
     onchange: (e: Event) => {
       const f = (e.target as HTMLInputElement).files?.[0];
       if (f) void loadFile(f);
@@ -330,7 +330,7 @@ function loaderView(): HTMLElement {
     'label',
     { class: 'drop', for: 'kit-file' },
     h('span', { class: 'label' }, 'Choose your kit file'),
-    h('span', { class: 'muted small' }, ' or drop it here. It ends in .sandglass.'),
+    h('span', { class: 'muted small' }, ' or drop it here. It ends in .zandglass.'),
     h('br'),
     input,
   );
@@ -515,9 +515,9 @@ const WALLETS: { name: string; steps: string[] }[] = [
     ],
   },
   {
-    name: 'Sandglass command line',
+    name: 'Zandglass command line',
     steps: [
-      'Save your kit file, or use the claim link, then run: sandglass claim --to <your Zcash address>.',
+      'Save your kit file, or use the claim link, then run: zandglass claim --to <your Zcash address>.',
       'Enter your heir phrase when asked. The funds are sent to your address in an ordinary shielded transaction.',
     ],
   },
@@ -638,7 +638,7 @@ function render(): void {
     h(
       'p',
       { class: 'lead' },
-      'Open a Sandglass kit here. It works entirely in your browser, and your words and keys never leave it.',
+      'Open a Zandglass kit here. It works entirely in your browser, and your words and keys never leave it.',
     ),
   );
   main.append(h('div', { class: 'app-console' }, stage, flow));

@@ -5,7 +5,7 @@ import type { ChainClient } from 'drand-client';
 import { Buffer, timelockEncrypt } from 'tlock-js';
 import { QUICKNET_INFO } from './lib/drand';
 
-export const VECTORS = new URL('../../crates/sandglass-core/tests/vectors/', import.meta.url);
+export const VECTORS = new URL('../../crates/zandglass-core/tests/vectors/', import.meta.url);
 
 export const read = (name: string): string => readFileSync(new URL(name, VECTORS), 'utf8');
 
@@ -51,7 +51,7 @@ export async function makeJsonKit(payload: object = TEST_PAYLOAD): Promise<strin
   const round = recordedBeacon().round;
   const sealed = await timelockEncrypt(round, Buffer.from(inner), recordedClient());
   return JSON.stringify({
-    format: 'sandglass-kit',
+    format: 'zandglass-kit',
     version: 1,
     kind: 'legacy',
     network: 'test',

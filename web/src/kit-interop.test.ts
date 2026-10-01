@@ -36,7 +36,7 @@ describe('kit interop (TypeScript)', () => {
     expect(payload).toBe(read('payload.txt'));
   });
 
-  it.skipIf(!process.env['SANDGLASS_NETWORK_TESTS'])('opens the Rust-sealed vector with live drand relays', async () => {
+  it.skipIf(!process.env['ZANDGLASS_NETWORK_TESTS'])('opens the Rust-sealed vector with live drand relays', async () => {
     const payload = await openKit(read('kit.txt'), read('TEST_ONLY_identity.txt').trim(), quicknetClient() as ChainClient);
     expect(payload).toBe(read('payload.txt'));
   }, 30_000);

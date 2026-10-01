@@ -1,5 +1,5 @@
 /**
- * Visual effects: a canvas sandglass with falling grains, an ambient dust
+ * Visual effects: a canvas zandglass with falling grains, an ambient dust
  * field, and a drand round clock. Everything respects prefers-reduced-motion,
  * pauses when off screen or in a hidden tab, and makes no network requests.
  */
@@ -59,7 +59,7 @@ interface Grain {
   a: number;
 }
 
-export interface SandglassOptions {
+export interface GlassOptions {
   /** Loop: drain, then flip and start again. Otherwise progress is set from outside. */
   autoplay?: boolean;
   /** Seconds for one full drain in autoplay mode. */
@@ -69,10 +69,10 @@ export interface SandglassOptions {
 }
 
 /**
- * A sandglass drawn on canvas. `progress` is the fraction of sand that has
+ * A zandglass drawn on canvas. `progress` is the fraction of sand that has
  * fallen (0..1). `flip()` turns it over with a CSS rotation.
  */
-export class Sandglass {
+export class GlassCanvas {
   readonly el: HTMLDivElement;
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
@@ -89,7 +89,7 @@ export class Sandglass {
   private h = 0;
   private dpr = 1;
 
-  constructor(private readonly opts: SandglassOptions = {}) {
+  constructor(private readonly opts: GlassOptions = {}) {
     this.el = document.createElement('div');
     this.el.className = `sgc ${opts.className ?? ''}`.trim();
     this.el.setAttribute('aria-hidden', 'true');

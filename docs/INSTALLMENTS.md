@@ -5,17 +5,17 @@ Scheduled payments that stay cancelable. Each installment is its own vault, seal
 ## Owner
 
 ```
-sandglass plan installments --payee <heir code> [--payee ...] \
+zandglass plan installments --payee <heir code> [--payee ...] \
     --amount <ZEC per installment> --every <30d | 2m | ...> --count <N> \
     [--start <2026-12-01T09:00:00Z | 10m>] [--message ...] \
     [--mailbox <keeper url>] [--out <dir>]
 ```
 
 1. `plan installments` creates the funding vault and prints a ZIP 321 request for `N * (amount + 0.0001) + split fee`.
-2. After the funds have confirmed, run `sandglass installments split <plan>`. This is an explicit step (not hidden in `sync`) so the owner decides when the schedule starts. It sends **one ordinary transaction** (`propose_transfer`, ZIP 317 fee, `OvkPolicy::Discard`) with N payments to N fresh installment vaults, then seals one kit per installment and writes `<plan8>-i<k>of<N>.sandglass` (kind `installment`, `sequence {index, count}`).
+2. After the funds have confirmed, run `zandglass installments split <plan>`. This is an explicit step (not hidden in `sync`) so the owner decides when the schedule starts. It sends **one ordinary transaction** (`propose_transfer`, ZIP 317 fee, `OvkPolicy::Discard`) with N payments to N fresh installment vaults, then seals one kit per installment and writes `<plan8>-i<k>of<N>.zandglass` (kind `installment`, `sequence {index, count}`).
 3. With `--mailbox`, each kit goes to its own keeper mailbox and the split writes every claim link to `<plan8>-claim-links.txt`. Send that file to the payee.
-4. `sandglass status [--sync]` lists each installment: amount, unlock time and state (locked, unlocked, claimed or empty). `sandglass receive` shows the funding request.
-5. `sandglass cancel <plan> --to <address>` sweeps every installment vault that still holds funds and the funding-vault leftover to the address, and deletes the mailboxes. Kits that are not claimed yet then open empty vaults. It can be run again after a partial failure.
+4. `zandglass status [--sync]` lists each installment: amount, unlock time and state (locked, unlocked, claimed or empty). `zandglass receive` shows the funding request.
+5. `zandglass cancel <plan> --to <address>` sweeps every installment vault that still holds funds and the funding-vault leftover to the address, and deletes the mailboxes. Kits that are not claimed yet then open empty vaults. It can be run again after a partial failure.
 
 `--start` is either an absolute RFC 3339 UTC time, or a delay counted from the split (default: one period). Installment k unlocks at `start + (k-1) * every`.
 
@@ -26,7 +26,7 @@ Each installment vault holds `amount + 0.0001 ZEC`. The extra 10 000 zat is the 
 ## Payee
 
 ```
-sandglass claim --watch --phrase-file <phrase file> --to <address> \
+zandglass claim --watch --phrase-file <phrase file> --to <address> \
     --links-file <claim-links.txt>          # or several kit files / links
 ```
 
