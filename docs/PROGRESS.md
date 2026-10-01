@@ -66,7 +66,7 @@ Live state of the project. The agent updates it at the end of every work unit, n
 - [ ] T3.5 Live vault on mainnet (unlock about 2026-11-12)
 
 ### M4 Polish, docs, video, submission texts (10-22 to 10-25)
-- [ ] T4.1 Adversarial security, privacy and UX review; on-chain field comparison; fixes
+- [x] T4.1 Adversarial security and privacy review: no critical; 2 high (flip seed deletion on ambiguous broadcast) and 9 others fixed; PRIVACY.md corrected
 - [x] T4.2 Docs set (README, HOW_IT_WORKS, PRIVACY, KIT_FORMAT, KEEPER_API, THIRD_PARTY); plan-vs-code gaps listed in the session log
 - [ ] T4.3 Video (2:00 or less)
 - [ ] T4.4 docs/SUBMISSION.md

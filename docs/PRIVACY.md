@@ -30,7 +30,7 @@ Sandglass is judged, first of all, on whether it leaks. This document states the
 | Heir, after the unlock | The current vault's seed, so its balance and its one incoming transfer (intended) | Where earlier vaults sent funds (`OvkPolicy::Discard`), the owner's other funds |
 | Thief of a kit (or claim link) | The public part. Nothing else, before or after the unlock | The payload: the heir key is also required |
 | Thief of the heir phrase | Nothing without a kit. With a kit, the vault, after the unlock | |
-| Thief of the owner's store files | `plans.json`: heir codes (public), plan ids, mailbox write token (opens no funds and no kit). Seeds are encrypted with the passphrase (age, scrypt) | Seeds, unless the passphrase is weak or known |
+| Thief of the owner's store files | `plans.json`: heir codes (public), plan ids, mailbox write token (opens no funds and no kit). Each vault's `wallet.sqlite`: its viewing key and transaction history (amounts, times). Files are owner-only (0600/0700) but not encrypted | Seeds (encrypted with the passphrase: age, scrypt), unless the passphrase is weak or known |
 
 ## 3. Residual metadata
 
@@ -38,7 +38,9 @@ Sandglass is judged, first of all, on whether it leaks. This document states the
 - **R2 Mailbox metadata.** The keeper sees when a kit is replaced (flip times) and the public part of the kit, including the epoch number, so it can count flips of a mailbox, and the unlock time. The keeper never sees an identity, and keeps no request logs (its own code; a reverse proxy in front of it is the operator's responsibility). Mitigation: skip the mailbox and hand kit files to heirs directly.
 - **R3 drand fetch timing.** A claimant fetches the beacon of round R, which is public and cacheable. The fetch reveals to a relay (and to whoever watches the heir's network) that someone is opening a kit around that time. The heir page and the CLI try several relays in order.
 - **R4 Owner race after the unlock.** By design. Mitigation: flip on time. Reminders are not implemented.
-- **R5 Pool transitions (to confirm in review).** A sweep sends to the new vault's Orchard-only address. If funds sit in a different pool, the sweep moves value between pools, and the pool balance change is public in the same way as for any wallet doing it. The testnet evidence logs the standard fields of the flip (section 4) but was not specifically checked for this.
+- **R5 Pool transitions (reviewed).** Vault addresses carry an Orchard receiver. After NU6.3 the library delivers payments to that receiver through the Ironwood bundle and keeps change in the pool of the inputs, so a flip spends Ironwood notes and creates Ironwood notes, like any up-to-date wallet. Sandglass's own fallback change pool follows NU6.3 (Ironwood from activation on). The funding transaction from an older wallet that still holds Orchard notes crosses the turnstile like any other payment from that wallet.
+- **R6 Installment splits.** One transaction creates N+1 outputs, which shows as a larger action count (amounts stay hidden). Ordinary batch payments look the same; prefer small N.
+- **R7 Birthday queries.** The owner and the heir both ask lightwalletd for the tree state at the vault's birthday. Sandglass randomises the birthday (tip - 100 - up to 200 blocks) so the query is not an exact link; using different lightwalletd servers or Tor removes it.
 - **Playground.** In the hosted playground the server plays the owner, so it holds each session vault's seed (encrypted on disk) for the length of the session, and it learns the destination address if the visitor chooses "send to my address". This is the main mock and it is labelled as such in the UI (see `docs/PLAYGROUND_API.md`).
 
 ## 4. Fingerprint analysis
@@ -72,7 +74,8 @@ The sealed-vault design stores keys, so nothing about it needs to be pre-built. 
 - **Devices.** The security of the owner's and the heir's devices and of the heir's backup of 24 words. A phrase thief who also gets the kit can take the vault after the unlock; several heirs are possible but any one of them can claim.
 - **lightwalletd.** Any server will do (`https://zec.rocks:443` by default); it learns network metadata (R1) but cannot spend.
 - **Cryptography.** age (X25519, ChaCha20-Poly1305), tlock over BLS12-381, Zcash shielded protocols, and the libraries that implement them. None of it has been audited for this project.
-- **The keeper is untrusted for secrecy.** It stores only ciphertext and the public part. It is trusted only for availability: if it disappears or deletes a mailbox, the owner still has the kit files and can give them to the heirs.
+- **The keeper is untrusted for secrecy of kits.** It stores only ciphertext and the public part. It is trusted only for availability: if it disappears or deletes a mailbox, the owner still has the kit files and can give them to the heirs.
+- **Whoever serves the web pages is trusted for the page code.** The heir types the phrase into the heir page. If the keeper also serves the pages, a malicious operator could ship code that exfiltrates the phrase. Heirs who do not want to trust the host can use the CLI (`sandglass claim`), a self-built copy of `web/`, or the reference tools (`tle`, `age`).
 
 ## 7. What the web pages send
 
@@ -82,7 +85,7 @@ The landing page, the heir page and the claim page are static pages. They send r
 - the drand relays `api.drand.sh`, `api2.drand.sh` and `drand.cloudflare.com` (a GET for a public beacon);
 - the keeper, for the claim page (`GET /v1/mailboxes/<id>/kit` with the read token in an `Authorization` header) and for the playground (`/v1/playground/*`).
 
-The heir phrase, the heir identity and the decrypted vault seed are created and used in the browser only. The claim link keeps the mailbox id and read token in the URL fragment, which browsers do not send to servers on page load. Requests use `credentials: 'omit'` and `referrerPolicy: 'no-referrer'`. The pages have no analytics or third-party scripts, and the served Content-Security-Policy (`web/vite.config.ts`) is `default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'` plus the three drand hosts. The playground stores the judge code in `sessionStorage` for the tab only.
+The heir phrase, the heir identity and the decrypted vault seed are created and used in the browser only. The claim link keeps the mailbox id and read token in the URL fragment, which browsers do not send to servers on page load. Requests use `credentials: 'omit'` and `referrerPolicy: 'no-referrer'`. The pages have no analytics or third-party scripts, and the Content-Security-Policy, served by the keeper on every response and mirrored in `web/vite.config.ts` for previews, is `default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'` plus the three drand hosts. The playground stores the judge code in `sessionStorage` for the tab only.
 
 The playground create request carries only `heir_code` (public), `judge_code` and `minutes`; settle requests carry only `action` and, for "send", the destination address.
 
