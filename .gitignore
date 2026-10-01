@@ -19,3 +19,8 @@ web/dist/
 # Playwright output
 web/test-results/
 web/playwright-report/
+
+# Wallet seeds anywhere, and stray Windows-path folders from WSL mishaps
+seed.txt
+*seed*.txt
+C*Users*/

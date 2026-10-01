@@ -36,6 +36,13 @@ no_secrets() {
         | xargs -d '\n' grep -n -E '(BEGIN [A-Z ]*PRIVATE KEY|AGE-SECRET-KEY-1[0-9A-Z]{20,})' 2>/dev/null \
         | grep -v -E '^(crates/[^:]*/tests/vectors/|docs/KIT_FORMAT\.md)' || true)
     [ -z "$hits" ] || { echo "$hits"; return 1; }
+    # Wallet seeds: no seed-like file names, and no line of 12 or 24 lowercase
+    # words alone (a BIP 39 phrase). Marked test vectors are the only exception.
+    hits=$(git ls-files -co --exclude-standard | grep -i -E '(^|/)[^/]*seed[^/]*\.txt$' || true)
+    [ -z "$hits" ] || { echo "seed-like file: $hits"; return 1; }
+    hits=$(git ls-files -co --exclude-standard | grep -v -E '(^|/)(TEST_ONLY_[^/]*|package-lock\.json|Cargo\.lock)$' \
+        | xargs -d '\n' grep -l -E '^\s*([a-z]{3,8} ){11}([a-z]{3,8} ){0,12}[a-z]{3,8}\s*$' 2>/dev/null || true)
+    [ -z "$hits" ] || { echo "possible seed phrase in: $hits"; return 1; }
     if command -v gitleaks >/dev/null; then gitleaks detect --no-banner --redact -q; fi
 }
 
