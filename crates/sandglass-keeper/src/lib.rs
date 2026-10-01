@@ -4,10 +4,12 @@
 //! tokens. It has no key that opens a kit. It keeps no request logs and no
 //! analytics; rate limiting lives in memory only and is never persisted.
 
+pub mod playground;
+
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
@@ -204,18 +206,20 @@ impl Limiter {
 
 /// Shared server state.
 pub struct AppState {
-    db: Db,
+    db: Arc<Db>,
     config: Config,
     general: Limiter,
     creation: Limiter,
+    playground: OnceLock<Arc<playground::Playground>>,
 }
 
 impl AppState {
     /// Builds the state with the default rate limits.
     pub fn new(db: Db, config: Config) -> Arc<Self> {
         Arc::new(Self {
-            db,
+            db: Arc::new(db),
             config,
+            playground: OnceLock::new(),
             // 60 requests in a burst, then 2 per second.
             general: Limiter::new(60.0, 2.0),
             // 10 new mailboxes in a burst, then 1 per minute.
@@ -226,6 +230,21 @@ impl AppState {
     /// The database, for maintenance and tests.
     pub fn db(&self) -> &Db {
         &self.db
+    }
+
+    /// The database as a shared handle (the playground writes its mailboxes).
+    pub fn db_arc(&self) -> Arc<Db> {
+        self.db.clone()
+    }
+
+    /// The playground, when enabled.
+    pub fn playground(&self) -> Option<&Arc<playground::Playground>> {
+        self.playground.get()
+    }
+
+    /// Enables the playground (once).
+    pub fn set_playground(&self, p: Arc<playground::Playground>) {
+        let _ = self.playground.set(p);
     }
 }
 
@@ -421,7 +440,11 @@ fn client_ip(state: &AppState, req: &Request) -> Option<IpAddr> {
 
 async fn rate_limit(State(state): State<Arc<AppState>>, req: Request, next: Next) -> Response {
     if let Some(ip) = client_ip(&state, &req) {
-        let creating = req.method() == Method::POST && req.uri().path() == "/v1/mailboxes";
+        let creating = req.method() == Method::POST
+            && matches!(
+                req.uri().path(),
+                "/v1/mailboxes" | "/v1/playground/sessions"
+            );
         let ok = state.general.allow(ip) && (!creating || state.creation.allow(ip));
         if !ok {
             return ApiError::new(
@@ -449,7 +472,15 @@ pub fn app(state: Arc<AppState>) -> Router {
         .route("/v1/health", get(health))
         .route("/v1/mailboxes", post(create_mailbox))
         .route("/v1/mailboxes/{id}/kit", get(get_kit).put(put_kit))
-        .route("/v1/mailboxes/{id}", delete(delete_mailbox));
+        .route("/v1/mailboxes/{id}", delete(delete_mailbox))
+        .route("/v1/playground/status", get(playground::status))
+        .route("/v1/playground/sessions", post(playground::create))
+        .route("/v1/playground/sessions/{id}", get(playground::get_session))
+        .route("/v1/playground/sessions/{id}/flip", post(playground::flip))
+        .route(
+            "/v1/playground/sessions/{id}/settle",
+            post(playground::settle),
+        );
     let router = match &state.config.web_dir {
         Some(dir) => {
             api.fallback_service(ServeDir::new(dir).append_index_html_on_directories(true))
@@ -463,8 +494,8 @@ pub fn app(state: Arc<AppState>) -> Router {
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)
-                .allow_methods([Method::GET])
-                .allow_headers([AUTHORIZATION]),
+                .allow_methods([Method::GET, Method::POST])
+                .allow_headers([AUTHORIZATION, CONTENT_TYPE]),
         )
         .with_state(state)
 }

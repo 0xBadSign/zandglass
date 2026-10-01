@@ -3641,11 +3641,13 @@ name = "sandglass-keeper"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "axum",
  "hex",
  "rand 0.8.8",
  "rusqlite",
  "sandglass-core",
+ "sandglass-wallet",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -3654,6 +3656,8 @@ dependencies = [
  "tokio",
  "tower-http",
  "ureq",
+ "zcash_keys",
+ "zeroize",
 ]
 
 [[package]]
