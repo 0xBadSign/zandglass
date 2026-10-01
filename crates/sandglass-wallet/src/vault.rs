@@ -1,13 +1,10 @@
 //! A vault: one BIP 39 seed, account 0 only, backed by a SQLite wallet DB.
 
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context, Result};
 use bip0039::{Count, English, Mnemonic};
-use rand::rngs::OsRng;
+use rand::{rngs::OsRng, Rng};
 use rusqlite::Connection;
 use secrecy::SecretVec;
 use zcash_address::ZcashAddress;
@@ -45,6 +42,27 @@ const DB_FILE: &str = "wallet.sqlite";
 const SYNC_BATCH_SIZE: u32 = 1000;
 /// Birthday offset below the chain tip for freshly created vaults.
 pub const NEW_VAULT_BIRTHDAY_LOOKBACK: u32 = 100;
+/// Extra random lookback (0 to this many blocks) added to the birthday.
+pub const NEW_VAULT_BIRTHDAY_JITTER: u32 = 200;
+
+/// `tip - 100 - extra`, never below 1.
+fn jittered_birthday(tip: u32, extra: u32) -> u32 {
+    tip.saturating_sub(NEW_VAULT_BIRTHDAY_LOOKBACK + extra)
+        .max(1)
+}
+
+/// The pool for change when the wallet's own flows do not decide it (the
+/// library only consults this for purely transparent flows, which vaults never
+/// have). From NU6.3 the Orchard turnstile forbids new value in the Orchard
+/// pool, so ordinary wallets use Ironwood; before that, Orchard.
+pub(crate) fn fallback_change_pool(network: &Network, target_height: u32) -> ShieldedPool {
+    use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
+    if network.is_nu_active(NetworkUpgrade::Nu6_3, BlockHeight::from_u32(target_height)) {
+        ShieldedPool::Ironwood
+    } else {
+        ShieldedPool::Orchard
+    }
+}
 
 /// Balance of one shielded pool, in zatoshi.
 #[derive(Debug, Clone, Copy)]
@@ -140,12 +158,18 @@ impl Vault {
         u32::try_from(tip).context("chain tip out of range")
     }
 
-    /// The birthday height for a vault created now.
+    /// The birthday height for a vault created now: `tip - 100 - random(0..=200)`.
+    ///
+    /// The jitter keeps the first block a vault's wallet asks the server for
+    /// from being a fixed offset below the tip, so two vaults (or a vault and
+    /// its next epoch) cannot be linked by an identical start height. The
+    /// birthday stays below the tip, hence below the funding height.
     pub async fn new_birthday(client: &mut Client) -> Result<u32> {
-        Ok(Self::chain_tip(client)
-            .await?
-            .saturating_sub(NEW_VAULT_BIRTHDAY_LOOKBACK)
-            .max(1))
+        let tip = Self::chain_tip(client).await?;
+        Ok(jittered_birthday(
+            tip,
+            OsRng.gen_range(0..=NEW_VAULT_BIRTHDAY_JITTER),
+        ))
     }
 
     /// Creates the wallet database for `phrase` in `dir` (which must not hold a
@@ -159,11 +183,14 @@ impl Vault {
         birthday_height: u32,
     ) -> Result<Self> {
         let mnemonic = parse_phrase(&phrase)?;
-        fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+        crate::fsutil::create_private_dir(dir)?;
         if dir.join(DB_FILE).exists() {
             bail!("{} already contains a wallet", dir.display());
         }
         let birthday = birthday_at(client, birthday_height).await?;
+        // The wallet file is created 0600 before SQLite opens it; its journal
+        // files inherit that mode.
+        crate::fsutil::touch_private(&dir.join(DB_FILE))?;
         let mut db = open_db(dir, network)?;
         let (account, _usk) = db
             .create_account("vault", &seed_bytes(&mnemonic), &birthday, None)
@@ -389,7 +416,7 @@ impl Vault {
         let change = SingleOutputChangeStrategy::<Db>::new(
             StandardFeeRule::Zip317,
             None,
-            ShieldedPool::Orchard,
+            fallback_change_pool(&self.network, u32::from(target)),
             DustOutputPolicy::default(),
         );
         let proposal =
@@ -483,3 +510,30 @@ impl Vault {
 }
 
 mod send;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn birthday_is_jittered_below_tip() {
+        assert_eq!(jittered_birthday(10_000, 0), 9_900);
+        assert_eq!(jittered_birthday(10_000, 200), 9_700);
+        assert_eq!(jittered_birthday(50, 200), 1);
+        for extra in 0..=NEW_VAULT_BIRTHDAY_JITTER {
+            assert!(jittered_birthday(10_000, extra) < 10_000 - 99);
+        }
+    }
+
+    #[test]
+    fn change_pool_follows_nu6_3() {
+        assert_eq!(
+            fallback_change_pool(&Network::MainNetwork, 3_000_000),
+            ShieldedPool::Orchard
+        );
+        assert_eq!(
+            fallback_change_pool(&Network::MainNetwork, 3_428_143),
+            ShieldedPool::Ironwood
+        );
+    }
+}

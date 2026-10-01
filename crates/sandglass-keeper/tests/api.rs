@@ -299,3 +299,115 @@ fn creation_is_rate_limited() {
     }
     assert!(limited, "the creation limit must kick in");
 }
+
+#[test]
+fn security_headers_on_api_and_errors() {
+    let (base, _d, _s) = start();
+    let csp = "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; \
+img-src 'self' data:; connect-src 'self' https://api.drand.sh https://api2.drand.sh \
+https://drand.cloudflare.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+    for path in ["/v1/health", "/v1/nope", "/v1/mailboxes/zzzz/kit"] {
+        let (_, _, h) = raw("GET", &format!("{base}{path}"), None, None);
+        assert_eq!(h["content-security-policy"], csp, "{path}");
+        assert_eq!(h["referrer-policy"], "no-referrer", "{path}");
+        assert_eq!(h["x-content-type-options"], "nosniff", "{path}");
+        assert_eq!(h["cache-control"], "no-store", "{path}");
+    }
+}
+
+#[test]
+fn security_headers_on_static_files() {
+    let web = tempfile::tempdir().unwrap();
+    std::fs::write(web.path().join("index.html"), "<p>hi</p>").unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = Config {
+        web_dir: Some(web.path().to_path_buf()),
+        ..Config::default()
+    };
+    let (addr, _s) = spawn_background(&dir.path().join("k.sqlite"), cfg).unwrap();
+    let (status, body, h) = raw("GET", &format!("http://{addr}/"), None, None);
+    assert_eq!(status, 200);
+    assert!(body.contains("hi"));
+    assert!(h["content-security-policy"]
+        .to_str()
+        .unwrap()
+        .starts_with("default-src 'none'; script-src 'self'"));
+    assert_eq!(h["referrer-policy"], "no-referrer");
+    assert_eq!(h["x-content-type-options"], "nosniff");
+    // Static files are not API responses.
+    assert!(h.get("cache-control").is_none_or(|v| v != "no-store"));
+}
+
+#[test]
+fn global_creation_caps() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = Config {
+        max_creates_per_hour: 3,
+        ..Config::default()
+    };
+    let (addr, _s) = spawn_background(&dir.path().join("k.sqlite"), cfg).unwrap();
+    let c = MailboxClient::new(&format!("http://{addr}"));
+    for _ in 0..3 {
+        c.create().unwrap();
+    }
+    assert_eq!(c.create().unwrap_err().code, "rate_limited");
+
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = Config {
+        max_mailboxes: 2,
+        ..Config::default()
+    };
+    let (addr, _s) = spawn_background(&dir.path().join("k.sqlite"), cfg).unwrap();
+    let c = MailboxClient::new(&format!("http://{addr}"));
+    let a = c.create().unwrap();
+    c.create().unwrap();
+    assert_eq!(c.create().unwrap_err().code, "rate_limited");
+    // Deleting one frees a slot.
+    c.delete(&a.id, &a.write_token).unwrap();
+    c.create().unwrap();
+}
+
+#[test]
+fn stored_kit_is_canonical_and_unknown_fields_are_refused() {
+    let (base, _d, _s) = start();
+    let c = MailboxClient::new(&base);
+    let m = c.create().unwrap();
+    let good = kit_json(1);
+
+    // A smuggled top-level field is refused.
+    let mut v: serde_json::Value = serde_json::from_str(&good).unwrap();
+    v["extra"] = serde_json::json!("parked data");
+    let (status, body, _) = raw(
+        "PUT",
+        &format!("{base}/v1/mailboxes/{}/kit", m.id),
+        Some(&m.write_token),
+        Some(&v.to_string()),
+    );
+    assert_eq!(status, 400);
+    assert_eq!(error_code(&body), "kit_invalid");
+
+    // Unknown nested fields are dropped: the stored kit is the re-serialised
+    // parse, not the submitted text.
+    let mut v: serde_json::Value = serde_json::from_str(&good).unwrap();
+    v["unlock"]["junk"] = serde_json::json!("x".repeat(500));
+    c.put(&m.id, &m.write_token, &v.to_string()).unwrap();
+    let stored = c.get(&m.id, &m.read_token).unwrap();
+    assert!(!stored.contains("junk"));
+    assert_eq!(stored, good);
+}
+
+#[test]
+fn database_is_secure_delete_and_private() {
+    let (_base, dir, s) = start();
+    assert!(s.db().secure_delete_enabled());
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(dir.path().join("k.sqlite"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
+    let _ = dir;
+}

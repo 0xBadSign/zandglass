@@ -11,6 +11,7 @@ import {
   type LoadedKit,
   type OpenedPayload,
 } from './lib/kit';
+import { acceptLocalKeeper } from './lib/local-url';
 import { mountShell } from './lib/shell';
 
 const MAX_KIT_BYTES = 1024 * 1024;
@@ -93,13 +94,10 @@ function parseFragment(): { id: string; token: string; origin: string } | 'incom
   let origin = window.location.origin;
   const k = params.get('k');
   if (k) {
-    try {
-      const u = new URL(k);
-      if (u.protocol !== 'https:' && u.protocol !== 'http:') return 'incomplete';
-      origin = u.origin;
-    } catch {
-      return 'incomplete';
-    }
+    // Testing override: only a local keeper is honoured; the token is never
+    // sent to any other origin. A refused value falls back to this origin.
+    const local = acceptLocalKeeper(k, 'the &k= keeper override');
+    if (local !== null) origin = local;
   }
   return { id, token, origin };
 }

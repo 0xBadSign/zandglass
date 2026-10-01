@@ -22,6 +22,8 @@ use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
+use crate::fsutil::{create_private_dir, write_private_atomic as write_private};
+
 /// The plan file format version.
 pub const PLANS_VERSION: u32 = 1;
 /// Default scrypt work factor (log2 N) for seed files.
@@ -118,6 +120,11 @@ pub struct Plan {
     /// Installment schedule (installment plans only).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub installments: Option<InstallmentSet>,
+    /// A new epoch whose vault a flip has swept to (or tried to) but that
+    /// is not yet confirmed to hold the funds. It is never deleted or reused
+    /// until its balance has been checked: see `ops::adopt_pending`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending: Option<EpochRecord>,
 }
 
 /// One installment vault of an installment plan.
@@ -383,29 +390,6 @@ impl Store {
     }
 }
 
-fn create_private_dir(dir: &Path) -> Result<()> {
-    fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
-    }
-    Ok(())
-}
-
-/// Writes via a temporary file and a rename, with owner-only permissions.
-fn write_private(path: &Path, data: &[u8]) -> Result<()> {
-    let tmp = path.with_extension("tmp");
-    fs::write(&tmp, data).with_context(|| format!("writing {}", tmp.display()))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600))?;
-    }
-    fs::rename(&tmp, path).with_context(|| format!("writing {}", path.display()))?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -439,6 +423,7 @@ mod tests {
                 created: 1,
             }],
             installments: None,
+            pending: None,
         }
     }
 

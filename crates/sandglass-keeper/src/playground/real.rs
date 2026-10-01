@@ -68,7 +68,8 @@ impl RealChain {
     /// Opens the seed store and starts restoring the float in the background.
     pub fn start(cfg: RealConfig) -> Result<Arc<Self>> {
         let root = cfg.data_dir.join("vaults-store");
-        std::fs::create_dir_all(&cfg.data_dir).context("creating the playground data directory")?;
+        sandglass_wallet::fsutil::create_private_dir(&cfg.data_dir)
+            .context("creating the playground data directory")?;
         let store = if root.join("keycheck.age").exists() {
             Store::open(&root, &cfg.secret).context("opening the playground seed store")?
         } else {
@@ -198,9 +199,13 @@ impl Chain for RealChain {
     async fn create_vault(&self, session: &str, epoch: u32) -> Result<NewVault> {
         let rel = Self::vault_rel(session, epoch)?;
         let inner = self.inner.lock().await;
+        // Never delete or reuse an epoch directory: a sweep to it may have
+        // been broadcast without us learning of it, and the directory holds
+        // the only copy of the seed that controls those funds.
+        if inner.store.path(&rel).exists() {
+            return Err(anyhow!("epoch {epoch} already has a vault"));
+        }
         let mut client = self.client().await?;
-        // An earlier attempt may have left an unfunded wallet behind.
-        let _ = std::fs::remove_dir_all(inner.store.path(&rel));
         let phrase = Vault::new_seed();
         let birthday = Vault::new_birthday(&mut client).await?;
         inner.store.write_seed(&rel, &phrase)?;
@@ -218,6 +223,15 @@ impl Chain for RealChain {
             birthday,
             address,
         })
+    }
+
+    async fn next_free_epoch(&self, session: &str, from: u32) -> Result<u32> {
+        let inner = self.inner.lock().await;
+        let mut epoch = from;
+        while inner.store.path(&Self::vault_rel(session, epoch)?).exists() {
+            epoch += 1;
+        }
+        Ok(epoch)
     }
 
     async fn fund(&self, to: &str, amount_zat: u64) -> Result<String> {

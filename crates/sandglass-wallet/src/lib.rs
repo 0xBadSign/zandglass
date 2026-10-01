@@ -6,6 +6,7 @@
 
 pub mod blockcache;
 pub mod error;
+pub mod fsutil;
 pub mod installments;
 pub mod lightwalletd;
 pub mod ops;
