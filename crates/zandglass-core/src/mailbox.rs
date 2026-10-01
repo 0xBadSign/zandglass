@@ -30,6 +30,9 @@ impl MailboxError {
     }
 }
 
+/// Most mailboxes one batch request may create.
+pub const MAX_BATCH: usize = 120;
+
 /// What the keeper returns when a mailbox is created.
 #[derive(Clone, Debug, Deserialize)]
 pub struct Created {
@@ -107,6 +110,23 @@ pub fn normalize_base(url: &str) -> String {
     url.trim().trim_end_matches('/').to_string()
 }
 
+fn parse_batch(body: &str, n: usize) -> Result<Vec<Created>, MailboxError> {
+    #[derive(Deserialize)]
+    struct Batch {
+        mailboxes: Vec<Created>,
+    }
+    let bad =
+        |e: String| MailboxError::new("mailbox_unreachable", format!("Bad keeper reply: {e}"));
+    let batch: Batch = serde_json::from_str(body).map_err(|e| bad(e.to_string()))?;
+    if batch.mailboxes.len() != n {
+        return Err(bad(format!(
+            "asked for {n} mailboxes, got {}",
+            batch.mailboxes.len()
+        )));
+    }
+    Ok(batch.mailboxes)
+}
+
 /// A keeper to talk to.
 pub struct MailboxClient {
     base: String,
@@ -168,6 +188,27 @@ impl MailboxClient {
             .map_err(|e| MailboxError::new("mailbox_unreachable", format!("Bad keeper reply: {e}")))
     }
 
+    /// Creates `n` mailboxes in one request (1 to [`MAX_BATCH`]). One request
+    /// counts once against the keeper's per-address limiter.
+    pub fn create_many(&self, n: usize) -> Result<Vec<Created>, MailboxError> {
+        if n == 0 || n > MAX_BATCH {
+            return Err(MailboxError::new(
+                "invalid_request",
+                format!("A batch creates 1 to {MAX_BATCH} mailboxes."),
+            ));
+        }
+        if n == 1 {
+            return Ok(vec![self.create()?]);
+        }
+        let body = self.finish(
+            self.agent
+                .post(self.url("/v1/mailboxes"))
+                .header("Content-Type", "application/json")
+                .send(format!("{{\"count\":{n}}}")),
+        )?;
+        parse_batch(&body, n)
+    }
+
     /// Replaces the mailbox's kit.
     pub fn put(&self, id: &str, write_token: &str, kit_json: &str) -> Result<(), MailboxError> {
         self.finish(
@@ -205,6 +246,21 @@ impl MailboxClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn batch_reply_parsing() {
+        let one = r#"{"id":"a","write_token":"w","read_token":"r"}"#;
+        let body = format!(r#"{{"mailboxes":[{one},{one}]}}"#);
+        assert_eq!(parse_batch(&body, 2).unwrap().len(), 2);
+        assert_eq!(
+            parse_batch(&body, 3).unwrap_err().code,
+            "mailbox_unreachable"
+        );
+        assert!(parse_batch(one, 1).is_err());
+        let c = MailboxClient::new("http://127.0.0.1:1");
+        assert_eq!(c.create_many(0).unwrap_err().code, "invalid_request");
+        assert_eq!(c.create_many(121).unwrap_err().code, "invalid_request");
+    }
 
     #[test]
     fn link_round_trip() {

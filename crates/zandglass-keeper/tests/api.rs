@@ -333,6 +333,7 @@ fn security_headers_on_static_files() {
         .unwrap()
         .starts_with("default-src 'none'; script-src 'self'"));
     assert_eq!(h["referrer-policy"], "no-referrer");
+    assert_eq!(h["strict-transport-security"], "max-age=31536000");
     assert_eq!(h["x-content-type-options"], "nosniff");
     // Static files are not API responses, and must not be rewritten by a CDN.
     assert_eq!(h["cache-control"], "no-transform");
@@ -448,4 +449,131 @@ fn database_is_secure_delete_and_private() {
         assert_eq!(mode & 0o777, 0o600);
     }
     let _ = dir;
+}
+
+#[test]
+fn hsts_on_every_response() {
+    let (base, _d, _s) = start();
+    for path in ["/v1/health", "/v1/nope"] {
+        let (_, _, h) = raw("GET", &format!("{base}{path}"), None, None);
+        assert_eq!(h["strict-transport-security"], "max-age=31536000", "{path}");
+    }
+}
+
+#[test]
+fn empty_mailboxes_are_purged_after_a_day() {
+    let (base, _d, state) = start();
+    let c = MailboxClient::new(&base);
+    let empty_old = c.create().unwrap();
+    let empty_new = c.create().unwrap();
+    let filled_old = c.create().unwrap();
+    c.put(&filled_old.id, &filled_old.write_token, &kit_json(1))
+        .unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let old = now - zandglass_keeper::EMPTY_RETENTION_SECS - 10;
+    state.db().set_created(&empty_old.id, old).unwrap();
+    state.db().set_created(&filled_old.id, old).unwrap();
+    let cutoff = now - zandglass_keeper::EMPTY_RETENTION_SECS;
+    assert_eq!(state.db().purge_empty_before(cutoff).unwrap(), 1);
+    assert_eq!(
+        c.delete(&empty_old.id, &empty_old.write_token)
+            .unwrap_err()
+            .code,
+        "mailbox_not_found"
+    );
+    // A young empty mailbox and an old filled one both stay.
+    c.delete(&empty_new.id, &empty_new.write_token).unwrap();
+    assert!(c.get(&filled_old.id, &filled_old.read_token).is_ok());
+}
+
+#[test]
+fn batch_create_returns_many_and_counts_against_the_global_caps() {
+    let (base, _d, _s) = start();
+    // The single shape is unchanged, with or without count 1.
+    let url = format!("{base}/v1/mailboxes");
+    let (s, body, _) = raw("POST", &url, None, Some("{\"count\":1}"));
+    assert_eq!(s, 201);
+    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert!(v["id"].is_string() && v.get("mailboxes").is_none());
+
+    // 30 in one request pass a per-address limiter that allows a burst of 10.
+    let c = MailboxClient::new(&base);
+    let many = c.create_many(30).unwrap();
+    assert_eq!(many.len(), 30);
+    let ids: std::collections::HashSet<_> = many.iter().map(|m| m.id.clone()).collect();
+    assert_eq!(ids.len(), 30);
+    c.put(&many[7].id, &many[7].write_token, &kit_json(1))
+        .unwrap();
+    assert!(c.get(&many[7].id, &many[7].read_token).is_ok());
+
+    // Bad counts are refused.
+    for body in [
+        "{\"count\":0}",
+        "{\"count\":121}",
+        "{\"count\":\"x\"}",
+        "nope",
+    ] {
+        let (s, b, _) = raw("POST", &url, None, Some(body));
+        assert_eq!(s, 400, "{body}");
+        assert_eq!(error_code(&b), "invalid_request");
+    }
+
+    // Mailbox cap: the whole batch is refused if it does not fit.
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = Config {
+        max_mailboxes: 5,
+        ..Config::default()
+    };
+    let (addr, _s) = spawn_background(&dir.path().join("k.sqlite"), cfg).unwrap();
+    let c = MailboxClient::new(&format!("http://{addr}"));
+    c.create_many(3).unwrap();
+    assert_eq!(c.create_many(3).unwrap_err().code, "rate_limited");
+    // Nothing was half-created: two more still fit.
+    assert_eq!(c.create_many(2).unwrap().len(), 2);
+
+    // Hourly cap: a batch counts N.
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = Config {
+        max_creates_per_hour: 4,
+        ..Config::default()
+    };
+    let (addr, _s) = spawn_background(&dir.path().join("k.sqlite"), cfg).unwrap();
+    let c = MailboxClient::new(&format!("http://{addr}"));
+    c.create_many(3).unwrap();
+    assert_eq!(c.create_many(2).unwrap_err().code, "rate_limited");
+    c.create_many(1).unwrap();
+}
+
+#[test]
+fn cf_connecting_ip_is_the_client_behind_a_trusted_proxy() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = Config {
+        trust_proxy: true,
+        ..Config::default()
+    };
+    let (addr, _s) = spawn_background(&dir.path().join("k.sqlite"), cfg).unwrap();
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .build()
+        .into();
+    let post = |cf: &str| {
+        let req = ureq::http::Request::builder()
+            .method("POST")
+            .uri(format!("http://{addr}/v1/mailboxes"))
+            .header("CF-Connecting-IP", cf)
+            .header("X-Forwarded-For", "203.0.113.9")
+            .body(String::new())
+            .unwrap();
+        agent.run(req).unwrap().status().as_u16()
+    };
+    // The same CF client is limited after the burst of 10 ...
+    for _ in 0..10 {
+        assert_eq!(post("198.51.100.1"), 201);
+    }
+    assert_eq!(post("198.51.100.1"), 429);
+    // ... while another CF client (same proxy, same X-Forwarded-For) is not.
+    assert_eq!(post("198.51.100.2"), 201);
 }

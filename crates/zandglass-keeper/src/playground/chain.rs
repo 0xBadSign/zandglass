@@ -41,6 +41,13 @@ pub trait Chain: Send + Sync {
     fn float_spendable(&self) -> Option<u64>;
     /// Whether `address` is a valid address for the playground network.
     fn valid_address(&self, address: &str) -> bool;
+    /// Whether a valid `address` can receive shielded funds (Sapling, or a
+    /// unified address with a shielded receiver). A transparent or Sprout
+    /// destination would publish the payout amount, so sends refuse it.
+    fn is_shielded(&self, address: &str) -> bool {
+        let _ = address;
+        true
+    }
     /// The float's own address (where returned funds go).
     async fn float_address(&self) -> Result<String>;
     /// Creates the wallet of one session epoch and stores its seed
@@ -196,6 +203,10 @@ impl Chain for MockChain {
 
     fn valid_address(&self, address: &str) -> bool {
         address.starts_with("mock-") && address.len() > 5
+    }
+
+    fn is_shielded(&self, address: &str) -> bool {
+        !address.starts_with("mock-t")
     }
 
     async fn float_address(&self) -> Result<String> {

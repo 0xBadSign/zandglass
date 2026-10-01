@@ -283,6 +283,10 @@ async fn settle_is_only_allowed_after_the_unlock() {
         err_code(r.pg.begin_settle(&id, "send", Some("not-an-address"), t)),
         "network_mismatch"
     );
+    assert_eq!(
+        err_code(r.pg.begin_settle(&id, "send", Some("mock-t-transparent"), t)),
+        "invalid_request"
+    );
     assert!(r
         .pg
         .begin_settle(&id, "send", Some("mock-visitor"), t)

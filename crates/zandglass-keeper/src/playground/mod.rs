@@ -634,6 +634,11 @@ impl Playground {
                         "That is not a valid address for this network.",
                     ));
                 }
+                if !self.chain.is_shielded(to) {
+                    return Err(bad_request(
+                        "Payouts must go to a shielded address (Sapling, or a unified address with a shielded receiver). A transparent address would show the amount publicly.",
+                    ));
+                }
                 self.sessions.transition(
                     id,
                     S::Unlocked,

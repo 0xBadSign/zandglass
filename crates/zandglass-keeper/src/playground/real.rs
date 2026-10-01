@@ -193,6 +193,15 @@ impl Chain for RealChain {
         zcash_keys::address::Address::decode(&self.cfg.network, address).is_some()
     }
 
+    fn is_shielded(&self, address: &str) -> bool {
+        use zcash_keys::address::Address;
+        match Address::decode(&self.cfg.network, address) {
+            Some(Address::Sapling(_)) => true,
+            Some(Address::Unified(ua)) => ua.has_sapling() || ua.has_orchard(),
+            _ => false,
+        }
+    }
+
     async fn float_address(&self) -> Result<String> {
         let inner = self.inner.lock().await;
         inner
