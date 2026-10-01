@@ -36,7 +36,7 @@ async function kitFor(heirCode: string): Promise<string> {
     network: 'main',
     created: '2026-10-01T00:00:00Z',
     plan: '0123456789abcdef0123456789abcdef',
-    epoch: 1,
+    epoch: 3,
     unlock: { drand_chain: QUICKNET_INFO.hash, round: beacon.round, time: '2026-10-01T00:00:00Z' },
     sealed,
   });
