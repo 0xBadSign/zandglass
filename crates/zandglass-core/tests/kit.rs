@@ -143,3 +143,34 @@ fn committed_vector_opens_with_live_beacon() {
     let payload = zandglass_core::seal::open_online(&kit, &identity, now).unwrap();
     assert_eq!(payload, read("payload.txt").as_bytes());
 }
+
+#[test]
+fn kit_size_hides_heir_count_and_message_length() {
+    let beacon = recorded_beacon();
+    let json = |msg: &str| {
+        serde_json::json!({"vault_seed": "w ".repeat(24), "birthday_height": 1, "message": msg})
+            .to_string()
+            .into_bytes()
+    };
+    let one = new_heir();
+    let three = [new_heir(), new_heir(), new_heir()];
+    let codes: Vec<HeirCode> = three.iter().map(HeirIdentity::code).collect();
+    let k1 = seal(&json("hi"), &[one.code()], beacon.round()).unwrap();
+    let k3 = seal(&json("hi"), &codes, beacon.round()).unwrap();
+    assert_eq!(k1.len(), k3.len());
+    // A longer message in the same 1024-byte bucket gives the same size.
+    let long = seal(&json(&"x".repeat(600)), &[one.code()], beacon.round()).unwrap();
+    assert_eq!(k1.len(), long.len());
+    // The padding is ignored by readers: the object still parses, pad aside.
+    let opened = open(&long, &one, &beacon).unwrap();
+    assert!(opened.len() >= 2048 && opened.len() % 1024 == 0);
+    let v: serde_json::Value = serde_json::from_slice(&opened).unwrap();
+    assert_eq!(v["birthday_height"], 1);
+    assert_eq!(v["message"].as_str().unwrap().len(), 600);
+    // A message that spills into the next bucket grows the kit.
+    let huge = seal(&json(&"x".repeat(3000)), &[one.code()], beacon.round()).unwrap();
+    assert!(huge.len() > k1.len());
+    for h in &three {
+        assert_eq!(open(&k3, h, &beacon).unwrap().len(), opened.len());
+    }
+}

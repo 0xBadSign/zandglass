@@ -68,27 +68,97 @@ pub fn seal(payload: &[u8], heirs: &[HeirCode], round: u64) -> Result<String, Se
         return Err(SealError::TooManyHeirs);
     }
 
-    // Inner layer: age to the heirs.
-    let recipients = heirs.iter().map(|h| &h.0 as &dyn Recipient);
-    let encryptor =
-        Encryptor::with_recipients(recipients).map_err(|e| SealError::Seal(e.to_string()))?;
+    // Inner layer: age to the heirs. Always exactly MAX_HEIRS stanzas: missing
+    // slots get throwaway recipients (their identities are dropped at once),
+    // so the kit size does not reveal how many heirs there are.
+    let dummies: Vec<age::x25519::Recipient> = (heirs.len()..MAX_HEIRS)
+        .map(|_| age::x25519::Identity::generate().to_public())
+        .collect();
+    let padded = pad_payload(payload);
+    // age adds one random "grease" stanza of random length to every header
+    // that has no passphrase recipient. Redo the encryption (cheap) until its
+    // size is the common one, so the kit size is the same for every kit with
+    // the same payload bucket. If that never happens, keep the last result.
     let mut inner = Vec::new();
-    let mut w = encryptor
-        .wrap_output(&mut inner)
-        .map_err(|e| SealError::Seal(e.to_string()))?;
-    w.write_all(payload)
-        .and_then(|()| w.finish().map(|_| ()))
-        .map_err(|e| SealError::Seal(e.to_string()))?;
+    for _ in 0..GREASE_RETRIES {
+        let recipients = heirs
+            .iter()
+            .map(|h| &h.0 as &dyn Recipient)
+            .chain(dummies.iter().map(|d| d as &dyn Recipient));
+        let encryptor =
+            Encryptor::with_recipients(recipients).map_err(|e| SealError::Seal(e.to_string()))?;
+        inner = Vec::new();
+        let mut w = encryptor
+            .wrap_output(&mut inner)
+            .map_err(|e| SealError::Seal(e.to_string()))?;
+        w.write_all(&padded)
+            .and_then(|()| w.finish().map(|_| ()))
+            .map_err(|e| SealError::Seal(e.to_string()))?;
+        if grease_len(&inner) == Some(GREASE_TARGET) {
+            break;
+        }
+    }
 
     // Outer layer: tlock to the round, ASCII armored.
     let chain = decode_hex(CHAIN_HASH_HEX);
     let pk = decode_hex(PUBLIC_KEY_HEX);
+    // This layer has its own random grease stanza: same retry as above.
+    let mut outer = Vec::new();
+    for _ in 0..GREASE_RETRIES {
+        outer = Vec::new();
+        tlock_age::encrypt(&mut outer, inner.as_slice(), &chain, &pk, round).map_err(seal_err)?;
+        if grease_len(&outer) == Some(GREASE_TARGET) {
+            break;
+        }
+    }
     let mut armored = tlock_age::armor::ArmoredWriter::wrap_output(Vec::new()).map_err(seal_err)?;
-    tlock_age::encrypt(&mut armored, inner.as_slice(), &chain, &pk, round).map_err(seal_err)?;
+    armored
+        .write_all(&outer)
+        .map_err(|e| SealError::Seal(e.to_string()))?;
     let bytes = armored
         .finish()
         .map_err(|e| SealError::Seal(e.to_string()))?;
     String::from_utf8(bytes).map_err(|e| SealError::Seal(e.to_string()))
+}
+
+/// Serialized size of the grease stanza that every kit's age header should
+/// have (see [`seal`]), and how often to retry to get it.
+const GREASE_TARGET: usize = 100;
+const GREASE_RETRIES: usize = 4000;
+
+/// Size in bytes of the last (grease) stanza of an age header: from its `-> `
+/// line up to the `--- ` MAC line.
+fn grease_len(age_file: &[u8]) -> Option<usize> {
+    let end = age_file.windows(5).position(|w| w == b"\n--- ")?;
+    let start = age_file[..end].windows(4).rposition(|w| w == b"\n-> ")?;
+    Some(end - start)
+}
+
+/// Payloads are padded to a multiple of this many bytes.
+const PAD_BUCKET: usize = 1024;
+/// ...and to at least this many.
+const PAD_MIN: usize = 2048;
+
+/// Pads a JSON-object payload with an extra `"pad"` field of spaces so its
+/// length is the next multiple of 1024 bytes (at least 2048) and the kit size
+/// does not reveal the message length. Readers ignore unknown payload fields.
+/// Anything that is not a JSON object is returned unchanged.
+fn pad_payload(payload: &[u8]) -> zeroize::Zeroizing<Vec<u8>> {
+    let Ok(serde_json::Value::Object(mut obj)) = serde_json::from_slice(payload) else {
+        return zeroize::Zeroizing::new(payload.to_vec());
+    };
+    obj.insert("pad".into(), serde_json::Value::String(String::new()));
+    let Ok(base) = serde_json::to_vec(&obj) else {
+        return zeroize::Zeroizing::new(payload.to_vec());
+    };
+    let target = base.len().div_ceil(PAD_BUCKET).max(1) * PAD_BUCKET;
+    let target = target.max(PAD_MIN);
+    obj.insert(
+        "pad".into(),
+        serde_json::Value::String(" ".repeat(target - base.len())),
+    );
+    let out = serde_json::to_vec(&obj).unwrap_or_else(|_| payload.to_vec());
+    zeroize::Zeroizing::new(out)
 }
 
 /// The drand round a kit is locked to, read from its public header.

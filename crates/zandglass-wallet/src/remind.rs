@@ -29,7 +29,7 @@ pub fn plan_ics(plan: &Plan, now: u64) -> String {
         if let Some(set) = &plan.installments {
             for item in &set.items {
                 events.push(Event {
-                    uid: format!("{}-installment-{}@zandglass", plan.id, item.index),
+                    uid: random_uid(),
                     start: item.unlock_time,
                     summary: format!(
                         "Zandglass: installment {} of {} unlocks (plan {short})",
@@ -46,7 +46,7 @@ pub fn plan_ics(plan: &Plan, now: u64) -> String {
             let rrule = (plan.period_secs >= DAY && plan.period_secs % DAY == 0)
                 .then(|| format!("FREQ=DAILY;INTERVAL={}", plan.period_secs / DAY));
             events.push(Event {
-                uid: format!("{}-flip@zandglass", plan.id),
+                uid: random_uid(),
                 start: unlock.saturating_sub(lead).max(now.min(unlock)),
                 summary: format!("Zandglass: flip plan {short}"),
                 description: format!(
@@ -59,7 +59,7 @@ pub fn plan_ics(plan: &Plan, now: u64) -> String {
                 alarm: true,
             });
             events.push(Event {
-                uid: format!("{}-unlock-e{}@zandglass", plan.id, rec.epoch),
+                uid: random_uid(),
                 start: unlock,
                 summary: format!("Zandglass: kit of plan {short} unlocks"),
                 description: "From now on your heirs can open the kit. A flip before this time keeps the funds yours.".into(),
@@ -95,6 +95,16 @@ pub fn plan_ics(plan: &Plan, now: u64) -> String {
     }
     line(&mut out, "END:VCALENDAR");
     out
+}
+
+/// A random event UID. It must not contain the plan id: the id is also in
+/// every kit's public part, and a cloud calendar would otherwise link the
+/// owner to a kit or mailbox.
+fn random_uid() -> String {
+    use rand::RngCore;
+    let mut b = [0u8; 16];
+    rand::rngs::OsRng.fill_bytes(&mut b);
+    format!("{}@zandglass", hex::encode(b))
 }
 
 struct Event {
@@ -162,6 +172,7 @@ mod tests {
             }],
             installments: None,
             pending: None,
+            archived: Vec::new(),
         }
     }
 
@@ -178,6 +189,14 @@ mod tests {
         assert!(ics.contains("BEGIN:VALARM"));
         // Nothing private: no heir code, message or amount.
         assert!(!ics.contains("age1") && !ics.contains("private message"));
+        // The full plan id (public in every kit) is not in the file; UIDs are random.
+        assert!(!ics.contains("0123456789abcdef0123456789abcdef"));
+        let uids: Vec<&str> = ics.lines().filter(|l| l.starts_with("UID:")).collect();
+        assert_eq!(uids.len(), 2);
+        assert_ne!(uids[0], uids[1]);
+        assert!(uids
+            .iter()
+            .all(|u| u.len() == 4 + 32 + 10 && u.ends_with("@zandglass")));
         // Every physical line fits in 75 octets.
         assert!(ics.split("\r\n").all(|l| l.len() <= 75), "{ics}");
     }
