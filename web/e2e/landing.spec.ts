@@ -71,11 +71,13 @@ test('landing: content, links, live vault, axe, no horizontal scroll', async ({ 
 });
 
 test('landing: the live vault card is hidden without live-vault.json and shows a claim', async ({ page }) => {
+  await page.route('**/live-vault.json', (route) => route.fulfill({ status: 404, body: '' }));
   await page.goto('/');
   await expect(page.getByRole('heading', { level: 1, name: 'Pass on your shielded ZEC. Privately.' })).toBeVisible();
   await expect(page.locator('.live-card')).toHaveCount(0);
 
   const tx = 'ab'.repeat(32);
+  await page.unroute('**/live-vault.json');
   await page.route('**/live-vault.json', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: liveVault(tx, -60_000) }),
   );
