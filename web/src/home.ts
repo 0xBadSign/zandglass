@@ -280,12 +280,13 @@ const REAL = [
   'drand quicknet time-lock encryption, and age X25519 heir keys.',
   'A blind mailbox that cannot read what it stores.',
   'A vault restored and spent in ECC’s zcash-devtool; kits opened with the reference tle and age tools.',
+  'An owner panel on your own computer (zandglass ui) and calendar reminders that no server sees.',
 ];
 const MOCK = [
   'In the playground the server plays the owner and holds a tiny demo vault. Your heir key is real and stays in your browser.',
   'Playground timers are minutes instead of months.',
   'The code is unaudited, and mainnet plans are capped by default.',
-  'Reminders are not implemented yet.',
+  'Installment plans are created from the command line; the owner panel shows and cancels them.',
 ];
 const honesty = h(
   'section',
@@ -319,6 +320,7 @@ const final = h(
     { class: 'final-links' },
     h('li', {}, h('a', { href: './heir' }, 'Become an heir')),
     h('li', {}, h('a', { href: './claim' }, 'Claim a kit')),
+    h('li', {}, h('a', { href: './owner' }, 'Owner panel')),
     h('li', {}, h('a', { href: EVIDENCE }, 'Evidence')),
     h('li', {}, h('a', { href: REPO }, 'Source code')),
   ),

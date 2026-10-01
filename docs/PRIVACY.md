@@ -104,3 +104,14 @@ These tests show that the pages do not send secrets in the flows they exercise. 
 - The mailbox read and write tokens are 256-bit random values; the keeper stores only SHA-256 hashes and compares in constant time.
 - No telemetry, no accounts, no IP logging in the keeper. Rate limiting is in memory and never persisted.
 - Mainnet is capped at 0.25 ZEC per plan unless `--accept-unaudited` is given (enforced at `--amount` on plan creation and at flip; see `docs/HOW_IT_WORKS.md`).
+- Pages are served with `Cache-Control: no-transform`, so a CDN in front of the keeper (Cloudflare on zandglass.cash) does not inject scripts such as automatic web analytics; the CSP would block them anyway.
+
+## 9. The owner panel (`zandglass ui`)
+
+- The panel server binds to `127.0.0.1` only. It is not reachable from the network.
+- It prints an address with a random 192-bit session key in the URL fragment. The page moves the key to `sessionStorage` and removes it from the address bar at once. Every API call needs it as a bearer token (compared in constant time); other local programs and web pages cannot call the API without it.
+- Every request must carry `Host: 127.0.0.1:<port>` or `localhost:<port>`, which blocks DNS-rebinding attacks from other sites.
+- The page and the API are same-origin; responses carry the site's CSP, `no-referrer` and `no-store` for the API. The page talks to nothing else (heir pages and drand are only used by the heir and claim pages).
+- The store passphrase is sent once from the page to the local server to unlock the store, which then stays unlocked in memory until "Lock" or the end of the process.
+- Wallet work runs the same code as the CLI, on one worker thread, one action at a time.
+- Calendar files (`zandglass remind`, or the panel's "Calendar reminder") are made locally and hold only the plan's short id and times: no amounts, heirs, addresses or messages. Importing them into a cloud calendar shows that provider the reminder times.

@@ -1,6 +1,10 @@
 # Zandglass
 
-**Time-locked inheritance for shielded Zcash.** Shielded Zcash has no timelocks, so there is no private way to pass it on. Zandglass gives a vault a time-locked recovery path: your heir can open it only after you stop checking in, and nothing on chain reveals the plan, the heir or the amounts.
+**Time-locked inheritance for shielded Zcash.** Live demo: **[zandglass.cash](https://zandglass.cash)**.
+
+![Zandglass landing page](docs/img/landing.png)
+
+Shielded Zcash has no timelocks, so there is no private way to pass it on. Zandglass gives a vault a time-locked recovery path: your heir can open it only after you stop checking in, and nothing on chain reveals the plan, the heir or the amounts.
 
 > **Unaudited software.** Zandglass has not been audited. On mainnet the CLI prints a warning and refuses to flip a vault that holds more than 0.25 ZEC unless you pass `--accept-unaudited`. Do not use it with funds you cannot afford to lose. Built for the Zecathon hackathon (build window 2026-09-28 to 2026-10-28).
 
@@ -61,14 +65,23 @@ Details, residual metadata and trust assumptions: [docs/PRIVACY.md](docs/PRIVACY
 
 | Real | Mock or limited |
 |---|---|
-| Ordinary Zcash transactions for funding, flips and claims (testnet evidence is logged; mainnet evidence is pending, see [evidence](docs/evidence/EVIDENCE.md)); drand quicknet timelock encryption; age X25519 heir keys; the blind mailbox; kits that open with the reference `tle` and `age` tools (`scripts/interop-kit.sh`) | In the hosted playground the server plays the owner and holds a tiny demo vault (the heir key is real and stays in your browser); playground timers are minutes, not months; unaudited, with a 0.25 ZEC mainnet cap; installments are tested on testnet only; reminders and Tor are not implemented; a claimed vault was restored and spent in a third-party wallet (zcash-devtool, testnet evidence) |
+| Ordinary Zcash transactions for funding, flips and claims (testnet evidence is logged; mainnet evidence is pending, see [evidence](docs/evidence/EVIDENCE.md)); drand quicknet timelock encryption; age X25519 heir keys; the blind mailbox; kits that open with the reference `tle` and `age` tools (`scripts/interop-kit.sh`) | In the hosted playground the server plays the owner and holds a tiny demo vault (the heir key is real and stays in your browser); playground timers are minutes, not months; unaudited, with a 0.25 ZEC mainnet cap; installments are tested on testnet only; Tor is not implemented; a claimed vault was restored and spent in a third-party wallet (zcash-devtool, testnet evidence) |
+
+## The owner panel
+
+`zandglass ui` opens a page on your own computer to do everything without a terminal: create the encrypted store, create a plan, fund it by scanning a QR code with any Zcash wallet, sync, **flip**, download the kit and a **calendar reminder** (`.ics`), and cancel. It listens on 127.0.0.1 only, needs the one-time session key from the address it prints, and runs the same code as the CLI. Your vault seeds never leave the machine.
+
+![The owner panel after a flip (testnet)](docs/img/owner-panel.png)
+
+`zandglass remind <plan>` writes the same calendar file from the terminal: a repeating "flip" reminder before each unlock and the unlock time itself. It holds no amounts, heirs or addresses, and no server learns your schedule.
 
 ## Quickstart (WSL or Linux)
 
-Needs Rust stable and `protoc`. The commands below use testnet. Leave out `--network test` to use mainnet.
+Needs Rust stable, `protoc` and Node.js (for the web pages that the owner panel embeds). The commands below use testnet. Leave out `--network test` to use mainnet.
 
 ```bash
-# 1. Build
+# 1. Build (web pages first: the CLI embeds them for `zandglass ui`)
+(cd web && npm ci && npm run build)
 cargo build --release -p zandglass-cli
 export PATH="$PWD/target/release:$PATH"
 
@@ -104,7 +117,7 @@ Add `--mailbox https://<keeper>` to `plan legacy` to upload every kit to a keepe
 - [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md): dependencies and licenses
 - [docs/evidence/EVIDENCE.md](docs/evidence/EVIDENCE.md): transactions and reproducible proofs
 - [docs/PLAN.md](docs/PLAN.md) and [docs/PROGRESS.md](docs/PROGRESS.md): plan and live state
-- Playground and heir page: `https://<demo-host>/` (placeholder, to be filled in)
+- Live site: [zandglass.cash](https://zandglass.cash): landing, [playground](https://zandglass.cash/playground), [become an heir](https://zandglass.cash/heir), [claim](https://zandglass.cash/claim), [owner panel](https://zandglass.cash/owner) (runs locally)
 
 ## Repository
 
@@ -112,9 +125,9 @@ Add `--mailbox https://<keeper>` to `plan legacy` to upload every kit to a keepe
 |---|---|
 | `crates/zandglass-core` | drand rounds, sealed kits, heir keys, mailbox client |
 | `crates/zandglass-wallet` | vault manager and light-client wallet |
-| `crates/zandglass-cli` | the `zandglass` command |
+| `crates/zandglass-cli` | the `zandglass` command and the local owner panel (`zandglass ui`) |
 | `crates/zandglass-keeper` | blind mailboxes and the hosted playground |
-| `web/` | landing page, playground and heir page |
+| `web/` | landing page, playground, heir, claim and owner pages |
 | `scripts/` | `check.sh`, `e2e-testnet.sh`, `interop-kit.sh` |
 
 ## License
