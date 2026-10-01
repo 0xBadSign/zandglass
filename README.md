@@ -67,9 +67,16 @@ Details, residual metadata and trust assumptions: [docs/PRIVACY.md](docs/PRIVACY
 |---|---|
 | Ordinary Zcash transactions for funding, flips and claims (testnet evidence is logged; mainnet evidence is pending, see [evidence](docs/evidence/EVIDENCE.md)); drand quicknet timelock encryption; age X25519 heir keys; the blind mailbox; kits that open with the reference `tle` and `age` tools (`scripts/interop-kit.sh`) | In the hosted playground the server plays the owner and holds a tiny demo vault (the heir key is real and stays in your browser); playground timers are minutes, not months; unaudited, with a 0.25 ZEC mainnet cap; installments are tested on testnet only; Tor is not implemented; a claimed vault was restored and spent in a third-party wallet (zcash-devtool, testnet evidence) |
 
+## Download
+
+Ready-made programs for Windows, macOS (Apple silicon and Intel) and Linux are on the [Releases page](https://github.com/0xnesQuit/zandglass/releases). Unpack and **double-click `zandglass`**: it opens the owner panel in your browser. Choose **Testnet** in the panel to try it with free test coins first.
+
+- The programs are not code-signed yet. Windows SmartScreen shows "More info, Run anyway"; on macOS right-click the file, choose Open, then Open again.
+- Each download has a `.sha256` file to check it. The same program runs every command from a terminal (`zandglass --help`).
+
 ## The owner panel
 
-`zandglass ui` opens a page on your own computer to do everything without a terminal: create the encrypted store, create a plan, fund it by scanning a QR code with any Zcash wallet, sync, **flip**, download the kit and a **calendar reminder** (`.ics`), and cancel. It listens on 127.0.0.1 only, needs the one-time session key from the address it prints, and runs the same code as the CLI. Your vault seeds never leave the machine.
+`zandglass ui` (or simply starting `zandglass` with no command) opens a page on your own computer to do everything without a terminal: create the encrypted store, create an inheritance plan or **scheduled payments**, fund them by scanning a QR code with any Zcash wallet, sync, **flip**, start a payment schedule, download the kit and a **calendar reminder** (`.ics`), and cancel. It listens on 127.0.0.1 only, needs the one-time session key from the address it prints, and runs the same code as the CLI. Your vault seeds never leave the machine.
 
 ![The owner panel after a flip (testnet)](docs/img/owner-panel.png)
 
