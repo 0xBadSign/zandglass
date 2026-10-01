@@ -113,6 +113,7 @@ Add `--mailbox https://<keeper>` to `plan legacy` to upload every kit to a keepe
 - [docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md): keys, the nested seal, flips, claims, time math
 - [docs/PRIVACY.md](docs/PRIVACY.md): threat model, who learns what, fingerprint analysis
 - [docs/KIT_FORMAT.md](docs/KIT_FORMAT.md): kit v1 and how to open one by hand
+- [docs/ZIP_DRAFT.md](docs/ZIP_DRAFT.md): a draft ZIP so any Zcash wallet can offer time-locked recovery kits
 - [docs/KEEPER_API.md](docs/KEEPER_API.md) and [docs/PLAYGROUND_API.md](docs/PLAYGROUND_API.md): the mailbox and playground APIs
 - [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md): dependencies and licenses
 - [docs/evidence/EVIDENCE.md](docs/evidence/EVIDENCE.md): transactions and reproducible proofs

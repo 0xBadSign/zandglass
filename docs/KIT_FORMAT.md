@@ -90,7 +90,7 @@ The web pages also accept a bare armoured `sealed` string in place of the JSON f
 
 ## 5. Versioning
 
-`version` is an integer. A reader must reject a version it does not know. New optional fields may be added within version 1 because readers ignore unknown fields; any change that alters the meaning of an existing field, the layering or the validation rules needs version 2. Installment kits (`kind: installment`, `sequence`) are part of v1 and are validated, but the wallet does not create them yet (see `docs/HOW_IT_WORKS.md`).
+`version` is an integer. A reader must reject a version it does not know. New optional fields may be added within version 1 because readers ignore unknown fields; any change that alters the meaning of an existing field, the layering or the validation rules needs version 2. Installment kits (`kind: installment`, `sequence`) are part of v1; `zandglass installments split` and the owner panel create them (see `docs/INSTALLMENTS.md`).
 
 ## 6. Open a kit by hand with the reference tools
 
@@ -150,7 +150,7 @@ Run it as `node identity.mjs heir.phrase > identity.txt` and keep the output as 
 **Test vector.** The files in `crates/zandglass-core/tests/vectors/` hold a test-only phrase and its identity (`TEST_ONLY_phrase.txt`, `TEST_ONLY_identity.txt`; never use them for anything real). The snippet above turns the first into the second, byte for byte, and the heir code for that phrase is:
 
 ```
-age1y78z72dgwullphvyfstg8lregpf6377rge6wjg760aq032r5sgkqn7rvpa
+age16rj3u4ertnvr8yhntwpq9kfaq0k3cyscv5xkrtgjlne9dtzjdc4s5awu04
 ```
 
 The same directory holds a kit sealed to that heir code (`kit.txt`, locked to drand round 32665869), the expected payload (`payload.txt`) and the recorded beacon (`beacon.json`), so the full chain can be checked offline with `cargo test -p zandglass-core` and online with `bash scripts/interop-kit.sh`.
