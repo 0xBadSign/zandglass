@@ -131,6 +131,15 @@ None yet.
 
 ## Session log (newest first)
 
+### 2026-10-01 (night): History cleaned, panel hardening, scheduled payments, downloads, ZIP draft
+- History rewritten with git-filter-repo: the stray wallet folder is gone from every commit; HEAD tree unchanged; force-pushed with the owner's approval (D-015 closed). Commit hashes in older log entries refer to the pre-rewrite history.
+- Owner panel review: idle auto-lock (15 min), router unit tests for the session key, DNS-rebinding hosts and the CSP.
+- Panel: scheduled payments (create, fund, start the schedule, claim-links and kits download); network switch (mainnet/testnet stores); `zandglass` without a command opens the panel. Cancel on a cancelled legacy plan now sweeps late funds.
+- Release workflow (.github/workflows/release.yml): Linux x86_64, Windows x86_64, macOS arm64 and x86_64 builds with embedded web pages; first run green on all four. Release assets on `v*` tags.
+- docs/ZIP_DRAFT.md: wallet-level ZIP draft. KIT_FORMAT.md test-vector heir code fixed after the rename.
+- Playwright 42/42, check.sh green.
+- Blocked for now: live testnet check of scheduled payments in the panel (testnet.zec.rocks unreachable; also the local network to GitHub was down for a while).
+
 ### 2026-10-01 (evening): Owner panel, reminders, lightwalletd fallback, shield logo
 - Owner panel `zandglass ui` (local, 127.0.0.1, session key, Host check) with embedded web pages; `zandglass remind` (.ics). Live testnet check through the real UI (`web/e2e-live/owner-live.mjs`): store, plan with claim link, funding, sync, flip (tx `74e19dce2dbdef7718b9a72ccfaa6740e29826a85c3beee3ae6e800ff13626bf`), kit and calendar downloads (e8283bf).
 - Found and fixed: cancel right after a flip marked the plan cancelled while the flip's funds were still unconfirmed (invisible to a light client). Cancel now refuses for 2 hours after a flip when the vault looks empty (unit test).
