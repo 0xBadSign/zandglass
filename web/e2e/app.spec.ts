@@ -152,10 +152,14 @@ test('claim page: JSON kit shows message, seed, height and restore steps', async
   await expect(page.locator('#seed')).not.toContainText('zoo');
   await page.getByRole('button', { name: 'Show the seed' }).click();
   await expect(page.locator('#seed')).toHaveText(TEST_PAYLOAD.vault_seed);
-  await expect(page.getByText('3,500,000')).toBeVisible();
+  await expect(page.locator('.kv')).toHaveText('3,500,000');
   for (const wallet of ['Zodl', 'Zkool', 'Vizor', 'Zingo', 'Zandglass command line']) {
-    await expect(page.getByText(wallet, { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: wallet, exact: true })).toBeVisible();
   }
+  // The guided restore walks through the steps with the birthday filled in.
+  await page.getByRole('button', { name: '3. Birthday' }).click();
+  await expect(page.locator('.phone .ph-field')).toHaveText('3,500,000');
+  await expect(page.locator('.phone')).not.toContainText('zoo');
   await expect(page.getByText('Wallet looks empty?')).toBeVisible();
   await axe(page);
   await page.screenshot({ path: `${SHOTS}/claim-${info.project.name}.png`, fullPage: true });

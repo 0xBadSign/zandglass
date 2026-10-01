@@ -2,7 +2,7 @@ import './style.css';
 import './site.css';
 import './scenes.css';
 import './console.css';
-import { clear, copyButton, h, type Child } from './lib/dom';
+import { append, clear, copyButton, h, type Child } from './lib/dom';
 import { GlassCanvas, mountDust } from './lib/fx';
 import { sceneKit, sceneOpen } from './lib/scenes';
 import { BeaconNotReadyError, NetworkError, relayClient } from './lib/drand';
@@ -523,6 +523,96 @@ const WALLETS: { name: string; steps: string[] }[] = [
   },
 ];
 
+/**
+ * A guided restore: pick a wallet, then follow four illustrated steps. The
+ * phone drawing shows where each value goes; it never shows the seed words.
+ */
+function restoreGuide(payload: { birthday_height: number; network?: string } | null): HTMLElement {
+  const box = h('div', { class: 'restore-guide' });
+  let wallet = 0;
+  let step = 0;
+  const birthday = payload ? payload.birthday_height.toLocaleString('en-US') : 'the birthday height';
+  const STEPS = ['Install', 'Restore', 'Birthday', 'Move the funds'];
+  const screen = (k: number): HTMLElement => {
+    const w = WALLETS[wallet]?.name ?? 'Wallet';
+    if (wallet === WALLETS.length - 1) {
+      return h('div', { class: 'ph-term' }, h('span', {}, '$ zandglass claim'), h('span', {}, '  <claim link>'), h('span', {}, '  --phrase-file heir.txt'), h('span', {}, '  --to u1...'), h('span', { class: 'ph-ok' }, 'Moved to your address.'));
+    }
+    if (k === 0)
+      return h('div', { class: 'ph-col' }, h('span', { class: 'ph-logo' }, w.slice(0, 1)), h('strong', {}, w), h('span', { class: 'ph-btn ghost' }, 'Create a new wallet'), h('span', { class: 'ph-btn on' }, 'Restore a wallet'));
+    if (k === 1)
+      return h(
+        'div',
+        { class: 'ph-col' },
+        h('strong', {}, 'Enter your 24 words'),
+        h('div', { class: 'ph-words' }, ...Array.from({ length: 24 }, (_, i) => h('span', {}, String(i + 1)))),
+        h('span', { class: 'ph-note' }, 'Type the vault seed, in order'),
+      );
+    if (k === 2)
+      return h(
+        'div',
+        { class: 'ph-col' },
+        h('strong', {}, 'Wallet birthday'),
+        h('span', { class: 'ph-field' }, birthday),
+        h('span', { class: 'ph-note' }, 'Scanning starts at this block'),
+        h('span', { class: 'ph-btn on' }, 'Continue'),
+      );
+    return h('div', { class: 'ph-col' }, h('strong', {}, 'Send'), h('span', { class: 'ph-field' }, 'To: your own wallet'), h('span', { class: 'ph-field' }, 'Amount: max'), h('span', { class: 'ph-btn on' }, 'Send privately'));
+  };
+  const textFor = (k: number): string => {
+    const w = WALLETS[wallet];
+    if (!w) return '';
+    if (wallet === WALLETS.length - 1) return w.steps.join(' ');
+    return [
+      `Install ${w.name}${payload?.network === 'test' ? ' and set it to testnet' : ''}. On the first screen, choose to restore an existing wallet, not to create one.`,
+      w.steps[1] ?? 'Enter the 24 words of the vault seed, in order.',
+      `When it asks for a birthday or restore height, enter ${birthday}. Then let it sync; the balance appears when it finishes.`,
+      'Move everything to a wallet of your own, then forget this vault: the seed was in a kit, so treat it as used.',
+    ][k] ?? '';
+  };
+  const paint = (): void => {
+    const cli = wallet === WALLETS.length - 1;
+    clear(box);
+    append(
+      box,
+      h(
+        'div',
+        { class: 'rg-wallets', role: 'group', 'aria-label': 'Wallet' },
+        ...WALLETS.map((w, i) =>
+          h('button', { type: 'button', class: `rg-wallet${i === wallet ? ' on' : ''}`, 'aria-pressed': String(i === wallet), onclick: () => ((wallet = i), (step = 0), paint()) }, w.name),
+        ),
+      ),
+      cli
+        ? null
+        : h(
+            'ol',
+            { class: 'rg-steps', 'aria-label': 'Steps' },
+            ...STEPS.map((s, i) => h('li', {}, h('button', { type: 'button', class: i === step ? 'on' : i < step ? 'done' : '', 'aria-current': i === step ? 'step' : null, onclick: () => ((step = i), paint()) }, `${i + 1}. ${s}`))),
+          ),
+      h(
+        'div',
+        { class: 'rg-body' },
+        h('div', { class: 'phone', 'aria-hidden': 'true' }, h('span', { class: 'phone-notch' }), h('div', { class: 'phone-screen' }, screen(step))),
+        h(
+          'div',
+          { class: 'rg-text' },
+          h('p', {}, textFor(step)),
+          cli
+            ? null
+            : h(
+                'div',
+                { class: 'actions' },
+                step > 0 ? h('button', { type: 'button', class: 'btn', onclick: () => ((step -= 1), paint()) }, 'Back') : null,
+                step < STEPS.length - 1 ? h('button', { type: 'button', class: 'btn-primary', onclick: () => ((step += 1), paint()) }, 'Next step') : null,
+              ),
+        ),
+      ),
+    );
+  };
+  paint();
+  return box;
+}
+
 function resultView(r: OpenedPayload): HTMLElement {
   const seed = r.kind === 'json' ? r.payload.vault_seed : r.text;
   const seedBox = h('div', { class: 'seed hidden', id: 'seed', 'aria-live': 'polite' });
@@ -568,24 +658,7 @@ function resultView(r: OpenedPayload): HTMLElement {
       h('p', { class: 'muted small' }, 'Enter this when you restore, so the wallet only scans from this block on.'),
     );
   }
-  parts.push(
-    h('h3', {}, 'Restore it in a wallet'),
-    h(
-      'p',
-      { class: 'muted' },
-      payload?.network === 'test'
-        ? 'This is a testnet vault. Use a wallet set to testnet.'
-        : 'Pick any wallet that supports Zcash shielded funds.',
-    ),
-    ...WALLETS.map((w, i) =>
-      h(
-        'details',
-        { open: i === 0 ? true : null },
-        h('summary', {}, w.name),
-        h('div', {}, h('ol', { class: 'checklist' }, ...w.steps.map((s) => h('li', {}, s)))),
-      ),
-    ),
-  );
+  parts.push(h('h3', {}, 'Restore it in a wallet'), restoreGuide(payload));
   if (hints.length) {
     parts.push(h('h3', {}, 'Notes from the owner'), h('ul', { class: 'checklist' }, ...hints.map((x) => h('li', {}, x))));
   }
