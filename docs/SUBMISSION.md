@@ -31,7 +31,7 @@ https://github.com/0xnesQuit/zandglass
 
 ## Working demo
 
-<https://DEMO-HOST/>  (landing, playground, heir and claim pages; judge code above)
+<https://zandglass.cash/>  (landing, playground, heir and claim pages; judge code above)
 
 ## Demo video
 
