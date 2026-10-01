@@ -90,7 +90,7 @@ enum Cmd {
     /// Heir side: open an unlocked kit and move the funds.
     Claim {
         /// The `*.sandglass` kit file, or the claim link the owner sent you
-        /// (`https://.../claim#m=...&r=...`).
+        /// (`https://.../claim.html#m=...&r=...`).
         kit: String,
         /// File holding the heir's 24-word phrase.
         #[arg(long)]

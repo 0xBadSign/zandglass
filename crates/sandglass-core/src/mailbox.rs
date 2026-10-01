@@ -41,7 +41,7 @@ pub struct Created {
     pub read_token: String,
 }
 
-/// A claim link `<keeper>/claim#m=<id>&r=<read_token>`.
+/// A claim link `<keeper>/claim.html#m=<id>&r=<read_token>` (the heir page).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClaimLink {
     /// Keeper base URL without a trailing slash.
@@ -70,7 +70,10 @@ impl ClaimLink {
         }
         let (head, fragment) = text.split_once('#')?;
         let head = head.trim_end_matches('/');
-        let base = head.strip_suffix("/claim").unwrap_or(head);
+        let base = head
+            .strip_suffix("/claim.html")
+            .or_else(|| head.strip_suffix("/claim"))
+            .unwrap_or(head);
         let (mut id, mut token) = (None, None);
         for pair in fragment.split('&') {
             match pair.split_once('=') {
@@ -94,7 +97,11 @@ impl ClaimLink {
 
 impl std::fmt::Display for ClaimLink {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}/claim#m={}&r={}", self.base, self.id, self.read_token)
+        write!(
+            f,
+            "{}/claim.html#m={}&r={}",
+            self.base, self.id, self.read_token
+        )
     }
 }
 
@@ -211,7 +218,7 @@ mod tests {
         };
         let l = ClaimLink::new("http://127.0.0.1:8787/", &c);
         let text = l.to_string();
-        assert_eq!(text, "http://127.0.0.1:8787/claim#m=ab12&r=cd34");
+        assert_eq!(text, "http://127.0.0.1:8787/claim.html#m=ab12&r=cd34");
         assert_eq!(ClaimLink::parse(&text), Some(l));
         assert_eq!(ClaimLink::parse("kit.sandglass"), None);
         assert_eq!(ClaimLink::parse("http://x/claim#m=a"), None);

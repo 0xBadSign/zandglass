@@ -209,7 +209,7 @@ On chain, every step is an ordinary shielded transaction built at the moment it 
   - the payload holds the vault seed, the birthday height, the network, the plan and epoch, an optional message and restore hints.
 - **Mailbox:**
   - the keeper stores the latest kit per plan, under a random ID with separate write and read tokens;
-  - the claim link is `https://<host>/claim#m=<id>&r=<read-token>`.
+  - the claim link is `https://<host>/claim.html#m=<id>&r=<read-token>`.
 
 ### 4.2 Properties
 

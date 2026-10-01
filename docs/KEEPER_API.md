@@ -18,7 +18,7 @@ All bodies are JSON. Tokens go in `Authorization: Bearer <token>`.
 
 - `id` is 128 random bits as 32 hex characters; each token is 256 random bits as 64 hex characters. The keeper stores only SHA-256 hashes of the tokens and compares in constant time.
 - The **write token** stays with the owner (the CLI stores it in the plan). The **read token** goes to the heir inside the claim link. Neither token opens funds or a kit.
-- A claim link is `<keeper>/claim#m=<id>&r=<read token>` (the core library) or `<keeper>/claim.html#m=<id>&r=<read token>` (the playground). The heir page also accepts an optional `&k=<keeper origin>` when the page and the keeper live on different origins. The fragment is not sent to any server by the browser; the page uses it to build the `GET` request.
+- A claim link is `<keeper>/claim.html#m=<id>&r=<read token>` (the heir page). Links ending in `/claim#...` are also accepted. The heir page also accepts an optional `&k=<keeper origin>` when the page and the keeper live on different origins. The fragment is not sent to any server by the browser; the page uses it to build the `GET` request.
 - `PUT` validates the kit's public part offline, with the same rules as `docs/KIT_FORMAT.md` section 4 (format, version, plan id, drand chain, round and time consistency, header round). It cannot and does not look inside `sealed`.
 - A mailbox that has been created but never filled answers `GET` with `404 mailbox_not_found`.
 
