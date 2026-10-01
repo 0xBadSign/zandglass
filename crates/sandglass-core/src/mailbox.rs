@@ -98,11 +98,7 @@ impl ClaimLink {
 
 impl std::fmt::Display for ClaimLink {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}/claim#m={}&r={}",
-            self.base, self.id, self.read_token
-        )
+        write!(f, "{}/claim#m={}&r={}", self.base, self.id, self.read_token)
     }
 }
 

@@ -94,7 +94,7 @@ async fn full_lifecycle_with_return() {
     assert_eq!(s.funded_zat, 20_000 + 10_000 * 4);
     assert!(s
         .claim_link
-        .starts_with("https://sandglass.example/claim.html#m="));
+        .starts_with("https://sandglass.example/claim#m="));
 
     r.pg.tick(t).await; // funds
     assert!(r.chain.calls().iter().any(|c| c == "fund:60000"));

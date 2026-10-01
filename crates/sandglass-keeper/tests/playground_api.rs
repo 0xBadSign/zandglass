@@ -278,7 +278,7 @@ fn full_session_over_http() {
     assert_eq!(created["amount_zat"], 20_000);
     assert_eq!(created["minutes"], 3);
     let link = created["claim_link"].as_str().unwrap();
-    assert!(link.starts_with("https://sandglass.example/claim.html#m="));
+    assert!(link.starts_with("https://sandglass.example/claim#m="));
     assert!(link.contains("&r="));
 
     let v = get(&r, &id, &token);

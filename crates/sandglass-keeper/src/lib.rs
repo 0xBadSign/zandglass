@@ -611,7 +611,11 @@ const PAGES: [&str; 3] = ["playground", "heir", "claim"];
 /// `#fragment` across the redirect, so old claim links still work.
 async fn clean_urls(mut req: Request, next: Next) -> Response {
     let path = req.uri().path();
-    let query = req.uri().query().map(|q| format!("?{q}")).unwrap_or_default();
+    let query = req
+        .uri()
+        .query()
+        .map(|q| format!("?{q}"))
+        .unwrap_or_default();
     let stem = path.strip_prefix('/').unwrap_or(path);
     if stem == "index.html" {
         return redirect(&format!("/{query}"));
