@@ -45,5 +45,5 @@ https://zandglass.cash/media/zandglass-demo-v1.mp4  (1:37, narrated, plays in an
 - [ ] Demo URL loads and the playground accepts the judge code; the float holds funds.
 - [x] Video link plays without sign-in (checked 2026-10-02).
 - [x] Mainnet evidence rows exist in `docs/evidence/EVIDENCE.md` (2026-10-01: fund, flip, claim).
-- [ ] Prize address: a shielded (unified) address of the owner, entered in the form.
+- [x] Prize address: not asked in the form; the organizers contact winners on Telegram after judging (site, checked 2026-10-21).
 - [ ] The "repository will be public" box is ticked.
