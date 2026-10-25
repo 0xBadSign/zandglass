@@ -41,7 +41,7 @@ https://zandglass.cash/media/zandglass-demo-v1.mp4  (1:37, narrated, plays in an
 
 ## Checklist before SUBMIT
 
-- [ ] Repository is public (C-3).
+- [x] Repository is public (C-3), 2026-10-25.
 - [ ] Demo URL loads and the playground accepts the judge code; the float holds funds.
 - [x] Video link plays without sign-in (checked 2026-10-02).
 - [x] Mainnet evidence rows exist in `docs/evidence/EVIDENCE.md` (2026-10-01: fund, flip, claim).

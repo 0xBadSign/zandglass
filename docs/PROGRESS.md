@@ -11,7 +11,7 @@ Live state of the project. The agent updates it at the end of every work unit, n
 | Last updated | 2026-10-25 |
 | Plan version | 2 |
 | Current milestone | M5 Submission (all of M0 to M4 done) |
-| Next task | Release v0.1.0 binaries, owner submits the form, tag `zecathon-submission` at the deadline; during judging keep the site up and claim the live vault after 2026-11-12T20:37:33Z |
+| Next task | Owner submits the form, tag `zecathon-submission` at the deadline; during judging keep the site up and claim the live vault after 2026-11-12T20:37:33Z |
 | Blocked / waiting on owner | O-6 submit the form |
 | Days to deadline | 3 (submissions due 2026-10-28 23:59 UTC) |
 | Health | on track |
@@ -131,6 +131,13 @@ None yet.
 
 ## Session log (newest first)
 
+
+### 2026-10-25: NU7 bump, release v0.1.0, repository public
+- NU7: zcash_client_backend 0.25, zcash_client_sqlite 0.23, zcash_protocol 0.11 (mainnet NU7 at 3,543,405). Testnet CLI flow passed (fund, flip, claim, old kit empty) and a mainnet playground run passed on the deployed build (EVIDENCE.md, 2026-10-25 rows). Commits 9554819, 0f46acf.
+- Outside review applied (47eca36): static fallback text and link-preview tags on every page, CI workflow (green), a two-minute verification section in EVIDENCE.md, HOW_IT_WORKS installments and NU7 sections, float address removed from this file.
+- Repository renamed owner to 0xBadSign and made public by the owner; history scanned (gitleaks and a value search for private data): clean.
+- v0.1.0 released by tag: Linux, Windows, macOS arm64 and x86_64 builds; the Windows zip checksum verified, the binary runs and opens the owner panel.
+- Note: a 5-minute playground vault can skip its flip when a mainnet block is slow (seen once, 5.5 min to confirm); the flow still completes.
 ### 2026-10-02: Final demo video, submission texts
 - T4.3 done: 1:37 narrated video (edge-tts voice, captions in Sora), recorded with web/e2e-live/record2.mjs (landing, mainnet playground, owner panel) and e2e-live/video-claim.spec.ts; assembled with .private/video2/build.sh. Published at https://zandglass.cash/media/zandglass-demo-v1.mp4 (CSP now allows same-origin media; the first URL is cached by Cloudflare with the old CSP, so the file got a versioned name).
 - docs/SUBMISSION.md updated (1,945 characters with the placeholder), video link filled in.
