@@ -2,7 +2,7 @@
 
 [![ci](https://github.com/0xBadSign/zandglass/actions/workflows/ci.yml/badge.svg)](https://github.com/0xBadSign/zandglass/actions/workflows/ci.yml)
 
-**Time-locked inheritance for shielded Zcash.** Live demo: **[zandglass.cash](https://zandglass.cash)**.
+**Time-locked inheritance for shielded Zcash.** Live demo: **[zandglass.cash](https://zandglass.cash)** · [demo video (1:39)](https://zandglass.cash/media/zandglass-demo-v2.mp4).
 
 On mainnet: a vault funded, flipped and claimed by the heir ([verify the transactions in two minutes](docs/evidence/EVIDENCE.md#verify-it-in-two-minutes)), and a live vault that unlocks on 2026-11-12 during judging (countdown on the site).
 

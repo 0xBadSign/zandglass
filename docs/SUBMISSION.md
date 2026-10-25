@@ -37,13 +37,13 @@ https://zandglass.cash/  (landing, playground, heir, claim and owner pages; judg
 
 ## Demo video
 
-https://zandglass.cash/media/zandglass-demo-v1.mp4  (1:37, narrated, plays in any browser without sign-in)
+https://zandglass.cash/media/zandglass-demo-v2.mp4  (1:39, narrated and captioned, plays in any browser without sign-in)
 
 ## Checklist before SUBMIT
 
 - [x] Repository is public (C-3), 2026-10-25.
 - [ ] Demo URL loads and the playground accepts the judge code; the float holds funds.
-- [x] Video link plays without sign-in (checked 2026-10-02).
+- [x] Video link plays without sign-in (v2 checked 2026-10-25).
 - [x] Mainnet evidence rows exist in `docs/evidence/EVIDENCE.md` (2026-10-01: fund, flip, claim).
 - [x] Prize address: not asked in the form; the organizers contact winners on Telegram after judging (site, checked 2026-10-21).
 - [ ] The "repository will be public" box is ticked.
