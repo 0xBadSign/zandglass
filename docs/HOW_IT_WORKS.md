@@ -53,7 +53,7 @@ Properties:
 - **The owner can race.** After the unlock time the funds still sit in a vault whose seed the owner also knows. The owner can move them until the heir does. This is intentional and the same as Bitcoin timelock recovery.
 - **Flip after unlock.** The CLI prints a note that the heir could already claim, and flips only if the funds are still there.
 
-`zandglass cancel <plan> --to <address>` sweeps the current vault to an address you choose, marks the plan cancelled and deletes the mailbox (the keeper also deletes it by itself after 180 days). The plan text says the funds may go to "a fresh vault"; the code sends them to the address you give.
+`zandglass cancel <plan> --to <address>` sweeps the current vault to an address you choose, marks the plan cancelled and deletes the mailbox (the keeper also deletes it by itself, 180 days after the unlock). The plan text says the funds may go to "a fresh vault"; the code sends them to the address you give.
 
 ## 4. Installments
 
@@ -65,7 +65,7 @@ A savings lock is a commitment device: the owner locks shielded ZEC until a fixe
 
 1. It creates a vault, as for any plan, and seals one kit to the owner's own heir code (made on `/heir` like any heir key) with the fixed unlock time. The kit's public `kind` is `legacy`: kit format and claim page are unchanged. The plan is stored with kind `lock`, the vault address, and the same per-plan owner signing key as other plans.
 2. The vault seed is never written to the store: it exists in memory only while the kit is sealed (and zeroized afterwards); the scratch wallet directory used to derive the address holds viewing keys only and is removed. So there is no `seed.age` for a lock, and only the kit plus the owner's 24 heir words can open the vault after the unlock. The vault address and birthday stay in the plan so the owner can fund it (QR request) any time before the unlock.
-3. Before the plan is recorded and anything is funded, the kit file is written and read back (`Kit::from_json` and `validate`, same round, owner signature present), and it is uploaded to the mailbox if one was asked for (a lock with a mailbox may not exceed 170 days, because the keeper deletes a mailbox 180 days after its last update and a lock never updates it). Any failure removes the kit and the owner key and creates nothing.
+3. Before the plan is recorded and anything is funded, the kit file is written and read back (`Kit::from_json` and `validate`, same round, owner signature present), and it is uploaded to the mailbox if one was asked for (the keeper keeps a mailbox until 180 days after the kit unlocks). Any failure removes the kit and the owner key and creates nothing.
 4. The caller must confirm explicitly: the CLI flag `--i-have-my-heir-words`, or in the panel a checkbox plus typing `LOCK`. Without it nothing is created. The mainnet funding cap applies to `--amount` as for other plans (the balance of a lock cannot be shown or checked: there is no seed, and the wallet is not kept).
 5. `flip` and `cancel` refuse with: "This is a savings lock: nobody can move the funds before <date>, not even you. After the unlock, open the kit on zandglass.cash/claim or with `zandglass claim`." `status` shows the unlock date, the vault address and "seed deleted"; `sync` skips the plan.
 
