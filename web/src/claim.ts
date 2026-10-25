@@ -570,8 +570,10 @@ function kitView(k: LoadedKit): HTMLElement {
     h('div', {}, h('dt', {}, 'Unlock time'), h('dd', {}, t.local, h('br'), h('span', { class: 'muted small' }, t.utc))),
     h('div', {}, h('dt', {}, 'Time key round'), h('dd', {}, String(k.round))),
   );
+  // A practice kit from the heir page: no "latest kit?" hint and no owner pulse.
+  const practice = source?.kind === 'file' && source.name.startsWith('practice-');
   const fileHint =
-    source?.kind === 'file'
+    source?.kind === 'file' && !practice
       ? h(
           'div',
           { class: 'notice info' },
@@ -604,9 +606,9 @@ function kitView(k: LoadedKit): HTMLElement {
       ),
     ),
     facts,
-    ownerView(k),
+    practice ? null : ownerView(k),
     fileHint,
-    unlocked ? null : pulseView(k),
+    unlocked || practice ? null : pulseView(k),
     unlocked
       ? null
       : h(

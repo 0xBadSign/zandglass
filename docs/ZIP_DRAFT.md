@@ -94,7 +94,7 @@ Scheduled payments use the same objects: a funding vault is split in one transac
 
 Every funding, flip, split, claim and cancel transaction MUST be built by the wallet's standard proposal flow at the time it is sent, with:
 
-- the default expiry height (target height + 40);
+- the default expiry height for the consensus branch in effect (target height + 40 before NU7, + 120 from NU7 on, as the reference library sets it);
 - the default anchor;
 - the ZIP 317 [^zip317] conventional fee;
 - `OvkPolicy::Discard` for sweeps out of a vault, so that an heir who later learns a vault seed cannot see where earlier funds went;

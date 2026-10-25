@@ -52,7 +52,7 @@ Every Zandglass transaction is built by the standard `zcash_client_backend` flow
 
 | Field | Zandglass transaction | A pre-signed transaction (rejected design) |
 |---|---|---|
-| Expiry height | 4423823 = target height 4423783 + 40, the library default | 0 (no expiry), which is rare |
+| Expiry height | 4423823 = target height 4423783 + 40, the library default (from NU7 on the default is target + 120, matching the shorter block time; Zandglass always uses the library default) | 0 (no expiry), which is rare |
 | Anchor | Height 4423780, 3 blocks below the target height: the default confirmations policy, a recent anchor | Old, fixed at signing time |
 | Fee | 10,000 zat, the ZIP 317 fee for the minimum two logical actions | Whatever was fixed at signing time |
 | Outputs recoverable by the sender's keys | No (`OvkPolicy::Discard`) | Depends |

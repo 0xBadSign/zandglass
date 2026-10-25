@@ -187,15 +187,30 @@ if (SEGMENTS.includes('owner')) {
     await glide(page, '.paper-sheet, #paper-print, .paper', 1200, 120);
     mark('paper');
     await sleep(4500);
-    // The savings lock form (shown, filled, not created: it would delete a seed).
+    // A savings lock (testnet, throwaway store): created for real, seed deleted.
     await glide(page, '.app-flow', 900, 40);
     await page.getByRole('button', { name: 'New plan' }).click();
     await page.getByRole('button', { name: /Savings lock/ }).click();
     mark('lock');
-    await sleep(1200);
-    await glide(page, 'form', 900, 120);
-    await sleep(5000);
-    mark('lock-done');
+    await sleep(1000);
+    await page.locator('#lock-heir').pressSequentially(HEIR, { delay: 6 });
+    await page.selectOption('#lock-until', '365d').catch(() => undefined);
+    await page.locator('#lock-message').pressSequentially('Do not touch before next year.', { delay: 20 });
+    await glide(page, '#lock-understood', 900, 300);
+    await page.locator('#lock-understood').check();
+    await page.locator('#lock-confirm').pressSequentially('LOCK', { delay: 120 });
+    await sleep(800);
+    mark('lock-submit');
+    await page.getByRole('button', { name: 'Create the savings lock' }).click();
+    await page.locator('.lock-line').first().waitFor({ timeout: 180_000 });
+    const done = page.getByRole('button', { name: 'Done' });
+    if (await done.isVisible().catch(() => false)) {
+      await sleep(3000);
+      await done.click();
+    }
+    await glide(page, '.lock-line', 1000, 260);
+    mark('lock-card');
+    await sleep(4500);
   });
 }
 
