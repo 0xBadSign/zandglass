@@ -14,7 +14,7 @@ import { mountShell } from './lib/shell';
  * Served from the public site it explains how to run it locally instead.
  */
 
-const REPO = 'https://github.com/0xnesQuit/zandglass';
+const REPO = 'https://github.com/0xBadSign/zandglass';
 const main = mountShell('owner', { wide: true });
 mountDust();
 

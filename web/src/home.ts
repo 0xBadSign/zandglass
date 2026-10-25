@@ -8,7 +8,7 @@ import { formatCountdown, networkLabel, parseLiveVault, type LiveVault } from '.
 import { sceneFlip, sceneHeir, sceneOpen, sceneSeal } from './lib/scenes';
 import { mountShell } from './lib/shell';
 
-const REPO = 'https://github.com/0xnesQuit/zandglass';
+const REPO = 'https://github.com/0xBadSign/zandglass';
 const EVIDENCE = `${REPO}/blob/main/docs/evidence/EVIDENCE.md`;
 
 const main = mountShell('home', { wide: true });

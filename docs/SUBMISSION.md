@@ -29,7 +29,7 @@ Playground judge code: <JUDGE CODE>
 
 ## Code repository
 
-https://github.com/0xnesQuit/zandglass
+https://github.com/0xBadSign/zandglass
 
 ## Working demo
 

@@ -52,8 +52,8 @@ test('landing: content, links, live vault, axe, no horizontal scroll', async ({ 
   expect(await href('Try the playground')).toBe('./playground');
   expect(await href('Become an heir')).toBe('./heir');
   expect(await href('Claim')).toBe('./claim');
-  expect(await href('Source code')).toBe('https://github.com/0xnesQuit/zandglass');
-  expect(await href('Evidence')).toBe('https://github.com/0xnesQuit/zandglass/blob/main/docs/evidence/EVIDENCE.md');
+  expect(await href('Source code')).toBe('https://github.com/0xBadSign/zandglass');
+  expect(await href('Evidence')).toBe('https://github.com/0xBadSign/zandglass/blob/main/docs/evidence/EVIDENCE.md');
 
   // The live vault card counts down.
   const card = page.locator('.live-card');

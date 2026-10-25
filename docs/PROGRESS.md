@@ -22,7 +22,7 @@ Live state of the project. The agent updates it at the end of every work unit, n
 
 | ID | Action | Due | Status |
 |---|---|---|---|
-| O-1 | GitHub access on this PC (`gh auth login`); repository under the owner's account, private until 10-26 | 2026-10-03 | done 2026-09-30: account `0xnesQuit`, private repo `0xnesQuit/zandglass` |
+| O-1 | GitHub access on this PC (`gh auth login`); repository under the owner's account, private until 10-26 | 2026-10-03 | done 2026-09-30: account `0xBadSign`, private repo `0xBadSign/zandglass` |
 | O-2 | Server: reuse the existing VPS (install the agent's new SSH public key) or buy a Hetzner CX33 | 2026-10-12 | done 2026-10-01: existing VPS reachable with the deploy key (4 vCPU, 6 GB RAM, 50 GB; details in .private/SERVER.md) |
 | O-3 | (Optional) domain | 2026-10-14 | done 2026-10-01: `zandglass.cash`, nameservers on Cloudflare |
 | O-4 | (If needed) testnet TAZ to the agent's development address | 2026-10-02 | done 2026-09-30: owner sent 1 TAZ |
@@ -176,7 +176,7 @@ None yet.
 - Owner added the DNS CNAMEs; cloudflared restarted with the owner's approval (other sites checked: all 200). Live at https://zandglass.cash. Full playground rehearsal on the live site passed (EVIDENCE). Pages now send `Cache-Control: no-transform` so Cloudflare does not inject its analytics beacon (verified gone). `.private/deploy.sh` redeploys HEAD.
 
 ### 2026-09-30 (3): M0 build start
-- T0.1 scaffold (0ab0ccf), T0.2 toolchain, T0.3 dependencies (D-011), T0.4 connectivity (D-012) done. The GitHub private repo `0xnesQuit/zandglass` was created and pushed (O-1 done).
+- T0.1 scaffold (0ab0ccf), T0.2 toolchain, T0.3 dependencies (D-011), T0.4 connectivity (D-012) done. The GitHub private repo `0xBadSign/zandglass` was created and pushed (O-1 done).
 - Spike A (Sonnet subagent, merged):
   - `crates/zandglass-wallet` vault, sync, sweep, restore; the `spike_vault` example;
   - `info` works on mainnet and testnet;
