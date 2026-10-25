@@ -7,6 +7,7 @@ This document describes what the code in this repository does. Where `docs/PLAN.
 | Object | What it is | Where it lives |
 |---|---|---|
 | **Vault seed** | A BIP 39 24-word mnemonic generated per epoch. The wallet uses account 0 only. The vault address is a shielded-only unified address with an Orchard receiver and no transparent receiver. | The owner's store, encrypted: `~/.zandglass/<network>/vaults/<plan>/e<N>/seed.age` (age passphrase encryption, scrypt). Also inside every kit, sealed. |
+| **Owner signing key** | A random Ed25519 key per plan (new plans only). It signs every kit of the plan so the heir's page can tell when a later kit was not sealed by the same owner (`docs/KIT_FORMAT.md` section 8). It opens no funds and no kit. | The owner's store, encrypted like the seeds: `vaults/<plan>/owner_key.age`. The public half is in every kit. |
 | **Birthday height** | The block height a wallet restore starts scanning from. New vaults use the chain tip minus 100 blocks. | In the plan record and in the kit payload. |
 | **Heir key** | 24 BIP 39 words, turned into an age X25519 identity (see `docs/KIT_FORMAT.md`). Created by the heir only (`zandglass heir new`, or the heir page in the browser). | The heir's head, paper or password manager. Never sent anywhere. |
 | **Heir code** | The matching public age recipient string (`age1...`). The owner's tool accepts heir codes and nothing else. | Plan record (public). |

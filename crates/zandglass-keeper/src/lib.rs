@@ -555,9 +555,19 @@ async fn put_kit(
 
 /// The top-level fields of a kit. Anything else is refused, so the mailbox
 /// cannot be used to park arbitrary data.
-const KIT_FIELDS: [&str; 10] = [
-    "format", "version", "kind", "network", "created", "plan", "epoch", "sequence", "unlock",
+const KIT_FIELDS: [&str; 12] = [
+    "format",
+    "version",
+    "kind",
+    "network",
+    "created",
+    "plan",
+    "epoch",
+    "sequence",
+    "unlock",
     "sealed",
+    "owner_key",
+    "owner_sig",
 ];
 
 /// Validates a kit and returns its canonical re-serialisation, which is what

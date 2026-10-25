@@ -1,0 +1,3 @@
+TEST_ONLY owner signing key vector. The secret is sha256 of the label "zandglass TEST_ONLY owner signing key v1".
+public=fb95ee75343f23b4b62b3ba6acd94aa96d95ab7a52fb340e2a614b65d2da8568
+fingerprint=7e23-9a94-78c5-1eb2

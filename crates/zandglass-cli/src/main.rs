@@ -889,6 +889,13 @@ fn inspect(file: &Path) -> Result<()> {
         "  sealed:   {} bytes (readable only by the heir after the unlock)",
         kit.sealed.len()
     );
+    match kit.verify_owner_sig()? {
+        Some(key) => println!(
+            "  signed:   yes, owner key {} (signature valid)",
+            zandglass_core::owner::fingerprint(&key)
+        ),
+        None => println!("  signed:   no (made before kits were signed, or by another tool)"),
+    }
     Ok(())
 }
 
@@ -1141,6 +1148,13 @@ async fn claim(
         "Kit opened: plan {} epoch {} on {}.",
         payload.plan, payload.epoch, payload.network
     );
+    match kit.verify_owner_sig()? {
+        Some(key) => println!(
+            "Owner signature valid, owner key {}. Kits of this plan carry the same key; a kit with a different key was not sealed by the same owner.",
+            zandglass_core::owner::fingerprint(&key)
+        ),
+        None => println!("This kit is not signed by an owner key."),
+    }
     if let Some(m) = &payload.message {
         println!(
             "Message in the kit (anyone who knows your heir code can write one; never send words or money because it asks): {}",

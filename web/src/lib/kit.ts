@@ -9,6 +9,28 @@ import { Buffer, timelockDecrypt, timelockEncrypt } from 'tlock-js';
 import { BeaconNotReadyError, NetworkError, QUICKNET_INFO } from './drand';
 import { identityFromPhrase } from './heir';
 import { roundTime, unlockRound } from '../drand';
+import { verifyOwnerSigOf, type OwnerKey } from './owner-sig';
+
+export {
+  OwnerSigInvalidError,
+  checkOwner,
+  ownerFingerprint,
+  pinOwnerKey,
+  pinnedOwnerKey,
+  repinOwnerKey,
+  type OwnerCheck,
+  type OwnerKey,
+} from './owner-sig';
+
+/**
+ * Verify the kit's owner signature (docs/KIT_FORMAT.md section 8): `'unsigned'`
+ * when the kit has no owner fields, otherwise the owner key's fingerprint
+ * (plus the full key). Throws `OwnerSigInvalidError` when the signature is
+ * present but wrong.
+ */
+export async function verifyOwnerSig(kit: LoadedKit): Promise<'unsigned' | OwnerKey> {
+  return verifyOwnerSigOf(kit);
+}
 
 export class KitDamagedError extends Error {
   constructor(message = 'kit damaged') {
@@ -40,6 +62,8 @@ export interface LoadedKit {
   chain: string;
   /** Public metadata; null when the file is a bare armour string. */
   meta: KitMeta | null;
+  /** The parsed JSON object of a JSON kit (for owner signature checks); absent for a bare armour. */
+  raw?: Record<string, unknown>;
 }
 
 export interface Payload {
@@ -114,6 +138,7 @@ export function parseKit(text: string): LoadedKit {
     sealed,
     round,
     chain,
+    raw: k,
     meta: {
       kind: str(k['kind']) ?? 'legacy',
       network: str(k['network']) ?? 'main',

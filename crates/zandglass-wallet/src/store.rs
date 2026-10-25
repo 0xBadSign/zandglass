@@ -5,6 +5,7 @@
 //!   keycheck.age          passphrase check and plans MAC key (age scrypt)
 //!   plans.json            plans and vault epochs (no secrets), HMAC-tagged
 //!   archive/<plan>-e<N>-<time>/   epochs set aside by a flip (never deleted)
+//!   vaults/<plan>/owner_key.age   the plan's kit-signing key, same protection
 //!   vaults/<plan>/e<N>/
 //!     seed.age            the vault seed, age passphrase (scrypt) encrypted
 //!     wallet.sqlite       the vault's light-client wallet (viewing keys only)
@@ -44,6 +45,7 @@ const KEYCHECK_V2: &str = "zandglass-store-v2";
 const MAC_CONTEXT: &[u8] = b"zandglass-plans-v1\n";
 const PLANS_FILE: &str = "plans.json";
 const SEED_FILE: &str = "seed.age";
+const OWNER_KEY_FILE: &str = "owner_key.age";
 
 /// Store errors that callers branch on.
 #[derive(Debug, thiserror::Error)]
@@ -463,6 +465,44 @@ impl Store {
         Ok(Zeroizing::new(text))
     }
 
+    /// Writes a plan's kit-signing key (32 secret bytes) to
+    /// `vaults/<plan>/owner_key.age`, encrypted like a vault seed. The key
+    /// only authenticates the owner's kits; it opens no funds.
+    pub fn write_owner_key(&self, plan_id: &str, secret: &[u8; 32]) -> Result<()> {
+        let dir = self.path(&format!("vaults/{plan_id}"));
+        create_private_dir(&dir)?;
+        let file = dir.join(OWNER_KEY_FILE);
+        if file.exists() {
+            bail!("{} already exists", file.display());
+        }
+        let text = Zeroizing::new(hex::encode(secret));
+        write_private(&file, &self.encrypt(text.as_bytes())?)
+    }
+
+    /// Reads a plan's kit-signing key. `None` for plans created before kits
+    /// were signed: they keep producing unsigned kits.
+    pub fn read_owner_key(&self, plan_id: &str) -> Result<Option<Zeroizing<[u8; 32]>>> {
+        let file = self.path(&format!("vaults/{plan_id}")).join(OWNER_KEY_FILE);
+        if !file.exists() {
+            return Ok(None);
+        }
+        let data = fs::read(&file).with_context(|| format!("reading {}", file.display()))?;
+        let plain = self.decrypt(&data)?;
+        let bytes = Zeroizing::new(
+            hex::decode(plain.as_slice()).map_err(|_| anyhow!("owner key file is damaged"))?,
+        );
+        let key: [u8; 32] = bytes
+            .as_slice()
+            .try_into()
+            .map_err(|_| anyhow!("owner key file is damaged"))?;
+        Ok(Some(Zeroizing::new(key)))
+    }
+
+    /// Removes a plan's kit-signing key (a plan that was never funded).
+    pub fn remove_owner_key(&self, plan_id: &str) {
+        let _ = fs::remove_file(self.path(&format!("vaults/{plan_id}")).join(OWNER_KEY_FILE));
+    }
+
     fn encrypt(&self, plain: &[u8]) -> Result<Vec<u8>> {
         let mut recipient = scrypt::Recipient::new(self.passphrase.clone());
         recipient.set_work_factor(self.work_factor);
@@ -582,6 +622,30 @@ mod tests {
         assert_eq!(reopened.read_seed(&rel).unwrap().as_str(), SEED);
         assert_eq!(reopened.find_plan(Some("0123")).unwrap().id, id);
         assert_eq!(reopened.find_plan(None).unwrap().id, id);
+    }
+
+    #[test]
+    fn owner_key_is_encrypted_and_optional() {
+        let dir = tmp();
+        let root = dir.path().join("test");
+        let store = Store::init_with(&root, "pw", 10).unwrap();
+        let id = "0123456789abcdef0123456789abcdef";
+        assert!(store.read_owner_key(id).unwrap().is_none());
+        let secret = [0x5au8; 32];
+        store.write_owner_key(id, &secret).unwrap();
+        assert!(store.write_owner_key(id, &secret).is_err());
+        for (path, data) in all_files(&root) {
+            let text = String::from_utf8_lossy(&data);
+            assert!(
+                !text.contains(&hex::encode(secret)),
+                "{} leaks the key",
+                path.display()
+            );
+        }
+        let reopened = Store::open(&root, "pw").unwrap();
+        assert_eq!(*reopened.read_owner_key(id).unwrap().unwrap(), secret);
+        store.remove_owner_key(id);
+        assert!(store.read_owner_key(id).unwrap().is_none());
     }
 
     #[test]

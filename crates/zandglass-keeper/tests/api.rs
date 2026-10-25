@@ -436,6 +436,33 @@ fn stored_kit_is_canonical_and_unknown_fields_are_refused() {
 }
 
 #[test]
+fn signed_kits_are_stored_with_their_owner_fields_and_bad_signatures_refused() {
+    let (base, _d, _s) = start();
+    let c = MailboxClient::new(&base);
+    let m = c.create().unwrap();
+
+    let mut kit = Kit::from_json(&kit_json(1)).unwrap();
+    kit.sign_owner(&[3u8; 32]);
+    let signed = kit.to_json().unwrap();
+    assert!(signed.contains("owner_key") && signed.contains("owner_sig"));
+    c.put(&m.id, &m.write_token, &signed).unwrap();
+    assert_eq!(c.get(&m.id, &m.read_token).unwrap(), signed);
+    assert!(signed.len() < zandglass_core::mailbox::MAX_KIT_BYTES);
+
+    // A signed kit changed after signing is refused as invalid.
+    let mut v: serde_json::Value = serde_json::from_str(&signed).unwrap();
+    v["epoch"] = serde_json::json!(2);
+    let (status, body, _) = raw(
+        "PUT",
+        &format!("{base}/v1/mailboxes/{}/kit", m.id),
+        Some(&m.write_token),
+        Some(&v.to_string()),
+    );
+    assert_eq!(status, 400);
+    assert_eq!(error_code(&body), "kit_invalid");
+}
+
+#[test]
 fn database_is_secure_delete_and_private() {
     let (_base, dir, s) = start();
     assert!(s.db().secure_delete_enabled());
