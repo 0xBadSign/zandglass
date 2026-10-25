@@ -1010,7 +1010,7 @@ function lockForm(): HTMLElement {
     notice(
       'warn',
       'A savings lock cannot be undone',
-      `The vault seed is deleted from this computer as soon as the kit is sealed. Until the lock ends nobody can move the funds, and that includes you: there is no flip, no cancel and no way to ask for help. Afterwards only two things open the vault: the kit file and your 24 heir words. If you lose either one, the funds are gone for good. Zandglass is unaudited, so keep the amount small (up to ${state ? zec(state.cap_zat) : 'the cap'} on mainnet).`,
+      `The vault seed is deleted from this computer as soon as the kit is sealed. Until the lock ends nobody can move the funds, and that includes you: there is no flip, no cancel and no way to ask for help. Afterwards only two things open the vault: the kit file and your 24 heir words. If you lose either one, the funds are gone for good. Zandglass is unaudited, so keep the amount small (mainnet plans are capped at ${state ? (state.cap_zat / 1e8).toFixed(2) : "0.25"} ZEC).`,
     ),
     h(
       'form',
