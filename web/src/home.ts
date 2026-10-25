@@ -323,6 +323,7 @@ const final = h(
     h('li', {}, h('a', { href: './owner' }, 'Owner panel')),
     h('li', {}, h('a', { href: EVIDENCE }, 'Evidence')),
     h('li', {}, h('a', { href: REPO }, 'Source code')),
+    h('li', {}, h('a', { href: 'https://x.com/ZandGlass', rel: 'noopener noreferrer' }, 'Updates on X')),
   ),
 );
 
