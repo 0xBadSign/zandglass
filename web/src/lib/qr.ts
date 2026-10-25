@@ -2,8 +2,8 @@ import qrcode from 'qrcode-generator';
 import { svg } from './dom';
 
 /** A QR code as an SVG (black on transparent; place it on a light tile). */
-export function qrSvg(text: string, label: string): SVGElement {
-  const qr = qrcode(0, 'M');
+export function qrSvg(text: string, label: string, ecc: 'L' | 'M' = 'M'): SVGElement {
+  const qr = qrcode(0, ecc);
   qr.addData(text);
   qr.make();
   const n = qr.getModuleCount();

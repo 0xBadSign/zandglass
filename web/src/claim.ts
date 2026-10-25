@@ -18,6 +18,7 @@ import {
   type OpenedPayload,
 } from './lib/kit';
 import { acceptLocalKeeper } from './lib/local-url';
+import { decodeQrFile, hasCameraScan, scanCamera, unlockIcs } from './lib/paper';
 import { mountShell } from './lib/shell';
 
 const MAX_KIT_BYTES = 1024 * 1024;
@@ -357,7 +358,123 @@ function loaderView(): HTMLElement {
       'The file never leaves your device.',
     ),
     drop,
+    paperScanView(),
   );
+}
+
+/* ------------------------------------------------------------ paper kit */
+
+/** "Scan a paper kit": the camera (BarcodeDetector) or a photo of the QR code. Decoded here; nothing is uploaded. */
+function paperScanView(): HTMLElement {
+  const note = h('p', { class: 'muted small', role: 'status', id: 'paper-note' });
+  const video = h('video', { class: 'paper-video', playsinline: true, muted: true, 'aria-label': 'Camera view' });
+  video.hidden = true;
+  let abort: AbortController | null = null;
+  const fail = (text: string): void => {
+    note.textContent = text;
+  };
+  const accept = (text: string): void => {
+    setKit(text, { kind: 'file', name: 'paper kit' });
+    render();
+  };
+  const photo = h('input', {
+    type: 'file',
+    id: 'paper-photo',
+    accept: 'image/*',
+    onchange: (e: Event) => {
+      const f = (e.target as HTMLInputElement).files?.[0];
+      if (!f) return;
+      note.textContent = 'Reading the QR code...';
+      decodeQrFile(f)
+        .then((t) => (t ? accept(t) : fail('No QR code found in that picture. Try a sharper, well-lit photo with the whole code in view.')))
+        .catch(() => fail('That file could not be read as a picture.'));
+    },
+  });
+  const camBtn = hasCameraScan()
+    ? h(
+        'button',
+        {
+          type: 'button',
+          class: 'btn',
+          id: 'paper-camera',
+          onclick: (ev: Event) => {
+            const self = ev.currentTarget as HTMLButtonElement;
+            if (abort) {
+              abort.abort();
+              return;
+            }
+            abort = new AbortController();
+            self.textContent = 'Stop the camera';
+            video.hidden = false;
+            note.textContent = 'Point the camera at the QR code.';
+            scanCamera(video, abort.signal)
+              .then((t) => {
+                if (t) accept(t);
+              })
+              .catch(() => fail('The camera could not be used. Allow camera access, or choose a photo instead.'))
+              .finally(() => {
+                abort = null;
+                video.hidden = true;
+                self.textContent = 'Scan with the camera';
+              });
+          },
+        },
+        'Scan with the camera',
+      )
+    : null;
+  return h(
+    'div',
+    { class: 'paper-scan' },
+    h('h3', {}, 'Scan a paper kit'),
+    h('p', { class: 'muted small' }, 'If the owner gave you a printed QR code, scan it or choose a photo of it. It is read in this browser only.'),
+    h('label', { for: 'paper-photo' }, 'Photo of the QR code'),
+    photo,
+    camBtn ? h('div', { class: 'actions' }, camBtn) : null,
+    video,
+    note,
+  );
+}
+
+/** Heir pulse: when the owner last made a kit, and a calendar file for the unlock. */
+function pulseView(k: LoadedKit): HTMLElement | null {
+  const created = k.meta?.created ? new Date(k.meta.created) : null;
+  const epoch = k.meta?.epoch;
+  const parts: Child[] = [];
+  if (created && !Number.isNaN(created.getTime())) {
+    parts.push(
+      h(
+        'p',
+        { id: 'pulse' },
+        `The owner last checked in on ${created.toLocaleDateString(undefined, { dateStyle: 'long' })}`,
+        typeof epoch === 'number' ? ` (vault #${epoch}).` : '.',
+      ),
+      h('p', { class: 'muted small' }, 'If the owner checks in again, a newer kit replaces this one. The claim link always serves the newest.'),
+    );
+  }
+  parts.push(
+    h(
+      'div',
+      { class: 'actions' },
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'btn',
+          id: 'add-calendar',
+          onclick: () => {
+            const url = URL.createObjectURL(new Blob([unlockIcs(unlockSeconds(k), nowSeconds())], { type: 'text/calendar' }));
+            const a = h('a', { href: url, download: 'zandglass-unlock.ics' });
+            document.body.append(a);
+            a.click();
+            a.remove();
+            window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+          },
+        },
+        'Add the unlock date to my calendar',
+      ),
+    ),
+  );
+  return h('div', { class: 'pulse' }, ...parts);
 }
 
 function kitView(k: LoadedKit): HTMLElement {
@@ -407,6 +524,7 @@ function kitView(k: LoadedKit): HTMLElement {
     ),
     facts,
     fileHint,
+    unlocked ? null : pulseView(k),
     unlocked
       ? null
       : h(
