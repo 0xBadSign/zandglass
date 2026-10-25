@@ -44,11 +44,24 @@ All endpoints are under the keeper origin and return JSON. Errors use
 - **State timing.** `funding` lasts until the funding transaction is confirmed
   (spendable). Then the state is `sealed`, or `unlocked` if the drand round has
   already passed. `sealed` becomes `unlocked` when the round passes.
+- **Funding is sent at most once.** The worker records the intent to fund in
+  the session row before the float pays, and skips the tick on any database
+  error. A vault that already holds funds is never funded. Only an error that
+  proves nothing reached the network (the transaction could not be built, the
+  node rejected it, or no server answered before sending) is retried, up to
+  three times. Any other error (for example a timeout while broadcasting) is
+  never retried: the session stays in `funding` and the vault balance decides.
+  If no funds confirm within 30 minutes the session fails.
 - **Flip** needs `sealed`, confirmed funds and fewer than `max_flips` flips. The
-  state becomes `flipping`, then `sealed` again with `epoch + 1`, a new
-  `unlock_round` and `confirmed: false` until the swept funds confirm. The
-  `claim_link` does not change; the kit behind it is replaced. If the flip
-  fails three times the session returns to `sealed` unchanged.
+  state becomes `flipping`, then `sealed` again with a higher `epoch` (every
+  attempt uses a fresh one), a new `unlock_round` and `confirmed: false` until
+  the swept funds confirm. The `claim_link` does not change; the kit behind it
+  is replaced. If the flip fails three times before anything was sent, the
+  session returns to `sealed` unchanged. If the sweep's outcome is unknown, the
+  session stays in `flipping` and tracks the new epoch: funds that arrive there
+  complete the flip, and funds that become spendable again in the old vault
+  (the transaction never happened or expired) return the session to `sealed`
+  unchanged. After 6 hours without an answer the session fails.
 - **Settle** needs `unlocked`; the state becomes `settling` and the worker
   sweeps as soon as the funds are spendable. `keep` is immediate. When the daily
   keep cap is reached `keep` answers `daily_cap_reached` and the visitor can
@@ -57,11 +70,19 @@ All endpoints are under the keeper origin and return JSON. Errors use
   moved it with the seed) the session ends as `kept`.
 - **Failure.** `failed` means the funding or the sweeps could not be completed;
   `error` explains in plain English. Failed rows are kept 7 days for manual
-  recovery.
+  recovery; funds left in their vaults stay there until the purge returns them.
+- **Purge never strands funds.** Before a settled session is purged, the
+  worker syncs every epoch vault of the session (not only the current one).
+  Only when all of them are empty are the seeds deleted. Spendable funds are
+  first swept back to the float. A session that still cannot be proven empty
+  after six checks (one every 10 minutes, for example unconfirmed funds or an
+  unreachable server) has its vault directory moved to `vaults-store/archive/`
+  under `ZANDGLASS_PLAYGROUND_DATA`, never deleted, before its row is purged.
 - **Privacy.** The session row holds the public heir code, the claim link,
   timestamps and the state. A `send` destination is kept only until the sweep is
   done. No IPs and no request logs. Settled rows (and their wallets and
-  mailboxes) are purged 7 days after settlement.
+  mailboxes) are purged 7 days after settlement, once their vaults are empty
+  (see above).
 
 ## Endpoints
 

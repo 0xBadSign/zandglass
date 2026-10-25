@@ -23,7 +23,7 @@ use tokio::sync::Mutex;
 use zandglass_wallet::{coded, Client, Network, Store, Vault};
 use zeroize::Zeroizing;
 
-use super::chain::{Chain, NewVault, VaultBalance};
+use super::chain::{Chain, NewVault, NotSent, VaultBalance};
 
 const UNKNOWN: u64 = u64::MAX;
 
@@ -253,11 +253,15 @@ impl Chain for RealChain {
         let float = inner
             .float
             .as_mut()
-            .ok_or_else(|| anyhow!("the float is not ready"))?;
-        let mut client = self.client().await?;
+            .ok_or_else(|| anyhow!("the float is not ready"))
+            .context(NotSent)?;
+        // Everything before `send` cannot reach the network: mark it so the
+        // worker may retry. Errors from `send` itself are classified by
+        // `chain::definitely_unsent`.
+        let mut client = self.client().await.context(NotSent)?;
         let mut attempt = 0;
         loop {
-            float.sync(&mut client).await?;
+            float.sync(&mut client).await.context(NotSent)?;
             match float.send(&mut client, to, amount_zat).await {
                 Ok(reports) => {
                     if let Ok(b) = float.balances() {
@@ -293,14 +297,15 @@ impl Chain for RealChain {
     async fn sweep(&self, session: &str, epoch: u32, to: &str) -> Result<String> {
         let rel = Self::vault_rel(session, epoch)?;
         let inner = self.inner.lock().await;
-        let phrase = inner.store.read_seed(&rel)?;
-        let mut vault = Vault::open(&inner.store.path(&rel), self.cfg.network, phrase)?
-            .with_min_confirmations(self.cfg.min_confirmations)?;
-        let mut client = self.client().await?;
+        let phrase = inner.store.read_seed(&rel).context(NotSent)?;
+        let mut vault = Vault::open(&inner.store.path(&rel), self.cfg.network, phrase)
+            .and_then(|v| v.with_min_confirmations(self.cfg.min_confirmations))
+            .context(NotSent)?;
+        let mut client = self.client().await.context(NotSent)?;
         let mut attempt = 0;
         loop {
-            vault.sync(&mut client).await?;
-            let b = vault.balances()?;
+            vault.sync(&mut client).await.context(NotSent)?;
+            let b = vault.balances().context(NotSent)?;
             if b.total() == 0 {
                 return Err(coded("vault_empty", "The vault holds no funds."));
             }
@@ -324,12 +329,55 @@ impl Chain for RealChain {
         }
     }
 
+    async fn epochs(&self, session: &str) -> Result<Vec<u32>> {
+        let rel = Self::session_rel(session)?;
+        let inner = self.inner.lock().await;
+        let dir = inner.store.path(&rel);
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(e) => e,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(e) => return Err(e).with_context(|| format!("listing {}", dir.display())),
+        };
+        let mut list = Vec::new();
+        for entry in entries {
+            let name = entry?.file_name();
+            let name = name.to_string_lossy();
+            // Anything that is not an epoch directory makes the list unknown,
+            // so the caller archives instead of deleting.
+            let epoch = name
+                .strip_prefix('e')
+                .and_then(|n| n.parse::<u32>().ok())
+                .ok_or_else(|| anyhow!("unexpected entry {name} in a session directory"))?;
+            list.push(epoch);
+        }
+        list.sort_unstable();
+        Ok(list)
+    }
+
     async fn forget(&self, session: &str) {
         let Ok(rel) = Self::session_rel(session) else {
             return;
         };
         let inner = self.inner.lock().await;
         let _ = std::fs::remove_dir_all(inner.store.path(&rel));
+    }
+
+    async fn archive(&self, session: &str) -> Result<()> {
+        let rel = Self::session_rel(session)?;
+        let inner = self.inner.lock().await;
+        let src = inner.store.path(&rel);
+        if !src.exists() {
+            return Ok(());
+        }
+        let root = inner.store.root().join("archive");
+        zandglass_wallet::fsutil::create_private_dir(&root)
+            .context("creating the playground archive directory")?;
+        let at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+        let dst = root.join(format!("{session}-{at}"));
+        std::fs::rename(&src, &dst).with_context(|| format!("archiving {}", src.display()))?;
+        Ok(())
     }
 }
 
