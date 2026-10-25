@@ -27,6 +27,13 @@ Shielded Zcash has no timelocks, so there is no private way to pass it on. Zandg
 
 The same kit mechanism gives two more plan types: **scheduled payments** (one installment vault unlocks per period) and a **savings lock** (`zandglass plan lock`): lock ZEC from yourself until a fixed date. The kit is sealed to your own heir key and the vault seed is deleted at once, so nobody, you included, can move the funds before the date; afterwards the kit and your own 24 words open them.
 
+Built for the people who use it, not only for the cryptography:
+
+- **Heir fire drill.** On the heir page the heir seals a practice kit to their own code that opens in 60 seconds, and opens it on the claim page with their own 24 words. They learn the claim long before it matters; the practice kit holds no seed.
+- **Owner-signed kits.** Every kit carries a per-plan Ed25519 owner signature. The claim page and `zandglass claim` refuse an altered kit and warn when a kit of the same plan is signed by a different key or not at all, so a mailbox operator cannot swap in a decoy ([docs/KIT_FORMAT.md](docs/KIT_FORMAT.md) section 8).
+- **Owner check-in for the heir.** While a kit is locked the heir sees when the owner last checked in (the kit's creation date and vault number) and can add the unlock date to their own calendar; nothing is sent anywhere.
+- **Paper kit.** The owner panel prints a kit as numbered QR codes for the will envelope; the claim page reads them from photos or the camera, in any order, so the heir needs no file and no server.
+
 There is no smart contract, no custody and no fork. Kits are standard files: if Zandglass disappears, the reference tools `tle` and `age` still open them (see [docs/KIT_FORMAT.md](docs/KIT_FORMAT.md)).
 
 ```mermaid
