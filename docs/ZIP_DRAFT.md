@@ -141,7 +141,7 @@ This is a wallet-level convention. It needs no network upgrade and can be adopte
 
 # Reference implementation
 
-Zandglass: [github.com/0xnesQuit/zandglass](https://github.com/0xnesQuit/zandglass) (Rust: `zandglass-core`, `zandglass-wallet`, the `zandglass` CLI and owner panel; TypeScript: the heir and claim pages). Interoperability with `tle` and `age` is checked by `scripts/interop-kit.sh`.
+Zandglass: [github.com/0xBadSign/zandglass](https://github.com/0xBadSign/zandglass) (Rust: `zandglass-core`, `zandglass-wallet`, the `zandglass` CLI and owner panel; TypeScript: the heir and claim pages). Interoperability with `tle` and `age` is checked by `scripts/interop-kit.sh`.
 
 # Test vectors
 

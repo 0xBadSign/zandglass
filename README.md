@@ -70,7 +70,7 @@ Details, residual metadata and trust assumptions: [docs/PRIVACY.md](docs/PRIVACY
 
 ## Download
 
-Ready-made programs for Windows, macOS (Apple silicon and Intel) and Linux are on the [Releases page](https://github.com/0xnesQuit/zandglass/releases). Unpack and **double-click `zandglass`**: it opens the owner panel in your browser. Choose **Testnet** in the panel to try it with free test coins first.
+Ready-made programs for Windows, macOS (Apple silicon and Intel) and Linux are on the [Releases page](https://github.com/0xBadSign/zandglass/releases). Unpack and **double-click `zandglass`**: it opens the owner panel in your browser. Choose **Testnet** in the panel to try it with free test coins first.
 
 - The programs are not code-signed yet. Windows SmartScreen shows "More info, Run anyway"; on macOS right-click the file, choose Open, then Open again.
 - Each download has a `.sha256` file to check it. The same program runs every command from a terminal (`zandglass --help`).
