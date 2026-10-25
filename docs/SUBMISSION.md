@@ -42,8 +42,8 @@ https://zandglass.cash/media/zandglass-demo-v2.mp4  (1:39, narrated and captione
 ## Checklist before SUBMIT
 
 - [x] Repository is public (C-3), 2026-10-25.
-- [ ] Demo URL loads and the playground accepts the judge code; the float holds funds.
+- [x] Demo URL loads and the playground accepts the judge code; the float holds funds (mainnet run 2026-10-26).
 - [x] Video link plays without sign-in (v2 checked 2026-10-25).
 - [x] Mainnet evidence rows exist in `docs/evidence/EVIDENCE.md` (2026-10-01: fund, flip, claim).
 - [x] Prize address: not asked in the form; the organizers contact winners on Telegram after judging (site, checked 2026-10-21).
-- [ ] The "repository will be public" box is ticked.
+- [x] The "repository will be public" box is ticked; submitted 2026-10-25.

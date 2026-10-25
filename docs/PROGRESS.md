@@ -8,12 +8,12 @@ Live state of the project. The agent updates it at the end of every work unit, n
 
 | | |
 |---|---|
-| Last updated | 2026-10-25 |
+| Last updated | 2026-10-26 |
 | Plan version | 2 |
 | Current milestone | M5 Submission (all of M0 to M4 done) |
-| Next task | Release v0.2.0 (tag `v0.2.0`); the owner submits the form (O-6); tag `zecathon-submission` at the deadline; during judging keep the site up and claim the live vault after 2026-11-12T20:37:33Z |
-| Blocked / waiting on owner | O-6 submit the form |
-| Days to deadline | 3 (submissions due 2026-10-28 23:59 UTC) |
+| Next task | Tag `zecathon-submission` at the deadline (owner submitted 2026-10-25); during judging keep the site up and claim the live vault after 2026-11-12T20:37:33Z |
+| Blocked / waiting on owner | nothing |
+| Days to deadline | 2 (submissions due 2026-10-28 23:59 UTC) |
 | Health | on track |
 
 ---
@@ -130,6 +130,13 @@ None yet.
 ---
 
 ## Session log (newest first)
+
+### 2026-10-26: security review, fixes, v0.2.0, submission
+- Independent security review (docs/SECURITY_REVIEW.md): no critical finding. Fixed H1 (unlock-aware mailbox retention, live DB migrated after a backup), M1 (owner-key hint `&o=` in claim links, per-mailbox pins), M2/M3 (playground funds at most once; seeds never deleted while they may hold funds, archived instead), M4 (savings lock from the owner's 24 words), M5 (per-address mailbox quota, empty-mailbox cap), M6 (actions pinned to SHAs, no release cache, provenance attestation), L3.
+- Checks: scripts/check.sh green, 92 Playwright tests green, CI green. Real networks: testnet lock with owner hint (wrong hint refused), mainnet playground run (EVIDENCE.md 2026-10-26 rows).
+- v0.2.0 released (4 targets); Windows zip checksum and `gh attestation verify` pass; binary runs and opens the panel.
+- Demo video v2 (1:39) re-cut with the words-based lock form, same URL.
+- The owner submitted the form on 2026-10-25 (track Shielded Payments). Next: tag `zecathon-submission` at the deadline; during judging keep the site up and claim the live vault after 2026-11-12T20:37:33Z.
 
 ### 2026-10-25 (evening): new features
 - Five features: heir fire drill (a practice kit sealed in the browser on /heir, opened on /claim, unlock about 60 s, empty seed, never uploaded); owner-signed kits (per-plan Ed25519 key, KIT_FORMAT.md section 8; plans made before this and playground kits stay unsigned); heir pulse on /claim (the kit's public creation date and epoch, local .ics); paper kit (multi-part QR codes `ZGK1:<i>/<n>:<hash>:<chunk>`, printed from the owner panel, read on /claim from photos or the camera); savings lock (`zandglass plan lock`, plan kind lock, no seed stored, a plain legacy kit sealed to the owner's own heir code).

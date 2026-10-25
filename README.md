@@ -86,7 +86,7 @@ Details, residual metadata and trust assumptions: [docs/PRIVACY.md](docs/PRIVACY
 The [Releases page](https://github.com/0xBadSign/zandglass/releases) has v0.2.0 builds for Windows, macOS (Apple silicon and Intel) and Linux, with the owner-signed kits, savings lock, heir fire drill, heir pulse and paper kit described above. Unpack and **double-click `zandglass`**: it opens the owner panel in your browser. Choose **Testnet** in the panel to try it with free test coins first.
 
 - The programs are not code-signed yet. Windows SmartScreen shows "More info, Run anyway"; on macOS right-click the file, choose Open, then Open again.
-- Each download has a `.sha256` file to check it. The same program runs every command from a terminal (`zandglass --help`).
+- Each download has a `.sha256` file to check it, and a build-provenance attestation from GitHub Actions: `gh attestation verify <file> -R 0xBadSign/zandglass` proves it was built from this repository by the release workflow. The same program runs every command from a terminal (`zandglass --help`).
 
 ## The owner panel
 
