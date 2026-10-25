@@ -34,8 +34,8 @@ export function recordedClient(): ChainClient {
 }
 
 /** Render a QR code to RGBA pixels (black on white, quiet zone, `scale` px per module). */
-export function qrPixels(text: string, scale = 4): { data: Uint8ClampedArray; size: number } {
-  const qr = qrcode(0, 'L');
+export function qrPixels(text: string, scale = 4, ecc: 'L' | 'M' = 'L'): { data: Uint8ClampedArray; size: number } {
+  const qr = qrcode(0, ecc);
   qr.addData(text);
   qr.make();
   const n = qr.getModuleCount();
@@ -77,8 +77,8 @@ function pngChunk(type: string, body: Buffer): Buffer {
 }
 
 /** A grayscale PNG of the QR code for `text` (a stand-in for a photo of a paper kit). */
-export function qrPng(text: string, scale = 4): Buffer {
-  const { data, size } = qrPixels(text, scale);
+export function qrPng(text: string, scale = 4, ecc: 'L' | 'M' = 'L'): Buffer {
+  const { data, size } = qrPixels(text, scale, ecc);
   const raw = Buffer.alloc((size + 1) * size);
   for (let y = 0; y < size; y++) {
     raw[y * (size + 1)] = 0;
@@ -128,3 +128,23 @@ export async function makeJsonKit(payload: object = TEST_PAYLOAD): Promise<strin
     sealed,
   });
 }
+
+/**
+ * Pad the `sealed` armour of a kit to `sealedLen` characters with filler
+ * lines, like a production kit (always sealed to 3 recipients, padded
+ * payload: about 4.5 KB compact). For layout and QR tests only: the padded
+ * kit parses but does not decrypt.
+ */
+export function padSealed(kitText: string, sealedLen = 4135): string {
+  const kit = JSON.parse(kitText) as { sealed: string };
+  const filler = 'QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVphYmNkZWZnaGlqa2xtbm9wcXJzdHV2';
+  const end = '-----END AGE ENCRYPTED FILE-----';
+  const head = kit.sealed.slice(0, kit.sealed.lastIndexOf(end));
+  let body = head;
+  while (body.length + end.length + 1 < sealedLen) body += `${filler}\n`;
+  kit.sealed = `${body.slice(0, sealedLen - end.length - 1)}\n${end}`;
+  return JSON.stringify(kit, null, 2);
+}
+
+/** The real signed owner-kit vector padded to production size. */
+export const paddedRealKit = (): string => padSealed(read('TEST_ONLY_owner_kit.zandglass'));

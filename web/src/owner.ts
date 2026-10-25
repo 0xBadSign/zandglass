@@ -6,7 +6,7 @@ import { clear, copyButton, h, type Child } from './lib/dom';
 import { GlassCanvas, mountDust } from './lib/fx';
 import { formatCountdown, formatZec } from './lib/playground';
 import { dateToUntil, untilEpoch } from './lib/lock';
-import { fitsQr, kitQrText } from './lib/paper';
+import { MAX_PARTS, PART_ECC, kitQrText, splitKit } from './lib/paper';
 import { qrSvg } from './lib/qr';
 import { mountShell } from './lib/shell';
 
@@ -138,7 +138,12 @@ let fundFor = '';
 let fund: { address: string; uri: string } | null = null;
 let paperFor = '';
 let paperEpoch = 0;
-let paper: { text: string; fits: boolean } | null = null;
+let paper: { parts: string[]; fits: boolean } | null = null;
+
+function makePaper(text: string): { parts: string[]; fits: boolean } {
+  const parts = splitKit(text);
+  return { parts, fits: parts.length <= MAX_PARTS };
+}
 let cancelFor = '';
 let problem: { tone: 'bad' | 'warn' | 'ok' | 'info'; title: string; body: string } | null = null;
 let mode: 'local' | 'remote' | 'loading' = token ? 'loading' : 'remote';
@@ -388,20 +393,38 @@ function passForm(kind: 'init' | 'unlock'): HTMLElement {
  * unlock date. No amounts, no addresses. A copy goes into #paper-print, the
  * only thing the print stylesheet shows.
  */
-function paperSheet(p: PlanSum, k: { text: string }): HTMLElement {
+function paperSheet(p: PlanSum, k: { parts: string[] }): HTMLElement {
   const when = p.unlock_time ? new Date(p.unlock_time * 1000).toLocaleDateString(undefined, { dateStyle: 'long' }) : 'unknown';
+  const n = k.parts.length;
   return h(
     'div',
     { class: 'paper-sheet' },
     h('h2', {}, 'Zandglass paper kit'),
-    h('div', { class: 'paper-qr' }, qrSvg(k.text, `QR code of the kit of plan ${p.short_id}`, 'L')),
     h('p', { class: 'paper-meta' }, 'Plan ', h('code', {}, p.short_id), ' · unlocks ', h('strong', {}, when)),
-    h('p', {}, 'Scan on zandglass.cash/claim, or with any QR reader and save as a file. You also need the heir phrase, which is not on this page.'),
+    h(
+      'div',
+      { class: 'paper-grid' },
+      ...k.parts.map((t, i) =>
+        h(
+          'figure',
+          { class: 'paper-part' },
+          h('div', { class: 'paper-qr' }, qrSvg(t, `QR code, part ${i + 1} of ${n}, of the kit of plan ${p.short_id}`, PART_ECC)),
+          h('figcaption', {}, n > 1 ? `Part ${i + 1} of ${n}` : 'Kit'),
+        ),
+      ),
+    ),
+    h(
+      'p',
+      {},
+      n > 1
+        ? `Scan every part on zandglass.cash/claim (any order). You also need the heir phrase, which is not on this page.`
+        : 'Scan on zandglass.cash/claim. You also need the heir phrase, which is not on this page.',
+    ),
     h('p', { class: 'paper-small' }, p.kind === 'lock' ? 'This kit never changes: a savings lock is not flipped.' : 'This kit is replaced if the owner flips the plan: always use the newest one.'),
   );
 }
 
-function printPaper(p: PlanSum, k: { text: string }): void {
+function printPaper(p: PlanSum, k: { parts: string[] }): void {
   document.getElementById('paper-print')?.remove();
   const root = h('div', { id: 'paper-print' }, paperSheet(p, k));
   document.body.append(root);
@@ -409,7 +432,7 @@ function printPaper(p: PlanSum, k: { text: string }): void {
   window.print();
 }
 
-function paperView(p: PlanSum, k: { text: string; fits: boolean }): HTMLElement {
+function paperView(p: PlanSum, k: { parts: string[]; fits: boolean }): HTMLElement {
   if (!k.fits) {
     return h(
       'div',
@@ -417,8 +440,8 @@ function paperView(p: PlanSum, k: { text: string; fits: boolean }): HTMLElement 
       h(
         'div',
         {},
-        h('strong', {}, 'This kit is too big for one QR code'),
-        h('p', {}, 'It has too much data (many heirs or a long message). Use "Download kit" and give your heirs the file instead.'),
+        h('strong', {}, 'This kit is too big for paper'),
+        h('p', {}, 'It has too much data (many heirs or a long message) to print as a few QR codes. Use "Download kit" and give your heirs the file instead.'),
       ),
     );
   }
@@ -490,7 +513,7 @@ function paperButton(p: PlanSum): HTMLElement {
           }
           const k = await api<{ file_name: string; text: string }>('GET', `/api/plans/${p.id}/kit`);
           const text = kitQrText(k.text);
-          paper = { text, fits: fitsQr(text) };
+          paper = makePaper(text);
           paperFor = p.id;
           paperEpoch = p.epoch;
         }),
@@ -734,7 +757,7 @@ function planCard(p: PlanSum): HTMLElement {
                   }
                   const k = await api<{ file_name: string; text: string }>('GET', `/api/plans/${p.id}/kit`);
                   const text = kitQrText(k.text);
-                  paper = { text, fits: fitsQr(text) };
+                  paper = makePaper(text);
                   paperFor = p.id;
                   paperEpoch = p.epoch;
                 }),

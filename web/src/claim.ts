@@ -23,7 +23,7 @@ import {
   type OpenedPayload,
 } from './lib/kit';
 import { acceptLocalKeeper } from './lib/local-url';
-import { decodeQrFile, hasCameraScan, scanCamera, unlockIcs } from './lib/paper';
+import { PartAssembler, decodeQrFileAll, hasCameraScan, scanCamera, unlockIcs, type AddResult } from './lib/paper';
 import { mountShell } from './lib/shell';
 
 const MAX_KIT_BYTES = 1024 * 1024;
@@ -446,6 +446,8 @@ function loaderView(): HTMLElement {
 /* ------------------------------------------------------------ paper kit */
 
 /** "Scan a paper kit": the camera (BarcodeDetector) or a photo of the QR code. Decoded here; nothing is uploaded. */
+const parts = new PartAssembler();
+
 function paperScanView(): HTMLElement {
   const note = h('p', { class: 'muted small', role: 'status', id: 'paper-note' });
   const video = h('video', { class: 'paper-video', playsinline: true, muted: true, 'aria-label': 'Camera view' });
@@ -458,17 +460,47 @@ function paperScanView(): HTMLElement {
     setKit(text, { kind: 'file', name: 'paper kit' });
     render();
   };
+  /** Feed one decoded code. Returns true when the scan is over (kit loaded or rejected). */
+  const take = (raw: string): boolean => {
+    const r: AddResult = parts.add(raw);
+    if (r.status === 'plain' || r.status === 'done') {
+      accept(r.text);
+      return true;
+    }
+    if (r.status === 'bad') {
+      accept('');
+      return true;
+    }
+    const miss = r.missing.map((i) => `part ${i}`).join(', ');
+    note.textContent = `Scanned part ${r.have.length} of ${r.n}. Scan the next one. Still missing: ${miss}.`;
+    return false;
+  };
   const photo = h('input', {
     type: 'file',
     id: 'paper-photo',
     accept: 'image/*',
+    multiple: true,
     onchange: (e: Event) => {
-      const f = (e.target as HTMLInputElement).files?.[0];
-      if (!f) return;
+      const input = e.target as HTMLInputElement;
+      const files = Array.from(input.files ?? []);
+      input.value = '';
+      if (!files.length) return;
       note.textContent = 'Reading the QR code...';
-      decodeQrFile(f)
-        .then((t) => (t ? accept(t) : fail('No QR code found in that picture. Try a sharper, well-lit photo with the whole code in view.')))
-        .catch(() => fail('That file could not be read as a picture.'));
+      void (async () => {
+        let found = 0;
+        try {
+          for (const f of files) {
+            for (const code of await decodeQrFileAll(f)) {
+              found++;
+              if (take(code)) return;
+            }
+          }
+        } catch {
+          fail('That file could not be read as a picture.');
+          return;
+        }
+        if (!found) fail('No QR code found in that picture. Try a sharper, well-lit photo with the whole code in view.');
+      })();
     },
   });
   const camBtn = hasCameraScan()
@@ -488,10 +520,7 @@ function paperScanView(): HTMLElement {
             self.textContent = 'Stop the camera';
             video.hidden = false;
             note.textContent = 'Point the camera at the QR code.';
-            scanCamera(video, abort.signal)
-              .then((t) => {
-                if (t) accept(t);
-              })
+            scanCamera(video, abort.signal, take)
               .catch(() => fail('The camera could not be used. Allow camera access, or choose a photo instead.'))
               .finally(() => {
                 abort = null;
@@ -507,8 +536,8 @@ function paperScanView(): HTMLElement {
     'div',
     { class: 'paper-scan' },
     h('h3', {}, 'Scan a paper kit'),
-    h('p', { class: 'muted small' }, 'If the owner gave you a printed QR code, scan it or choose a photo of it. It is read in this browser only.'),
-    h('label', { for: 'paper-photo' }, 'Photo of the QR code'),
+    h('p', { class: 'muted small' }, 'If the owner gave you a printed kit, scan every QR code on it (any order) or choose photos of them, several at once if you like. It is read in this browser only.'),
+    h('label', { for: 'paper-photo' }, 'Photos of the QR codes'),
     photo,
     camBtn ? h('div', { class: 'actions' }, camBtn) : null,
     video,
