@@ -9,7 +9,12 @@ import { BeaconNotReadyError, NetworkError, relayClient } from './lib/drand';
 import { InvalidPhraseError, isValidPhrase } from './lib/heir';
 import {
   KitDamagedError,
+  OwnerSigInvalidError,
   PRACTICE_HANDOFF_KEY,
+  checkOwner,
+  repinOwnerKey,
+  verifyOwnerSig,
+  type OwnerCheck,
   WrongHeirKeyError,
   openKit,
   parseKit,
@@ -31,6 +36,8 @@ type Source = { kind: 'mailbox'; origin: string; id: string; token: string } | {
 type Problem = { tone: 'bad' | 'warn' | 'info'; title: string; body: string; retry?: () => void };
 
 let kit: LoadedKit | null = null;
+/** Owner-signature state of the loaded kit: null while checking. */
+let owner: OwnerCheck | null = null;
 let source: Source | null = null;
 let loading = false;
 let opening = false;
@@ -167,6 +174,8 @@ function setKit(text: string, src: Source): void {
     source = src;
     problem = null;
     result = null;
+    owner = null;
+    void checkKitOwner(kit);
   } catch {
     kit = null;
     problem = {
@@ -176,6 +185,78 @@ function setKit(text: string, src: Source): void {
         'The file is not a complete Zandglass kit. It may have been cut short or changed on the way. ' +
         'Ask the owner for the claim link or a fresh copy of the file. Nothing was opened.',
     };
+  }
+}
+
+/** Verify the owner signature and pin the owner key; an invalid signature drops the kit. */
+async function checkKitOwner(k: LoadedKit): Promise<void> {
+  try {
+    const r = await checkOwner(k);
+    if (kit !== k) return;
+    owner = r;
+  } catch (e) {
+    if (kit !== k) return;
+    kit = null;
+    owner = null;
+    problem =
+      e instanceof OwnerSigInvalidError
+        ? {
+            tone: 'bad',
+            title: 'This kit was altered',
+            body:
+              'Its owner signature does not match its contents, so someone changed it after the owner sealed it. ' +
+              'Do not use it. Ask the owner for the claim link or a fresh copy. Nothing was opened.',
+          }
+        : { tone: 'bad', title: 'This kit looks damaged', body: 'The owner signature could not be checked. Nothing was opened.' };
+  }
+  render();
+}
+
+/** What the owner signature says about this kit. */
+function ownerView(k: LoadedKit): HTMLElement | null {
+  if (!owner) return h('p', { class: 'muted small', id: 'owner-sig' }, 'Checking the owner signature...');
+  const warn = (title: string, body: string, extra?: HTMLElement) =>
+    h('div', { class: 'notice bad', id: 'owner-sig', role: 'alert' }, h('div', {}, h('strong', {}, title), h('p', {}, body), extra ?? null));
+  switch (owner.status) {
+    case 'match':
+      return h('p', { class: 'notice ok', id: 'owner-sig' }, `Signed by the same owner as the kit you opened before (key ${owner.fingerprint}).`);
+    case 'new':
+      return h(
+        'p',
+        { class: 'notice info', id: 'owner-sig' },
+        `Signed by the owner. Owner key ${owner.fingerprint} is now remembered in this browser; if you can, check it with the owner.`,
+      );
+    case 'unsigned':
+      return h('p', { class: 'muted small', id: 'owner-sig' }, 'This kit carries no owner signature (plans made before signatures, and playground kits, are unsigned).');
+    case 'stripped':
+      return warn(
+        'This kit is not signed, but earlier kits of this plan were',
+        `Kits of this plan that this browser saw before were signed by owner key ${owner.pinnedFingerprint}. This one has no signature, so it may be a decoy. Ask the owner before you rely on it.`,
+      );
+    case 'mismatch': {
+      const trust = h(
+        'button',
+        {
+          type: 'button',
+          class: 'btn',
+          id: 'trust-owner-key',
+          onclick: async () => {
+            const sig = await verifyOwnerSig(k);
+            if (sig !== 'unsigned' && k.meta?.plan) {
+              repinOwnerKey(k.meta.plan, sig.key);
+              owner = { status: 'match', fingerprint: sig.fingerprint };
+              render();
+            }
+          },
+        },
+        'The owner confirmed the new key: trust it',
+      );
+      return warn(
+        'This kit was signed by a different owner key',
+        `Earlier kits of this plan were signed by ${owner.pinnedFingerprint}; this one by ${owner.fingerprint}. It may be a decoy sealed by someone else. Confirm with the owner before you rely on it.`,
+        h('div', { class: 'actions' }, trust),
+      );
+    }
   }
 }
 
@@ -523,6 +604,7 @@ function kitView(k: LoadedKit): HTMLElement {
       ),
     ),
     facts,
+    ownerView(k),
     fileHint,
     unlocked ? null : pulseView(k),
     unlocked
