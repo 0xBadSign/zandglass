@@ -203,6 +203,8 @@ pub struct Playground {
     gate: tokio::sync::Mutex<()>,
     /// When each session's balance was last polled (memory only).
     polled: std::sync::Mutex<std::collections::HashMap<String, u64>>,
+    /// Failed purge checks per session (memory only); see the worker.
+    purge_tries: std::sync::Mutex<std::collections::HashMap<String, u32>>,
 }
 
 /// What a created session returns.
@@ -256,6 +258,7 @@ impl Playground {
             mailboxes,
             gate: tokio::sync::Mutex::new(()),
             polled: std::sync::Mutex::new(std::collections::HashMap::new()),
+            purge_tries: std::sync::Mutex::new(std::collections::HashMap::new()),
         }))
     }
 
@@ -448,6 +451,7 @@ impl Playground {
             op_to: None,
             attempts: 0,
             kept_swept: false,
+            pending: None,
         };
         if let Err(e) = self.sessions.insert(&session) {
             eprintln!("playground: saving a session failed: {e:#}");

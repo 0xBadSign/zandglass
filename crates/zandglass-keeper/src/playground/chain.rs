@@ -12,6 +12,34 @@ use zeroize::Zeroizing;
 /// Zatoshi the ZIP 317 fee of a one-input, one-output sweep costs.
 pub const SWEEP_FEE_ZAT: u64 = 10_000;
 
+/// Context marker for a chain error that happened before anything could
+/// reach the network (the float was not ready, no server answered, the
+/// wallet could not sync). Wrap such errors with `.context(NotSent)`.
+#[derive(Debug, Clone, Copy)]
+pub struct NotSent;
+
+impl std::fmt::Display for NotSent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("nothing was sent")
+    }
+}
+
+/// Whether a `fund` or `sweep` error proves that no transaction reached the
+/// network: it is marked [`NotSent`], the proposal or the transaction could
+/// not be built, or the node explicitly rejected the broadcast (the same
+/// rule as the wallet's own flip code). Anything else, such as a timeout or a
+/// dropped connection during `SendTransaction`, may have happened after the
+/// node accepted the transaction, so the caller must not send again.
+pub fn definitely_unsent(e: &anyhow::Error) -> bool {
+    if e.downcast_ref::<NotSent>().is_some() {
+        return true;
+    }
+    let msg = format!("{e:#}");
+    msg.contains("proposal failed")
+        || msg.contains("building transaction failed")
+        || msg.contains("broadcast rejected")
+}
+
 /// A freshly created session vault.
 pub struct NewVault {
     /// The vault's 24-word seed. The caller seals it into a kit and drops it.
@@ -67,8 +95,15 @@ pub trait Chain: Send + Sync {
     /// Sweeps a session vault to `to`; returns the txid. Errors carry the
     /// shared codes `vault_empty` and `insufficient_funds`.
     async fn sweep(&self, session: &str, epoch: u32, to: &str) -> Result<String>;
-    /// Deletes everything stored for a session (seeds and wallets).
+    /// Every epoch of a session that has a vault on the server, ascending.
+    /// An error means the list is not known (never "no vaults").
+    async fn epochs(&self, session: &str) -> Result<Vec<u32>>;
+    /// Deletes everything stored for a session (seeds and wallets). Only
+    /// for sessions whose every epoch was just seen empty.
     async fn forget(&self, session: &str);
+    /// Moves everything stored for a session to an archive directory on the
+    /// server. Nothing is deleted: the seeds stay recoverable by the operator.
+    async fn archive(&self, session: &str) -> Result<()>;
 }
 
 /// What a [`MockChain`] holds for one vault.
@@ -93,7 +128,11 @@ struct MockState {
     fail_sweeps: Vec<String>,
     lose_reply_sweeps: Vec<String>,
     fail_funds: Vec<String>,
+    lose_reply_funds: Vec<String>,
+    /// Every `balance` call fails while set.
+    balance_fails: bool,
     forgotten: Vec<String>,
+    archived: Vec<String>,
 }
 
 /// An offline chain for tests.
@@ -160,6 +199,17 @@ impl MockChain {
         self.s().fail_funds.push(message.to_string());
     }
 
+    /// Makes the next funding move the funds but fail with `message`, like a
+    /// broadcast that the node accepted and whose reply was lost.
+    pub fn lose_reply_of_next_fund(&self, message: &str) {
+        self.s().lose_reply_funds.push(message.to_string());
+    }
+
+    /// Makes every `balance` call fail (an unreachable server) while set.
+    pub fn set_balance_fails(&self, fails: bool) {
+        self.s().balance_fails = fails;
+    }
+
     /// Empties a vault as if the heir moved the funds by hand.
     pub fn drain(&self, session: &str, epoch: u32) {
         if let Some(v) = self.s().vaults.get_mut(&(session.to_string(), epoch)) {
@@ -176,6 +226,11 @@ impl MockChain {
     /// Sessions passed to `forget`.
     pub fn forgotten(&self) -> Vec<String> {
         self.s().forgotten.clone()
+    }
+
+    /// Sessions passed to `archive`.
+    pub fn archived(&self) -> Vec<String> {
+        self.s().archived.clone()
     }
 
     /// A vault's `(total, spendable)`.
@@ -247,6 +302,11 @@ impl Chain for MockChain {
             let msg = s.fail_funds.remove(0);
             return Err(anyhow!(msg));
         }
+        let lose_reply = if s.lose_reply_funds.is_empty() {
+            None
+        } else {
+            Some(s.lose_reply_funds.remove(0))
+        };
         let key = s
             .addresses
             .get(to)
@@ -259,11 +319,17 @@ impl Chain for MockChain {
             v.spendable = v.total;
         }
         s.next_tx += 1;
+        if let Some(msg) = lose_reply {
+            return Err(anyhow!(msg));
+        }
         Ok(fake_txid(s.next_tx))
     }
 
     async fn balance(&self, session: &str, epoch: u32) -> Result<VaultBalance> {
         let s = self.s();
+        if s.balance_fails {
+            return Err(anyhow!("no lightwalletd server answered"));
+        }
         let v = s
             .vaults
             .get(&(session.to_string(), epoch))
@@ -318,7 +384,24 @@ impl Chain for MockChain {
         Ok(fake_txid(s.next_tx))
     }
 
+    async fn epochs(&self, session: &str) -> Result<Vec<u32>> {
+        let s = self.s();
+        let mut list: Vec<u32> = s
+            .vaults
+            .keys()
+            .filter(|(id, _)| id == session)
+            .map(|(_, e)| *e)
+            .collect();
+        list.sort_unstable();
+        Ok(list)
+    }
+
     async fn forget(&self, session: &str) {
         self.s().forgotten.push(session.to_string());
+    }
+
+    async fn archive(&self, session: &str) -> Result<()> {
+        self.s().archived.push(session.to_string());
+        Ok(())
     }
 }

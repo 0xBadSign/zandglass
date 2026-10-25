@@ -93,6 +93,9 @@ pub struct Session {
     pub attempts: u32,
     /// A kept vault has been swept back (or found empty) after 24 hours.
     pub kept_swept: bool,
+    /// A flip whose sweep may or may not have reached the network (JSON,
+    /// see the worker). The new epoch is tracked until the outcome is known.
+    pub pending: Option<String>,
 }
 
 /// A transaction of a session.
@@ -104,7 +107,7 @@ pub struct TxRow {
 
 const COLS: &str = "id, token_hash, heir_code, minutes, state, epoch, flips, created, \
     unlock_round, unlock_time, funded_zat, vault_address, balance_zat, confirmed, mailbox_id, \
-    claim_link, message, error, settled_at, op, op_to, attempts, kept_swept";
+    claim_link, message, error, settled_at, op, op_to, attempts, kept_swept, pending";
 
 fn from_row(r: &Row<'_>) -> rusqlite::Result<Session> {
     let u = |i: usize| -> rusqlite::Result<u64> { Ok(r.get::<_, i64>(i)?.max(0) as u64) };
@@ -132,6 +135,7 @@ fn from_row(r: &Row<'_>) -> rusqlite::Result<Session> {
         op_to: r.get(20)?,
         attempts: u(21)? as u32,
         kept_swept: r.get::<_, i64>(22)? != 0,
+        pending: r.get(23)?,
     })
 }
 
@@ -187,6 +191,15 @@ impl SessionDb {
              );
              CREATE INDEX IF NOT EXISTS txs_session ON txs (session);",
         )?;
+        // Databases from before the pending-flip column.
+        let has_pending: bool = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'pending'",
+            [],
+            |r| Ok(r.get::<_, i64>(0)? > 0),
+        )?;
+        if !has_pending {
+            conn.execute_batch("ALTER TABLE sessions ADD COLUMN pending TEXT;")?;
+        }
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -201,7 +214,7 @@ impl SessionDb {
         self.conn().execute(
             &format!(
                 "INSERT INTO sessions ({COLS}) VALUES \
-                 (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23)"
+                 (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24)"
             ),
             params![
                 s.id,
@@ -227,6 +240,7 @@ impl SessionDb {
                 s.op_to,
                 s.attempts,
                 i64::from(s.kept_swept),
+                s.pending,
             ],
         )?;
         Ok(())
@@ -238,8 +252,8 @@ impl SessionDb {
         self.conn().execute(
             "UPDATE sessions SET state=?2, epoch=?3, flips=?4, unlock_round=?5, unlock_time=?6, \
              funded_zat=?7, vault_address=?8, balance_zat=?9, confirmed=?10, message=?11, \
-             error=?12, settled_at=?13, op=?14, op_to=?15, attempts=?16, kept_swept=?17 \
-             WHERE id=?1",
+             error=?12, settled_at=?13, op=?14, op_to=?15, attempts=?16, kept_swept=?17, \
+             pending=?18 WHERE id=?1",
             params![
                 s.id,
                 s.state.as_str(),
@@ -258,9 +272,33 @@ impl SessionDb {
                 s.op_to,
                 s.attempts,
                 i64::from(s.kept_swept),
+                s.pending,
             ],
         )?;
         Ok(())
+    }
+
+    /// Records the intent to fund a session, before the float is asked to
+    /// pay: `op = 'fund'` on a `funding` row that has no intent yet. Returns
+    /// whether this call set it. A row with the intent is never funded
+    /// again unless [`SessionDb::release_fund`] clears it.
+    pub fn claim_fund(&self, id: &str) -> Result<bool> {
+        let n = self.conn().execute(
+            "UPDATE sessions SET op = 'fund' WHERE id = ?1 AND state = 'funding' AND op IS NULL",
+            [id],
+        )?;
+        Ok(n == 1)
+    }
+
+    /// Clears the funding intent after a funding attempt that certainly sent
+    /// nothing, so the worker may try again.
+    pub fn release_fund(&self, id: &str, attempts: u32, message: &str) -> Result<bool> {
+        let n = self.conn().execute(
+            "UPDATE sessions SET op = NULL, attempts = ?2, message = ?3 \
+             WHERE id = ?1 AND state = 'funding' AND op = 'fund'",
+            params![id, attempts, message],
+        )?;
+        Ok(n == 1)
     }
 
     /// One session by id.
@@ -392,23 +430,35 @@ impl SessionDb {
         Ok(())
     }
 
-    /// Deletes sessions settled before `cutoff`; returns `(id, mailbox_id)`
-    /// of the deleted rows.
-    pub fn purge_settled_before(&self, cutoff: u64) -> Result<Vec<(String, String)>> {
+    /// Sessions settled before `cutoff` that may be purged once their
+    /// vaults are known to be empty: `(id, mailbox_id)`, oldest first. A kept
+    /// vault still waiting for its 24-hour return is not a candidate.
+    pub fn purge_candidates(&self, cutoff: u64) -> Result<Vec<(String, String)>> {
         let conn = self.conn();
-        let rows: Vec<(String, String)> = {
-            let mut stmt = conn.prepare(
-                "SELECT id, mailbox_id FROM sessions WHERE settled_at IS NOT NULL AND settled_at < ?1 \
-                 AND state IN ('returned','sent','kept','failed')",
-            )?;
-            let it = stmt.query_map([cutoff as i64], |r| Ok((r.get(0)?, r.get(1)?)))?;
-            it.collect::<rusqlite::Result<Vec<_>>>()?
-        };
-        for (id, _) in &rows {
-            conn.execute("DELETE FROM txs WHERE session = ?1", [id])?;
-            conn.execute("DELETE FROM sessions WHERE id = ?1", [id])?;
-        }
-        Ok(rows)
+        let mut stmt = conn.prepare(
+            "SELECT id, mailbox_id FROM sessions WHERE settled_at IS NOT NULL AND settled_at < ?1 \
+             AND (state IN ('returned','sent','failed') OR (state = 'kept' AND kept_swept = 1)) \
+             ORDER BY settled_at",
+        )?;
+        let it = stmt.query_map([cutoff as i64], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(it.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Deletes a session row and its transactions.
+    pub fn delete(&self, id: &str) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        tx.execute("DELETE FROM txs WHERE session = ?1", [id])?;
+        tx.execute("DELETE FROM sessions WHERE id = ?1", [id])?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Test helper: run raw SQL (to break the database on purpose).
+    #[cfg(test)]
+    pub fn exec_for_tests(&self, sql: &str) -> Result<()> {
+        self.conn().execute_batch(sql)?;
+        Ok(())
     }
 
     /// Test helper: backdate the settlement time.
