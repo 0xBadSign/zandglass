@@ -40,6 +40,16 @@ pub fn plan_ics(plan: &Plan, now: u64) -> String {
                     alarm: false,
                 });
             }
+        } else if let (Some(_), Ok(rec)) = (&plan.lock, plan.current()) {
+            // A savings lock is never flipped: one event when it opens.
+            events.push(Event {
+                uid: random_uid(),
+                start: rec.unlock_time,
+                summary: format!("Zandglass: savings lock {short} opens"),
+                description: "The lock has ended. Open the kit with your heir words on zandglass.cash/claim or with `zandglass claim`.".into(),
+                rrule: None,
+                alarm: true,
+            });
         } else if let Ok(rec) = plan.current() {
             let unlock = rec.unlock_time;
             let lead = reminder_lead(plan.period_secs);
@@ -173,6 +183,7 @@ mod tests {
             installments: None,
             pending: None,
             archived: Vec::new(),
+            lock: None,
         }
     }
 
@@ -208,6 +219,20 @@ mod tests {
         assert_eq!(reminder_lead(600), 150);
         assert_eq!(reminder_lead(10), 60);
         assert_eq!(reminder_lead(400 * DAY), 7 * DAY);
+    }
+
+    #[test]
+    fn a_savings_lock_has_one_unlock_event_and_no_flip_reminder() {
+        let mut p = plan(90 * DAY, 1_800_000_000);
+        p.kind = "lock".into();
+        p.lock = Some(crate::store::LockInfo {
+            address: "u1secretaddress".into(),
+        });
+        let ics = plan_ics(&p, 1_700_000_000);
+        assert_eq!(ics.matches("BEGIN:VEVENT").count(), 1);
+        assert!(ics.contains(&format!("DTSTART:{}", ics_time(1_800_000_000))));
+        assert!(!ics.contains("RRULE") && !ics.to_lowercase().contains("flip"));
+        assert!(!ics.contains("u1secretaddress") && !ics.contains("age1"));
     }
 
     #[test]

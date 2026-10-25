@@ -76,6 +76,7 @@ enum Job {
     Network(String),
     Create(CreateReq),
     CreateInstallments(InstallmentsReq),
+    CreateLock(LockReq),
     Split(String),
     Kits(String),
     Sync,
@@ -118,6 +119,24 @@ struct InstallmentsReq {
     message: Option<String>,
     #[serde(default)]
     claim_link: bool,
+}
+
+#[derive(Deserialize)]
+struct LockReq {
+    /// The owner's own heir code.
+    heirs: Vec<String>,
+    /// RFC 3339 time, or a duration from now (for example "90d").
+    until: String,
+    message: Option<String>,
+    #[serde(default)]
+    claim_link: bool,
+    amount: Option<String>,
+    /// The "I have my heir words" checkbox.
+    #[serde(default)]
+    understood: bool,
+    /// The word the owner typed to confirm; must be `LOCK`.
+    #[serde(default)]
+    confirm: String,
 }
 
 #[derive(Deserialize)]
@@ -217,6 +236,7 @@ fn app(state: Arc<AppState>) -> Router {
         .route("/api/plans", post(api_create))
         .route("/api/sync", post(api_sync))
         .route("/api/installments", post(api_installments))
+        .route("/api/locks", post(api_lock_create))
         .route("/api/plans/{id}/split", post(api_split))
         .route("/api/plans/{id}/kits", get(api_kits))
         .route("/api/plans/{id}/flip", post(api_flip))
@@ -384,6 +404,10 @@ async fn api_installments(
     Json(r): Json<InstallmentsReq>,
 ) -> Response {
     run_job(&s, Job::CreateInstallments(r)).await
+}
+
+async fn api_lock_create(State(s): State<Arc<AppState>>, Json(r): Json<LockReq>) -> Response {
+    run_job(&s, Job::CreateLock(r)).await
 }
 
 async fn api_split(State(s): State<Arc<AppState>>, UrlPath(id): UrlPath<String>) -> Response {
@@ -606,6 +630,47 @@ impl Worker {
                     "claim_link": Value::Null,
                 }))
             }
+            Job::CreateLock(r) => {
+                let store = self.store()?;
+                let confirmed = r.understood && r.confirm.trim() == "LOCK";
+                if !confirmed {
+                    return Err(zandglass_wallet::coded(
+                        "invalid_request",
+                        "tick the box saying you have your heir words and type LOCK to confirm: a savings lock cannot be undone",
+                    ));
+                }
+                ops::check_heirs(&r.heirs)?;
+                let until = ops::parse_until(&r.until, now())?;
+                let new = ops::NewLock {
+                    heirs: r.heirs,
+                    until,
+                    message: r.message.filter(|m| !m.trim().is_empty()),
+                    mailbox_url: r.claim_link.then(|| PUBLIC_KEEPER.to_string()),
+                    amount: r
+                        .amount
+                        .as_deref()
+                        .filter(|a| !a.trim().is_empty())
+                        .map(ops::parse_zec)
+                        .transpose()?,
+                    confirmed,
+                };
+                let mut client = self.client().await?;
+                let c = ops::create_lock(
+                    store,
+                    network,
+                    &mut client,
+                    new,
+                    &self.kit_dir(),
+                    self.cfg.accept_unaudited,
+                )
+                .await?;
+                Ok(json!({
+                    "plan": summary(store, network, &c.plan),
+                    "address": c.address,
+                    "uri": c.uri,
+                    "claim_link": c.claim_link.map(|l| l.to_string()),
+                }))
+            }
             Job::Split(id) => {
                 let store = self.store()?;
                 let plan = installments::require_installment_plan(store, Some(id.as_str()))?;
@@ -663,7 +728,7 @@ impl Worker {
                 let store = self.store()?;
                 let mut client = self.client().await?;
                 for mut plan in store.plans()? {
-                    if plan.status != PlanStatus::Active {
+                    if plan.status != PlanStatus::Active || plan.kind == "lock" {
                         continue;
                     }
                     if plan.kind == "installments" {
@@ -713,6 +778,13 @@ impl Worker {
             Job::Receive(id) => {
                 let store = self.store()?;
                 let plan = store.find_plan(Some(id.as_str()))?;
+                if let Some(lock) = &plan.lock {
+                    // A savings lock keeps no seed: the address is in the plan.
+                    return Ok(json!({
+                        "address": lock.address,
+                        "uri": zandglass_wallet::vault::zip321_uri_for(&lock.address, None)?,
+                    }));
+                }
                 let mut vault = ops::open_vault(store, network, plan.current()?)?;
                 Ok(json!({ "address": vault.address()?, "uri": vault.zip321_uri(None)? }))
             }
@@ -771,7 +843,7 @@ impl Worker {
 fn summary(store: &Store, network: Network, p: &Plan) -> Value {
     let current = p.current().ok();
     let balance = current
-        .filter(|_| p.status == PlanStatus::Active)
+        .filter(|_| p.status == PlanStatus::Active && p.lock.is_none())
         .and_then(|rec| ops::open_vault(store, network, rec).ok())
         .and_then(|v| v.balances().ok())
         .map(|b| {

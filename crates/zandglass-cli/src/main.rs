@@ -205,6 +205,36 @@ enum PlanCmd {
         #[arg(long, default_value = ".")]
         out: PathBuf,
     },
+    /// A savings lock: lock ZEC from yourself until a date. The kit is sealed
+    /// to your own heir code, the vault seed is deleted at once, and nothing
+    /// (not even you) can move the funds before the unlock time.
+    Lock {
+        /// Your own heir code (age1...), made on the heir page or with
+        /// `zandglass heir new`. Up to 3 may be given; any one can open it.
+        #[arg(long = "heir")]
+        heirs: Vec<String>,
+        /// When the lock ends: an RFC 3339 UTC time (2027-06-01T09:00:00Z) or
+        /// a duration from now (90d).
+        #[arg(long)]
+        until: String,
+        /// A message for yourself, sealed into the kit.
+        #[arg(long)]
+        message: Option<String>,
+        /// Keeper URL for a claim link (locks up to 170 days only: the keeper
+        /// deletes a mailbox after 180 days).
+        #[arg(long)]
+        mailbox: Option<String>,
+        /// Amount in ZEC to put in the funding request.
+        #[arg(long)]
+        amount: Option<String>,
+        /// Directory for the kit file.
+        #[arg(long, default_value = ".")]
+        out: PathBuf,
+        /// Confirm that you hold the 24 heir words and will keep the kit:
+        /// losing either means losing the funds for good.
+        #[arg(long)]
+        i_have_my_heir_words: bool,
+    },
     /// A legacy plan: funds go to the heirs if the owner stops flipping.
     Legacy {
         /// Heir code (age1...). Repeat for up to 3 heirs; any one can claim.
@@ -410,6 +440,72 @@ async fn run(cli: Cli) -> Result<()> {
                 None => println!("\nGive the kit file to your heirs. Run `zandglass flip {}` before the unlock time to keep the funds yours.", c.plan.short_id()),
             }
         }
+        Cmd::Plan(PlanCmd::Lock {
+            heirs,
+            until,
+            message,
+            mailbox,
+            amount,
+            out,
+            i_have_my_heir_words,
+        }) => {
+            if !*i_have_my_heir_words {
+                return Err(anyhow!(
+                    "A savings lock cannot be undone: nobody, not even you, can move the funds before the unlock time, \
+                     and the vault seed is deleted from this computer. Only the kit file and your 24 heir words can open \
+                     it afterwards; if you lose either, the funds are lost for good. Pass --i-have-my-heir-words to \
+                     confirm that you have the words and will keep the kit."
+                ));
+            }
+            ops::check_heirs(heirs)?;
+            let until_at = ops::parse_until(until, now())?;
+            ops::check_lock_time(until_at, now(), mailbox.is_some())?;
+            let amount_zat = amount.as_deref().map(ops::parse_zec).transpose()?;
+            warn_unaudited(network);
+            let store = open_store(&cli, network)?;
+            let mut client = lightd(&cli, network).await?;
+            let c = ops::create_lock(
+                &store,
+                network,
+                &mut client,
+                ops::NewLock {
+                    heirs: heirs.clone(),
+                    until: until_at,
+                    message: message.clone(),
+                    mailbox_url: mailbox.clone(),
+                    amount: amount_zat,
+                    confirmed: true,
+                },
+                out,
+                cli.accept_unaudited,
+            )
+            .await?;
+            let unlock = c.plan.current()?.unlock_time;
+            println!(
+                "Savings lock {} created on {}.",
+                c.plan.id,
+                network_name(network)
+            );
+            println!(
+                "Locked until {} ({}). The vault seed was deleted: it was never stored.",
+                unix_to_text(unlock),
+                time_left(unlock)
+            );
+            println!("Kit file: {}", c.kit_path.display());
+            println!("Keep the kit file safe (copies, paper). With it and your 24 heir words you can open the vault after the unlock; without either, the funds are lost.");
+            println!("\nFund the vault from any Zcash wallet with this payment request:\n");
+            println!("  {}\n", c.uri);
+            println!("Vault address: {}", c.address);
+            if let Some(link) = &c.claim_link {
+                println!("\nThe kit was also uploaded to your keeper mailbox. Claim link, shown only once:\n");
+                println!("  {link}\n");
+            }
+            println!("\nAfter the unlock, open the kit on zandglass.cash/claim or run `zandglass claim <kit file> --phrase-file <your words> --to <address>`.");
+            println!(
+                "You can add funds any time before then with `zandglass receive {}`.",
+                c.plan.short_id()
+            );
+        }
         Cmd::Plan(PlanCmd::Installments {
             payees,
             amount,
@@ -548,6 +644,16 @@ async fn run(cli: Cli) -> Result<()> {
         Cmd::Receive { plan } => {
             let store = open_store(&cli, network)?;
             let plan = store.find_plan(plan.as_deref())?;
+            if let Some(lock) = &plan.lock {
+                // A savings lock keeps no seed: the address is in the plan.
+                println!("Plan {} (savings lock)", plan.short_id());
+                println!("Vault address: {}", lock.address);
+                println!(
+                    "Payment request: {}",
+                    zandglass_wallet::vault::zip321_uri_for(&lock.address, None)?
+                );
+                return Ok(());
+            }
             let mut vault = ops::open_vault(&store, network, plan.current()?)?;
             println!("Plan {} (epoch {})", plan.short_id(), plan.epoch);
             println!("Vault address: {}", vault.address()?);
@@ -563,7 +669,7 @@ async fn run(cli: Cli) -> Result<()> {
             let store = open_store(&cli, network)?;
             let mut client = lightd(&cli, network).await?;
             for plan in store.plans()? {
-                if plan.status != PlanStatus::Active {
+                if plan.status != PlanStatus::Active || plan.kind == "lock" {
                     continue;
                 }
                 if plan.kind == "installments" {
@@ -605,6 +711,10 @@ async fn run(cli: Cli) -> Result<()> {
                 println!("No plans yet. Create one with `zandglass plan legacy`.");
             }
             for mut plan in plans {
+                if plan.kind == "lock" {
+                    lock_status(&plan)?;
+                    continue;
+                }
                 if plan.kind == "installments" {
                     installments_status(&store, network, &plan, client.as_mut()).await?;
                     continue;
@@ -666,6 +776,9 @@ async fn run(cli: Cli) -> Result<()> {
             warn_unaudited(network);
             let store = open_store(&cli, network)?;
             let plan = store.find_plan(plan.as_deref())?;
+            if plan.kind == "lock" {
+                return Err(ops::lock_refusal(&plan));
+            }
             let unlock = plan.current()?.unlock_time;
             if now() >= unlock {
                 eprintln!("Note: the current kit is already unlocked, so an heir could claim at any moment. Flipping now only works if the funds are still in the vault.");
@@ -719,6 +832,10 @@ async fn run(cli: Cli) -> Result<()> {
             ops::check_destination(network, to, cli.allow_transparent)?;
             warn_unaudited(network);
             let store = open_store(&cli, network)?;
+            let target = store.find_plan(Some(plan.as_str()))?;
+            if target.kind == "lock" {
+                return Err(ops::lock_refusal(&target));
+            }
             let mut client = lightd(&cli, network).await?;
             let r = ops::cancel(&store, network, &mut client, plan, to).await?;
             println!(
@@ -1000,6 +1117,28 @@ async fn claim_all(
     if failed > 0 {
         return Err(anyhow!("{failed} of {total} kits could not be claimed"));
     }
+    Ok(())
+}
+
+fn lock_status(plan: &zandglass_wallet::Plan) -> Result<()> {
+    let unlock = plan.current()?.unlock_time;
+    println!("Plan {} (lock, {}) active", plan.id, plan.network);
+    println!(
+        "  locked until: {} ({})",
+        unix_to_text(unlock),
+        if now() >= unlock {
+            format!(
+                "unlocked {} ago: open the kit on zandglass.cash/claim or with `zandglass claim`",
+                format_span(now() - unlock)
+            )
+        } else {
+            format!("in {}", format_span(unlock - now()))
+        }
+    );
+    if let Some(lock) = &plan.lock {
+        println!("  vault:        {}", lock.address);
+    }
+    println!("  seed:         deleted (only the kit and your heir words open the vault)");
     Ok(())
 }
 

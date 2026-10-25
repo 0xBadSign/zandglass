@@ -17,7 +17,7 @@ pub mod vault;
 pub use error::{coded, CodedError};
 pub use lightwalletd::{connect, connect_any, default_url, default_urls, parse_urls, Client};
 pub use store::{
-    EpochRecord, InstallmentRecord, InstallmentSet, Plan, PlanStatus, Store, StoreError,
+    EpochRecord, InstallmentRecord, InstallmentSet, LockInfo, Plan, PlanStatus, Store, StoreError,
 };
 pub use vault::{Balances, PoolBalance, SweepReport, Vault};
 pub use zcash_protocol::consensus::Network;

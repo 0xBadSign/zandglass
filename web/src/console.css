@@ -872,6 +872,11 @@ main > .app-console {
   color: var(--gold-bright) !important;
 }
 
+.lock-line {
+  margin: 1rem 0 0.2rem;
+  color: var(--gold-bright);
+}
+
 .plan-left.late {
   color: var(--bad) !important;
 }
@@ -982,7 +987,7 @@ label.check input {
 
 @media (min-width: 40rem) {
   .kind-switch {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, 1fr);
   }
 }
 

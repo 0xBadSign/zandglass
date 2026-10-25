@@ -25,6 +25,8 @@ Shielded Zcash has no timelocks, so there is no private way to pass it on. Zandg
 3. **Flip.** While you are around, you **flip** the glass now and then. Your funds move to a fresh vault (an ordinary shielded transaction) and a new kit is sealed with a later unlock time. Every older kit now opens an empty vault.
 4. **The sand runs out.** If you stop flipping, the time passes. The heir opens the latest kit with the heir phrase, restores the vault seed in any Zcash wallet (or runs `zandglass claim`) and moves the funds.
 
+The same kit mechanism gives two more plan types: **scheduled payments** (one installment vault unlocks per period) and a **savings lock** (`zandglass plan lock`): lock ZEC from yourself until a fixed date. The kit is sealed to your own heir key and the vault seed is deleted at once, so nobody, you included, can move the funds before the date; afterwards the kit and your own 24 words open them.
+
 There is no smart contract, no custody and no fork. Kits are standard files: if Zandglass disappears, the reference tools `tle` and `age` still open them (see [docs/KIT_FORMAT.md](docs/KIT_FORMAT.md)).
 
 ```mermaid
