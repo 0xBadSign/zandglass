@@ -198,6 +198,7 @@ pub(crate) fn write_kit_file(dir: &Path, name: &str, kit: &Kit) -> Result<PathBu
     Ok(path)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn make_kit(
     plan: &Plan,
     epoch: u32,
@@ -206,6 +207,7 @@ pub(crate) fn make_kit(
     unlock_round: u64,
     sequence: Option<Sequence>,
     now: u64,
+    owner_key: Option<&[u8; 32]>,
 ) -> Result<Kit> {
     let heirs = plan
         .heirs
@@ -224,7 +226,7 @@ pub(crate) fn make_kit(
         message: plan.message.clone(),
         restore_hints: Payload::default_hints(birthday),
     };
-    Ok(Kit::build(
+    let mut kit = Kit::build(
         &payload,
         &BuildParams {
             kind: if sequence.is_some() {
@@ -237,7 +239,22 @@ pub(crate) fn make_kit(
             unlock_round,
             heirs: &heirs,
         },
-    )?)
+    )?;
+    if let Some(secret) = owner_key {
+        kit.sign_owner(secret);
+        kit.validate()?;
+    }
+    Ok(kit)
+}
+
+/// Creates the random Ed25519 key that signs every kit of a new plan and
+/// stores it encrypted next to the plan's vault seeds. Returns the secret for
+/// the first kit.
+pub(crate) fn new_owner_key(store: &Store, plan_id: &str) -> Result<Zeroizing<[u8; 32]>> {
+    let mut secret = Zeroizing::new([0u8; 32]);
+    OsRng.fill_bytes(secret.as_mut_slice());
+    store.write_owner_key(plan_id, &secret)?;
+    Ok(secret)
 }
 
 /// Uploads `kit` to the plan's mailbox, replacing the previous kit. Does
@@ -406,6 +423,7 @@ pub async fn create_plan(
     let birthday = Vault::new_birthday(client).await?;
     let rel = Store::vault_rel_dir(&id, 1);
     store.write_seed(&rel, &phrase)?;
+    let owner_key = new_owner_key(store, &id)?;
     let mut vault = Vault::init(&store.path(&rel), network, client, phrase, birthday).await?;
 
     let unlock_round = drand::unlock_round(now + new.period_secs);
@@ -442,12 +460,14 @@ pub async fn create_plan(
         unlock_round,
         None,
         now,
+        Some(&*owner_key),
     )?;
     let kit_path = write_kit_file(kit_dir, &format!("{}-e1.zandglass", plan.short_id()), &kit)?;
     if let Err(e) = upload_kit(&plan, &kit) {
         // Nothing was funded: drop the unused vault, kit and mailbox.
         let _ = fs::remove_file(&kit_path);
         let _ = fs::remove_dir_all(store.path(&Store::vault_rel_dir(&plan.id, 1)));
+        store.remove_owner_key(&plan.id);
         let _ = delete_mailbox(&plan);
         return Err(e);
     }
@@ -517,6 +537,7 @@ pub async fn flip(
     let moved = total(&balances);
     check_cap(network, moved, accept_unaudited)?;
 
+    let owner_key = store.read_owner_key(&plan.id)?;
     let epoch = plan.epoch + 1;
     let now = now();
     let phrase: Zeroizing<String> = Vault::new_seed();
@@ -549,6 +570,7 @@ pub async fn flip(
             unlock_round,
             None,
             now,
+            owner_key.as_deref(),
         )?;
         let kit_path = write_kit_file(kit_dir, &kit_file_name(&plan, epoch), &kit)?;
         created_kit = Some(kit_path.clone());
@@ -750,6 +772,7 @@ pub async fn resolve_pending(
                 pend.unlock_round,
                 None,
                 pend.created,
+                store.read_owner_key(&plan.id)?.as_deref(),
             )?;
             let name = kit_file_name(plan, pend.epoch);
             let dir = kit_dir.unwrap_or_else(|| Path::new("."));
@@ -947,6 +970,39 @@ mod tests {
         let kit = dir.path().join("kit-e2.zandglass");
         fs::write(&kit, "{}").unwrap();
         (dir, store, plan, kit)
+    }
+
+    #[test]
+    fn every_kit_of_a_plan_is_signed_by_the_plans_key() {
+        let (_d, store, mut plan, _) = pending_fixture();
+        let heir =
+            zandglass_core::heir::identity_from_phrase(&zandglass_core::heir::generate_phrase())
+                .unwrap();
+        plan.heirs = vec![heir.code().to_string()];
+        let round = drand::unlock_round(1_790_000_000);
+        // A plan from before kits were signed: no key file, unsigned kits.
+        assert!(store.read_owner_key(ID).unwrap().is_none());
+        let old = make_kit(&plan, 1, "seed words", 5, round, None, 1_790_000_000, None).unwrap();
+        assert_eq!(old.verify_owner_sig().unwrap(), None);
+        // A new plan: the key is created once and signs every epoch's kit.
+        let created = new_owner_key(&store, ID).unwrap();
+        let key = zandglass_core::owner::public_key(&created);
+        for epoch in [1, 2] {
+            let stored = store.read_owner_key(ID).unwrap();
+            let kit = make_kit(
+                &plan,
+                epoch,
+                "seed words",
+                5,
+                round,
+                None,
+                1_790_000_000,
+                stored.as_deref(),
+            )
+            .unwrap();
+            assert_eq!(kit.verify_owner_sig().unwrap(), Some(key));
+            assert_eq!(Kit::from_json(&kit.to_json().unwrap()).unwrap(), kit);
+        }
     }
 
     #[test]

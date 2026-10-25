@@ -38,6 +38,8 @@ The example is illustrative: the `sealed` value is abbreviated and is not a real
 | `unlock.round` | integer | The drand round whose beacon opens the outer layer. |
 | `unlock.time` | string | That round's publication time, RFC 3339 UTC. |
 | `sealed` | string | The armoured nested ciphertext (section 3). |
+| `owner_key` | string, optional | The plan's Ed25519 public key: exactly 64 lowercase hex characters (section 8). |
+| `owner_sig` | string, optional | Ed25519 signature over the public part and `sealed`: exactly 128 lowercase hex characters (section 8). Present if and only if `owner_key` is. |
 
 The public part never contains amounts, addresses, seeds or transaction ids.
 
@@ -82,7 +84,8 @@ sealed = ASCII armour( tlock_age( age( payload JSON, to 1..3 heir codes ), chain
 - if `sequence` is present, `1 <= index <= count`;
 - `unlock.drand_chain` is the pinned quicknet hash;
 - `unlock.time` equals the time of `unlock.round` (`genesis + (round - 1) * 3`, formatted as above);
-- the `sealed` armour parses, uses the pinned chain, and is locked to the same round as `unlock.round`.
+- the `sealed` armour parses, uses the pinned chain, and is locked to the same round as `unlock.round`;
+- `owner_key` and `owner_sig` are either both absent or both well-formed, and the signature verifies (section 8).
 
 A `version` other than 1 gives `kit_version_unsupported`; a missing `version` gives `kit_invalid`. Unknown fields are ignored, in the public part and in the payload. When opening, the payload's `network`, `plan` and `epoch` must match the public part, otherwise `decrypt_failed`. The keeper applies the same validation to every kit that is put into a mailbox and accepts at most 64 KiB.
 
@@ -90,7 +93,7 @@ The web pages also accept a bare armoured `sealed` string in place of the JSON f
 
 ## 5. Versioning
 
-`version` is an integer. A reader must reject a version it does not know. New optional fields may be added within version 1 because readers ignore unknown fields; any change that alters the meaning of an existing field, the layering or the validation rules needs version 2. Installment kits (`kind: installment`, `sequence`) are part of v1; `zandglass installments split` and the owner panel create them (see `docs/INSTALLMENTS.md`).
+`version` is an integer. A reader must reject a version it does not know. New optional fields may be added within version 1 because readers ignore unknown fields; any change that alters the meaning of an existing field, the layering or the validation rules needs version 2. `owner_key` and `owner_sig` (section 8) were added this way: kits without them stay valid. Installment kits (`kind: installment`, `sequence`) are part of v1; `zandglass installments split` and the owner panel create them (see `docs/INSTALLMENTS.md`).
 
 ## 6. Open a kit by hand with the reference tools
 
@@ -154,3 +157,55 @@ age16rj3u4ertnvr8yhntwpq9kfaq0k3cyscv5xkrtgjlne9dtzjdc4s5awu04
 ```
 
 The same directory holds a kit sealed to that heir code (`kit.txt`, locked to drand round 32665869), the expected payload (`payload.txt`) and the recorded beacon (`beacon.json`), so the full chain can be checked offline with `cargo test -p zandglass-core` and online with `bash scripts/interop-kit.sh`.
+
+## 8. Owner authentication (optional)
+
+A mailbox operator, or anyone else who can write to the place an heir fetches the kit from, can put a decoy kit there: a kit sealed to the same heir code with a different vault seed. Anyone can seal a kit to a public heir code, so the kit alone proves nothing about who made it. To let the heir's page notice a swapped kit, every plan gets one random **Ed25519 signing key**, created together with the plan, and each kit of the plan carries the public key and a signature.
+
+### Fields
+
+- `owner_key`: the 32-byte Ed25519 public key, 64 lowercase hex characters.
+- `owner_sig`: the 64-byte Ed25519 signature, 128 lowercase hex characters.
+
+Both are public and of fixed length, so a signed kit is a constant number of bytes larger than an unsigned one of the same plan type (about 250 bytes) and the kit's size still reveals nothing about the plan. The key is random and belongs to the plan: it is not derived from the vault seeds or the owner's wallet and is the same for every epoch of one plan, which the plan id already links (see `docs/PRIVACY.md`, R9).
+
+### What is signed
+
+The signature covers this exact byte string, in UTF-8. It is not a JSON serialisation. Every line ends in a line feed (`\n`), including the last one; there is no other whitespace.
+
+```
+zandglass-kit-sig-v1
+format=<format>
+version=<version>
+kind=<kind>
+network=<network>
+created=<created>
+plan=<plan>
+epoch=<epoch>
+sequence=<index>/<count>        (or  sequence=none  when the kit has no sequence)
+unlock.drand_chain=<unlock.drand_chain>
+unlock.round=<unlock.round>
+unlock.time=<unlock.time>
+owner_key=<owner_key>
+sealed_sha256=<lowercase hex SHA-256 of the UTF-8 bytes of the sealed string>
+```
+
+Integers are written in decimal without padding. Every other value is the field's string exactly as it appears in the kit; a value that contains a line feed makes the signature invalid. `owner_sig` is not part of the message. `sealed` is covered through its SHA-256, so changing even one character of the ciphertext breaks the signature. Ed25519 is the pure scheme of RFC 8032 (no context, no prehash); verifiers use strict verification (reject non-canonical encodings).
+
+The reference message for the test vector is `crates/zandglass-core/tests/vectors/TEST_ONLY_owner_message.txt`, the signed kit is `TEST_ONLY_owner_kit.zandglass` and the key is described in `TEST_ONLY_owner_key.txt`. The Rust test (`crates/zandglass-core/tests/owner_sig.rs`) regenerates all three and fails if a committed file differs (Ed25519 signatures are deterministic); the TypeScript test (`web/src/lib/owner-sig.test.ts`) builds the same message and verifies the same kit.
+
+### Fingerprint
+
+The fingerprint of an owner key is the first eight bytes of the SHA-256 of the 32 key bytes, as lowercase hex in four groups of four: `xxxx-xxxx-xxxx-xxxx`. It is for people to compare; software that pins a key pins the whole public key.
+
+### Verification rules
+
+- A kit with neither field is **unsigned**. It is valid, and old kits and kits of plans created before this feature stay that way.
+- A kit with exactly one field, a malformed field (wrong length, upper case, not hex) or a signature that does not verify is **invalid**: parsers reject it with `kit_invalid`. The keeper applies the same rule when a kit is uploaded, and `zandglass claim` refuses it.
+- A valid signature proves that the holder of the plan's signing key sealed this exact kit. It does not say who that holder is: the signature is only useful by comparison with a key seen earlier.
+- **Pinning.** An heir page or tool that has seen a signed kit of a plan remembers its `owner_key` (the web page in localStorage, per plan id). A later kit of the same plan that is signed by another key, or that carries no signature at all, was not produced by the same owner and must be shown as a warning, not opened silently. The first signed kit seen is trusted on first use: an attacker who controls the very first kit an heir sees is not detected. The owner can close that gap by giving the heir the key fingerprint out of band (`zandglass kit inspect` and `zandglass claim` print it).
+- Unknown versions, unknown fields and the kit layering are unchanged: this is an additive part of version 1.
+
+### Where the key lives
+
+The owner's store keeps the signing key in `vaults/<plan>/owner_key.age`, encrypted with the store passphrase like the vault seeds (`seed.age`); it is never written in plaintext and never leaves the owner's machine. The key opens no funds and no kit: a stolen key lets a thief sign a decoy kit that the heirs' pages would treat as genuine for that plan, so it is protected like the seeds. `plans.json` holds no key material; it stays HMAC-authenticated. A plan without the file (created by an older version) keeps working and produces unsigned kits.

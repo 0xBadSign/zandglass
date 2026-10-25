@@ -76,6 +76,8 @@ sealed = ASCII-armour( tlock( age( payload, to 1..3 heir codes ), drand quicknet
 
 The payload holds the vault seed, its birthday height, the network, the plan id, the epoch and an optional message. The public part holds only the format, version, kind, network, plan id, epoch and unlock round. Wallets MUST NOT put amounts, addresses or transaction ids in the public part.
 
+A kit MAY carry two more public fields, `owner_key` and `owner_sig`: a random per-plan Ed25519 public key and its signature over a canonical text form of the public part and the hash of `sealed` ([KIT_FORMAT.md](KIT_FORMAT.md) section 8). Readers MUST accept kits without them and MUST reject a kit whose owner fields are present but invalid. A reader that has seen a signed kit of a plan SHOULD warn when a later kit of that plan is unsigned or signed by another key. The key is random, belongs to the plan only and is not derived from any vault or wallet key.
+
 The unlock round MUST be on drand quicknet (chain hash `52db9ba7…e971`, genesis 1692803367, period 3 s). The round for a target time `t` is `ceil((t - genesis) / 3) + 1`.
 
 ## Vault lifecycle
@@ -124,6 +126,7 @@ Residual metadata: the flip cadence is visible to a keeper; the number of output
 
 - **drand.** Opening early requires a threshold of the drand League of Entropy to collude. A drand outage delays claims; it never enables them early.
 - **Lost heir phrase.** The kit cannot be opened; the owner can re-seal to a new heir code at the next flip.
+- **Decoy kit.** Anyone who knows an heir code can seal a kit to it, so a party that controls where the heir fetches the kit (a keeper operator) could substitute a kit with a different seed. Signed kits (above) let the heir's software detect a kit that does not come from the same owner as an earlier one; the first key seen is trusted on first use, and the owner can confirm the key fingerprint out of band.
 - **Stolen kit.** Useless without a listed heir's phrase. **Stolen heir phrase.** Useless without the newest kit, and only after the unlock.
 - **Late flip.** Once the unlock round is published, the heir can claim at any moment; a flip only helps if the funds have not moved yet. Wallets MUST warn the owner when the unlock is near.
 - **Software risk.** Implementations SHOULD cap amounts until audited.

@@ -1,0 +1,21 @@
+{
+  "format": "zandglass-kit",
+  "version": 1,
+  "kind": "installment",
+  "network": "test",
+  "created": "2026-09-30T20:30:00Z",
+  "plan": "00112233445566778899aabbccddeeff",
+  "epoch": 2,
+  "sequence": {
+    "index": 2,
+    "count": 5
+  },
+  "unlock": {
+    "drand_chain": "52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971",
+    "round": 32665869,
+    "time": "2026-09-30T20:42:51Z"
+  },
+  "sealed": "-----BEGIN AGE ENCRYPTED FILE-----\nYWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IHRsb2NrIDMyNjY1ODY5IDUyZGI5YmE3\nMGUwY2MwZjZlYWY3ODAzZGQwNzQ0N2ExZjU0Nzc3MzVmZDNmNjYxNzkyYmE5NDYw\nMGM4NGU5NzEKcENvdGJtQUpJS1hEaWRGQngrRTQ2OVA5SUd1bmhobWt0NGkzS0tP\nYkxiaGtLY1hJaUt1NmM4THNWYzVsdEZSWQpFWHdXbUhXOTlmVDc5cDBCSC85Tita\nOUJOSStNZVJHYzRmbVJnMTN5RXJvbTBQbjFMc3RiQlQ4cVlYQ0k4TWxZCjUyekxT\nbXR5WVk1aTEzMkR4VXREYmtWZGdiVkxqL0dkY0Z6Z1VRdkJ6L1UKLT4gQVUpNEZB\nUSYtZ3JlYXNlICFFUj53cyAlRl9kUSA1CmVNbnZIWWZhZG1lOVhMUnVidWR1aXU2\nV1cyNDQ3VHgwSjBqK2hiSjQ4bFF0ODdSMDB5aDBjMmFidis3Q2prUQotLS0gZ3RT\ncjhYUXJRRlUrWDNJbCt4UkVXUEw3NWk5WVNxbmdBakYzc21mWTJ6bwr8Up7kLVUd\nGkjw+Pk9jANiLCCVSMTgKX5UgmumlzJDDOjbWGx6Za2GbZa5BHGM4nEon8o8ifAJ\nSFSj5LdAeaY3UEN64TQCvZhTya3ZcKXqzxK7KlA9vBgwK3g8SlSDtbWuxli8OCzY\n+hZBoVvbFKd7VZRMtI0NxWSG6i+QUHhvHsA1oiHGDmR5+e28iYp0Afw5J/qPTx1j\nWOpoHSVlGyeXvgP3DjHjWwEeZ7KiQ+ByFL+ed9XNBjaZ2HqH8Vf0BMowq5IOKwn+\n+8SYdUiNGy4PWP/gvh3koxj135jQ8gy5p2uBXTYSAGxZcpyRujZuRyijrTCMwLMS\nI3jymY0QbltONyEITDsauqj+Id12cu8fdge8Zp2Rz6EEYUtsnp7h2QOpbb6hsoFh\n8BPp1e8ta/uMYUZ+4gJS1kcTbuN7JmfgkDl94JgbAo0Fb5/s4+bXdqnQDrQCd2Kz\nRFzbHeSC5pgJP76yzrT7a+ehhge904U0qxHwFE1r+wpK5fJ3l1+Flk23Q3hylgIN\n8P8A/HynTHlvATF9Kh8=\n-----END AGE ENCRYPTED FILE-----\n",
+  "owner_key": "fb95ee75343f23b4b62b3ba6acd94aa96d95ab7a52fb340e2a614b65d2da8568",
+  "owner_sig": "6b97f3b61e70e57b965e056962097ed461b3f2733c05f4a0afd0494dec7ecdd85407bf68467cdb4c86cecced694e77b636b79ae00504ae9a74c9c38b10a51e07"
+}

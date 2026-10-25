@@ -158,6 +158,12 @@ pub struct Kit {
     pub unlock: Unlock,
     /// Armored nested ciphertext (tlock over age over the payload).
     pub sealed: String,
+    /// Owner public key (Ed25519, 64 lowercase hex), present on signed kits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner_key: Option<String>,
+    /// Owner signature over the public part (128 lowercase hex), see [`crate::owner`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner_sig: Option<String>,
 }
 
 /// The secret contents of a kit.
@@ -271,6 +277,8 @@ impl Kit {
                 time: format_time(drand::round_time(params.unlock_round)),
             },
             sealed: sealed?,
+            owner_key: None,
+            owner_sig: None,
         };
         kit.validate()?;
         Ok(kit)
@@ -339,7 +347,29 @@ impl Kit {
                 "sealed part is locked to a different round than unlock.round".into(),
             ));
         }
+        self.verify_owner_sig()?;
         Ok(())
+    }
+
+    /// Signs the kit with the plan's owner key (a 32-byte Ed25519 secret),
+    /// setting `owner_key` and `owner_sig`. Call it on a freshly built kit.
+    pub fn sign_owner(&mut self, secret: &[u8; 32]) {
+        crate::owner::sign(self, secret);
+    }
+
+    /// Checks the owner signature: `Ok(None)` for an unsigned kit, the owner
+    /// public key when the signature is valid, an error when owner fields are
+    /// present but wrong. Offline. `validate` calls it, so every parsed or
+    /// opened kit has passed it.
+    pub fn verify_owner_sig(&self) -> Result<Option<[u8; 32]>, KitError> {
+        crate::owner::verify(self).map_err(|p| match p {
+            crate::owner::SigProblem::Malformed => {
+                KitError::Invalid("malformed owner key or signature".into())
+            }
+            crate::owner::SigProblem::Invalid => KitError::Invalid(
+                "the owner signature is invalid: this kit was changed after it was sealed, or was not sealed by the owner it names".into(),
+            ),
+        })
     }
 
     /// Unix time at which the kit unlocks.

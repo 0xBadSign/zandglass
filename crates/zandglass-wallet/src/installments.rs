@@ -170,6 +170,7 @@ pub async fn create_installments(
     let birthday = Vault::new_birthday(client).await?;
     let rel = Store::vault_rel_dir(&id, 1);
     store.write_seed(&rel, &phrase)?;
+    ops::new_owner_key(store, &id)?;
     let mut vault = Vault::init(&store.path(&rel), network, client, phrase, birthday).await?;
     let plan = Plan {
         id,
@@ -333,6 +334,7 @@ pub async fn split(
         ));
     }
 
+    let owner_key = store.read_owner_key(&plan.id)?;
     let birthday = Vault::new_birthday(client).await?;
     let mut items: Vec<InstallmentRecord> = Vec::new();
     let mut addresses: Vec<(String, u64)> = Vec::new();
@@ -361,6 +363,7 @@ pub async fn split(
                 round,
                 Some(Sequence { index: k, count: n }),
                 t0,
+                owner_key.as_deref(),
             )?;
             let mut rec = InstallmentRecord {
                 index: k,

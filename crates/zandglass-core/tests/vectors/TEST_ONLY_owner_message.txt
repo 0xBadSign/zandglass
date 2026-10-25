@@ -1,0 +1,14 @@
+zandglass-kit-sig-v1
+format=zandglass-kit
+version=1
+kind=installment
+network=test
+created=2026-09-30T20:30:00Z
+plan=00112233445566778899aabbccddeeff
+epoch=2
+sequence=2/5
+unlock.drand_chain=52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971
+unlock.round=32665869
+unlock.time=2026-09-30T20:42:51Z
+owner_key=fb95ee75343f23b4b62b3ba6acd94aa96d95ab7a52fb340e2a614b65d2da8568
+sealed_sha256=505a9dad43383d7217aa621586449a275ef5f9794450c603afc4dab8cb786949
