@@ -12,13 +12,18 @@ import { roundTime, unlockRound } from '../drand';
 import { verifyOwnerSigOf, type OwnerKey } from './owner-sig';
 
 export {
+  OwnerLinkError,
   OwnerSigInvalidError,
   checkOwner,
   ownerFingerprint,
+  ownerKeyHint,
+  parseClaimFragment,
   pinOwnerKey,
   pinnedOwnerKey,
   repinOwnerKey,
+  type ClaimFragment,
   type OwnerCheck,
+  type OwnerContext,
   type OwnerKey,
 } from './owner-sig';
 

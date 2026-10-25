@@ -65,6 +65,32 @@ fn sign_and_verify_round_trip() {
 }
 
 #[test]
+fn claim_link_carries_the_owner_hint_of_a_signed_kit() {
+    use zandglass_core::mailbox::{ClaimLink, Created};
+    let created = Created {
+        id: "ab12".into(),
+        write_token: "w".into(),
+        read_token: "cd34".into(),
+    };
+    let mut kit = unsigned_kit();
+    let plain = ClaimLink::for_kit("https://k.example", &created, &kit);
+    assert_eq!(plain.owner_hint, None);
+    assert_eq!(plain.to_string(), "https://k.example/claim#m=ab12&r=cd34");
+    kit.sign_owner(&test_secret());
+    let key = owner::public_key(&test_secret());
+    let link = ClaimLink::for_kit("https://k.example", &created, &kit);
+    let want = hex::encode(&Sha256::digest(key)[..16]);
+    assert_eq!(want.len(), 32);
+    assert_eq!(link.owner_hint.as_deref(), Some(want.as_str()));
+    assert_eq!(owner::link_hint(&key), want);
+    assert_eq!(
+        link.to_string(),
+        format!("https://k.example/claim#m=ab12&r=cd34&o={want}")
+    );
+    assert_eq!(ClaimLink::parse(&link.to_string()), Some(link));
+}
+
+#[test]
 fn unsigned_kits_still_parse() {
     let kit = unsigned_kit();
     let text = kit.to_json().unwrap();

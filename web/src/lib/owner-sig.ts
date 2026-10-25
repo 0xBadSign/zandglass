@@ -19,6 +19,20 @@ export class OwnerSigInvalidError extends Error {
   }
 }
 
+/**
+ * The kit does not satisfy the owner hint (`&o=`) of the claim link it was
+ * loaded from: it is unsigned or signed by another key. A mailbox operator
+ * may have swapped in a decoy, so the page refuses it outright.
+ */
+export class OwnerLinkError extends Error {
+  readonly reason: 'unsigned' | 'mismatch';
+  constructor(reason: 'unsigned' | 'mismatch') {
+    super('This kit was not sealed by the owner who sent you this link');
+    this.name = 'OwnerLinkError';
+    this.reason = reason;
+  }
+}
+
 export const SIG_DOMAIN = 'zandglass-kit-sig-v1';
 
 export interface OwnerKey {
@@ -47,6 +61,44 @@ function fromHex(hex: string): Uint8Array {
 export function ownerFingerprint(keyHex: string): string {
   const h = toHex(sha256(fromHex(keyHex)).slice(0, 8));
   return `${h.slice(0, 4)}-${h.slice(4, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}`;
+}
+
+const HEX_HINT = /^[0-9a-f]{32}$/;
+
+/**
+ * The claim link's owner hint (`&o=`): the first 16 bytes of the SHA-256 of
+ * the owner public key, 32 lowercase hex. It lives in the link's fragment and
+ * is never sent to a server.
+ */
+export function ownerKeyHint(keyHex: string): string {
+  return toHex(sha256(fromHex(keyHex)).slice(0, 16));
+}
+
+export interface ClaimFragment {
+  /** Mailbox id. */
+  id: string;
+  /** Read token. */
+  token: string;
+  /** Owner hint, or null for links made before hints existed. */
+  hint: string | null;
+  /** The raw `k` (keeper override), if any; the caller decides whether to honour it. */
+  keeper: string | null;
+}
+
+/**
+ * Parse a claim link fragment (`#m=<id>&r=<token>[&o=<hint>][&k=<keeper>]`).
+ * `null`: no link at all; `'incomplete'`: part of it is missing or the hint is
+ * malformed (a malformed hint is never ignored, that would drop the check).
+ */
+export function parseClaimFragment(hash: string): ClaimFragment | 'incomplete' | null {
+  const params = new URLSearchParams(hash.replace(/^#/, ''));
+  const id = params.get('m');
+  const token = params.get('r');
+  const o = params.get('o');
+  if (!id && !token && o === null) return null;
+  if (!id || !token) return 'incomplete';
+  if (o !== null && !HEX_HINT.test(o)) return 'incomplete';
+  return { id, token, hint: o, keeper: params.get('k') || null };
 }
 
 function text(v: unknown): string {
@@ -123,8 +175,14 @@ export async function verifyOwnerSigOf(kit: LoadedKit): Promise<'unsigned' | Own
 }
 
 // ---- pinning -----------------------------------------------------------
+//
+// The plan id is written by whoever made the kit, so a decoy can carry a fresh
+// plan id and sidestep a pin keyed on it. The mailbox id comes from the claim
+// link instead, so a key is also pinned per mailbox. Neither is as strong as
+// the `&o=` hint of a claim link, which names the owner's key in advance.
 
 const PIN_PREFIX = 'zandglass.ownerkey.v1.';
+const MAILBOX_PIN_PREFIX = 'zandglass.ownermailbox.v1.';
 
 /** The key pinned for a plan in this browser, or null. */
 export function pinnedOwnerKey(plan: string): string | null {
@@ -133,6 +191,26 @@ export function pinnedOwnerKey(plan: string): string | null {
     return v !== null && HEX_KEY.test(v) ? v : null;
   } catch {
     return null;
+  }
+}
+
+/** The plan and key seen on a mailbox in this browser, or null. */
+export function pinnedMailbox(mailbox: string): { plan: string; key: string } | null {
+  try {
+    const v = localStorage.getItem(MAILBOX_PIN_PREFIX + mailbox);
+    if (v === null) return null;
+    const [plan, key] = v.split(':');
+    return plan !== undefined && key !== undefined && HEX_KEY.test(key) ? { plan, key } : null;
+  } catch {
+    return null;
+  }
+}
+
+function pinMailbox(mailbox: string, plan: string, key: string): void {
+  try {
+    localStorage.setItem(MAILBOX_PIN_PREFIX + mailbox, `${plan}:${key}`);
+  } catch {
+    // private window or blocked storage: nothing to remember
   }
 }
 
@@ -155,38 +233,86 @@ export function pinOwnerKey(plan: string, ownerKey: string): 'new' | 'match' | '
   return pinned === ownerKey ? 'match' : 'mismatch';
 }
 
-/** Replace the pin after the person decided to trust the new key. */
-export function repinOwnerKey(plan: string, ownerKey: string): void {
+/**
+ * Replace the pin after the person decided to trust the new key (and, when the
+ * kit came from a mailbox, the mailbox's pin as well).
+ */
+export function repinOwnerKey(plan: string, ownerKey: string, mailbox?: string | null): void {
   try {
     localStorage.setItem(PIN_PREFIX + plan, ownerKey);
   } catch {
     // see pinOwnerKey
   }
+  if (mailbox) pinMailbox(mailbox, plan, ownerKey);
 }
 
 export type OwnerCheck =
-  /** No owner fields and nothing pinned: kits of this plan were never seen signed. */
+  /** No owner fields, nothing pinned, and the kit did not come from a mailbox. */
   | { status: 'unsigned' }
+  /**
+   * No owner fields, and the kit came from a mailbox: nothing vouches for it,
+   * and anyone who runs the mailbox could have put it there.
+   */
+  | { status: 'unsigned-mailbox' }
+  /** Signed by exactly the key that the claim link names (`&o=`). */
+  | { status: 'link'; fingerprint: string }
   /** First signed kit of this plan seen in this browser; the key is now pinned. */
   | { status: 'new'; fingerprint: string }
   /** Signed by the pinned key. */
   | { status: 'match'; fingerprint: string }
-  /** Signed, but by another key than the pinned one. */
-  | { status: 'mismatch'; fingerprint: string; pinnedFingerprint: string }
-  /** Unsigned, although an earlier kit of this plan was signed (signature stripped?). */
+  /**
+   * Signed, but by another key than the pinned one, or (`planChanged`) under
+   * another plan id than the one this mailbox served before.
+   */
+  | { status: 'mismatch'; fingerprint: string; pinnedFingerprint: string; planChanged?: boolean }
+  /** Unsigned, although an earlier kit of this plan or mailbox was signed (signature stripped?). */
   | { status: 'stripped'; pinnedFingerprint: string };
+
+/** Where a kit came from, when it came from a claim link. */
+export interface OwnerContext {
+  /** The claim link's `&o=` hint (32 hex), if it had one. */
+  hint?: string | null;
+  /** The mailbox id of the claim link. */
+  mailbox?: string | null;
+}
 
 /**
  * Verify and pin in one call: what the heir page needs for its banner.
- * Throws `OwnerSigInvalidError` for a present but invalid signature.
+ * Throws `OwnerSigInvalidError` for a present but invalid signature and
+ * `OwnerLinkError` when the claim link names an owner key (`hint`) that the
+ * kit is not signed by.
  */
-export async function checkOwner(kit: LoadedKit): Promise<OwnerCheck> {
+export async function checkOwner(kit: LoadedKit, ctx: OwnerContext = {}): Promise<OwnerCheck> {
   const plan = kit.meta?.plan ?? null;
+  const mailbox = ctx.mailbox ?? null;
   const sig = await verifyOwnerSigOf(kit);
-  if (sig === 'unsigned') {
-    const pinned = plan ? pinnedOwnerKey(plan) : null;
-    return pinned ? { status: 'stripped', pinnedFingerprint: ownerFingerprint(pinned) } : { status: 'unsigned' };
+
+  if (ctx.hint) {
+    if (sig === 'unsigned') throw new OwnerLinkError('unsigned');
+    if (ownerKeyHint(sig.key) !== ctx.hint) throw new OwnerLinkError('mismatch');
+    // The link is the owner's own word: it outranks any older pin.
+    if (plan) repinOwnerKey(plan, sig.key, mailbox);
+    else if (mailbox) pinMailbox(mailbox, '', sig.key);
+    return { status: 'link', fingerprint: sig.fingerprint };
   }
+
+  const pinnedByMailbox = mailbox ? pinnedMailbox(mailbox) : null;
+  if (sig === 'unsigned') {
+    const pinned = (plan ? pinnedOwnerKey(plan) : null) ?? pinnedByMailbox?.key ?? null;
+    if (pinned) return { status: 'stripped', pinnedFingerprint: ownerFingerprint(pinned) };
+    return mailbox ? { status: 'unsigned-mailbox' } : { status: 'unsigned' };
+  }
+
+  // This mailbox served a different key, or the same key under another plan id.
+  if (pinnedByMailbox && (pinnedByMailbox.key !== sig.key || pinnedByMailbox.plan !== (plan ?? ''))) {
+    return {
+      status: 'mismatch',
+      fingerprint: sig.fingerprint,
+      pinnedFingerprint: ownerFingerprint(pinnedByMailbox.key),
+      planChanged: pinnedByMailbox.key === sig.key,
+    };
+  }
+
   if (!plan) return { status: 'new', fingerprint: sig.fingerprint };
   const pinnedBefore = pinnedOwnerKey(plan);
   const state = pinOwnerKey(plan, sig.key);
@@ -197,6 +323,7 @@ export async function checkOwner(kit: LoadedKit): Promise<OwnerCheck> {
       pinnedFingerprint: ownerFingerprint(pinnedBefore),
     };
   }
+  if (mailbox && !pinnedByMailbox) pinMailbox(mailbox, plan, sig.key);
   return state === 'match'
     ? { status: 'match', fingerprint: sig.fingerprint }
     : { status: 'new', fingerprint: sig.fingerprint };

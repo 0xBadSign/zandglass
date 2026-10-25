@@ -203,3 +203,76 @@ fn claim_link_fetches_the_kit_from_the_keeper() {
     let out = sg(dir.path(), &["claim", &link, "--phrase-file", p]);
     assert!(text(&out.stderr).contains("error[mailbox_not_found]"));
 }
+
+#[test]
+fn claim_link_with_an_owner_hint_insists_on_that_signer() {
+    use zandglass_core::mailbox::{ClaimLink, MailboxClient};
+    use zandglass_core::owner;
+
+    let dir = tempfile::tempdir().unwrap();
+    let (addr, _state) =
+        zandglass_keeper::spawn_background(&dir.path().join("k.sqlite"), Default::default())
+            .unwrap();
+    let base = format!("http://{addr}");
+    let mb = MailboxClient::new(&base);
+    let (kit_path, phrase) = write_kit(dir.path(), 3600);
+    let p = phrase.to_str().unwrap();
+    let unsigned = Kit::from_json(&std::fs::read_to_string(&kit_path).unwrap()).unwrap();
+    let secret = [9u8; 32];
+    let mut signed = unsigned.clone();
+    signed.sign_owner(&secret);
+    let hint = owner::link_hint(&owner::public_key(&secret));
+    let other_hint = owner::link_hint(&owner::public_key(&[10u8; 32]));
+
+    let publish = |kit: &Kit| {
+        let c = mb.create().unwrap();
+        mb.put(&c.id, &c.write_token, &kit.to_json().unwrap())
+            .unwrap();
+        c
+    };
+    let claim = |link: &str| sg(dir.path(), &["claim", link, "--phrase-file", p]);
+    let with_hint = |c: &zandglass_core::mailbox::Created, h: &str| {
+        let mut l = ClaimLink::new(&base, c);
+        l.owner_hint = Some(h.to_string());
+        l.to_string()
+    };
+
+    // Signed kit, matching hint: fetched (it is not unlocked yet, which proves it got that far).
+    let c = publish(&signed);
+    let out = claim(&with_hint(&c, &hint));
+    assert!(
+        text(&out.stderr).contains("error[not_yet_unlocked]"),
+        "{}",
+        text(&out.stderr)
+    );
+    // Signed kit, hint of another key: refused.
+    let out = claim(&with_hint(&c, &other_hint));
+    assert!(!out.status.success());
+    assert!(
+        text(&out.stderr).contains("error[kit_invalid]")
+            && text(&out.stderr).contains("not sealed by the owner"),
+        "{}",
+        text(&out.stderr)
+    );
+    // Unsigned kit behind a link that names a key: refused.
+    let c = publish(&unsigned);
+    let out = claim(&with_hint(&c, &hint));
+    assert!(
+        text(&out.stderr).contains("error[kit_invalid]")
+            && text(&out.stderr).contains("not sealed by the owner"),
+        "{}",
+        text(&out.stderr)
+    );
+    // An old link without a hint keeps working for the unsigned kit.
+    let out = claim(&ClaimLink::new(&base, &c).to_string());
+    assert!(
+        text(&out.stderr).contains("error[not_yet_unlocked]"),
+        "{}",
+        text(&out.stderr)
+    );
+    // A malformed hint is not a claim link at all.
+    let bad = format!("{base}/claim#m={}&r={}&o=zz", c.id, c.read_token);
+    let out = claim(&bad);
+    assert!(!out.status.success());
+    assert!(!text(&out.stderr).contains("not_yet_unlocked"));
+}

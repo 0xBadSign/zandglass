@@ -1,7 +1,11 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { read } from '../src/test-helpers';
 
 const TOKEN = 'ab'.repeat(24);
+// A real 24-word test phrase and the heir code it derives (committed test vectors).
+const WORDS = read('TEST_ONLY_phrase.txt').trim();
+const WORDS_CODE = read('heir_code.txt').trim();
 const now = Math.floor(Date.now() / 1000);
 
 const plan = (over: Record<string, unknown> = {}) => ({
@@ -122,6 +126,7 @@ test('owner: create a plan and show the funding QR and the claim link once', asy
   await page.goto(`/owner#t=${TOKEN}`);
   await page.getByRole('heading', { name: 'New plan', exact: true }).waitFor();
   await page.getByLabel('Heir code 1').fill('age1exampleheir');
+  await expect(page.locator('#code0-fp')).toContainText(/Code ID [0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}/);
   await page.getByLabel('Flip at least every').selectOption('180d');
   await page.getByRole('button', { name: 'Create the plan' }).click();
   await expect(page.locator('#created-title')).toHaveText('Plan 01234567 is ready');
@@ -219,10 +224,29 @@ test('owner: a savings lock needs the box and the word LOCK, then hides flip and
     },
     [`GET /api/plans/${LOCK_ID}/kit`]: json({ file_name: '01234567-e1.zandglass', text: '{}' }),
   });
+  // Every request body and URL the page sends, to prove the words never leave the tab.
+  const sent: string[] = [];
+  page.on('request', (r) => {
+    if (r.url().includes('/api/')) sent.push(`${r.url()}\n${r.postData() ?? ''}`);
+  });
   await page.goto(`/owner#t=${TOKEN}`);
   await page.getByRole('button', { name: /Savings lock/ }).click();
   await expect(page.getByText('A savings lock cannot be undone')).toBeVisible();
-  await page.getByLabel('Your own heir code').fill('age1ownheir');
+  // No heir code can be pasted any more: the form asks for the words.
+  await expect(page.getByLabel('Your own heir code')).toHaveCount(0);
+  // A phrase that is not a valid 24-word phrase is refused before anything is sent.
+  await page.getByLabel('Your 24 heir words').fill('abandon abandon abandon');
+  await page.getByLabel('Locked until').selectOption('180d');
+  await page.getByLabel(/I have my 24 heir words/).check();
+  await page.getByLabel('Type LOCK to confirm').fill('LOCK');
+  await page.getByRole('button', { name: 'Create the savings lock' }).click();
+  await expect(page.locator('.field-error')).toContainText('24 heir words');
+  expect(calls).not.toContain('POST /api/locks');
+  await page.getByLabel(/I have my 24 heir words/).uncheck();
+  await page.getByLabel('Type LOCK to confirm').fill('');
+  await page.getByLabel('Your 24 heir words').fill(WORDS);
+  // The page shows the derived code's short id as soon as the words are valid.
+  await expect(page.locator('#lock-derived')).toContainText(/heir code ID [0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}/);
   await page.getByLabel('Locked until').selectOption('180d');
   await expect(page.getByText(/The lock ends on/)).toBeVisible();
 
@@ -242,7 +266,14 @@ test('owner: a savings lock needs the box and the word LOCK, then hides flip and
   await expect(page.locator('#created-title')).toHaveText('Plan 01234567 is ready');
   await expect(page.locator('.created-card .qr-tile svg')).toBeVisible();
   await expect(page.locator('.created-card')).toContainText('seed was deleted');
-  expect(body).toMatchObject({ heirs: ['age1ownheir'], until: '180d', claim_link: false, understood: true, confirm: 'LOCK' });
+  expect(body).toMatchObject({ heirs: [WORDS_CODE], until: '180d', claim_link: false, understood: true, confirm: 'LOCK' });
+  // Only the derived public code was sent: not one of the 24 words appears in any request.
+  const everything = sent.join('\n').toLowerCase();
+  expect(everything).toContain(WORDS_CODE);
+  for (const word of new Set(WORDS.split(/\s+/))) {
+    expect(everything, `the word "${word}" must not be sent`).not.toMatch(new RegExp(`\\b${word}\\b`));
+  }
+  expect(everything).not.toContain(WORDS.toLowerCase());
   await page.getByRole('button', { name: 'Done' }).click();
 
   const card = page.locator('.plan-card');
@@ -266,7 +297,7 @@ test('owner: a savings lock can end on a picked date', async ({ page }) => {
   });
   await page.goto(`/owner#t=${TOKEN}`);
   await page.getByRole('button', { name: /Savings lock/ }).click();
-  await page.getByLabel('Your own heir code').fill('age1ownheir');
+  await page.getByLabel('Your 24 heir words').fill(WORDS);
   await expect(page.getByLabel('Unlock date')).toBeHidden();
   await page.getByLabel('Locked until').selectOption('date');
   await page.getByLabel('Unlock date').fill('2099-01-15');

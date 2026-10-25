@@ -44,8 +44,12 @@ pub struct Created {
     pub read_token: String,
 }
 
-/// A claim link `<keeper>/claim#m=<id>&r=<read_token>` (the heir page). The
-/// older `/claim.html` form is still accepted.
+/// A claim link `<keeper>/claim#m=<id>&r=<read_token>[&o=<owner hint>]` (the
+/// heir page). The older `/claim.html` form is still accepted. `o` is the
+/// first 16 bytes of the SHA-256 of the plan's owner public key (32 lowercase
+/// hex characters, see `docs/KIT_FORMAT.md` section 8): whoever opens the link
+/// then insists on a kit signed by that key, so a mailbox operator cannot swap
+/// in a decoy. It sits in the fragment and never reaches a server.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClaimLink {
     /// Keeper base URL without a trailing slash.
@@ -54,6 +58,8 @@ pub struct ClaimLink {
     pub id: String,
     /// Read token.
     pub read_token: String,
+    /// Owner key hint (32 lowercase hex), present for signed plans.
+    pub owner_hint: Option<String>,
 }
 
 impl ClaimLink {
@@ -63,7 +69,21 @@ impl ClaimLink {
             base: normalize_base(base),
             id: created.id.clone(),
             read_token: created.read_token.clone(),
+            owner_hint: None,
         }
+    }
+
+    /// Builds the link for a mailbox that holds `kit`: it carries the owner
+    /// hint when the kit is signed.
+    pub fn for_kit(base: &str, created: &Created, kit: &crate::kit::Kit) -> Self {
+        let mut link = Self::new(base, created);
+        link.owner_hint = kit
+            .owner_key
+            .as_deref()
+            .and_then(|k| hex::decode(k).ok())
+            .and_then(|k| <[u8; 32]>::try_from(k).ok())
+            .map(|k| crate::owner::link_hint(&k));
+        link
     }
 
     /// Parses a claim link; `None` if the text is not one.
@@ -78,11 +98,12 @@ impl ClaimLink {
             .strip_suffix("/claim.html")
             .or_else(|| head.strip_suffix("/claim"))
             .unwrap_or(head);
-        let (mut id, mut token) = (None, None);
+        let (mut id, mut token, mut hint) = (None, None, None);
         for pair in fragment.split('&') {
             match pair.split_once('=') {
                 Some(("m", v)) => id = Some(v),
                 Some(("r", v)) => token = Some(v),
+                Some(("o", v)) => hint = Some(v),
                 _ => {}
             }
         }
@@ -91,17 +112,27 @@ impl ClaimLink {
         if !ok(id) || !ok(token) || base.is_empty() {
             return None;
         }
+        // A malformed hint makes the whole link unusable: ignoring it would
+        // silently drop the protection it stands for.
+        if hint.is_some_and(|h| !crate::owner::is_link_hint(h)) {
+            return None;
+        }
         Some(Self {
             base: base.to_string(),
             id: id.into(),
             read_token: token.into(),
+            owner_hint: hint.map(str::to_string),
         })
     }
 }
 
 impl std::fmt::Display for ClaimLink {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}/claim#m={}&r={}", self.base, self.id, self.read_token)
+        write!(f, "{}/claim#m={}&r={}", self.base, self.id, self.read_token)?;
+        if let Some(h) = &self.owner_hint {
+            write!(f, "&o={h}")?;
+        }
+        Ok(())
     }
 }
 
@@ -276,5 +307,24 @@ mod tests {
         assert_eq!(ClaimLink::parse("kit.zandglass"), None);
         assert_eq!(ClaimLink::parse("http://x/claim#m=a"), None);
         assert_eq!(ClaimLink::parse("http://x/claim#m=a&r=b/../c"), None);
+    }
+
+    #[test]
+    fn link_with_owner_hint() {
+        let hint = "0123456789abcdef0123456789abcdef";
+        let text = format!("https://k.example/claim#m=ab12&r=cd34&o={hint}");
+        let l = ClaimLink::parse(&text).unwrap();
+        assert_eq!(l.owner_hint.as_deref(), Some(hint));
+        assert_eq!(l.to_string(), text);
+        // A malformed hint is refused, never ignored.
+        for bad in [
+            "",
+            "abc",
+            "0123456789ABCDEF0123456789ABCDEF",
+            "g123456789abcdef0123456789abcdef",
+        ] {
+            let t = format!("https://k.example/claim#m=a&r=b&o={bad}");
+            assert_eq!(ClaimLink::parse(&t), None, "{bad}");
+        }
     }
 }

@@ -24,6 +24,15 @@ fn text(b: &[u8]) -> String {
     String::from_utf8_lossy(b).into_owned()
 }
 
+/// A fresh heir phrase written to `dir/heir.phrase`: its path and heir code.
+fn heir_words(dir: &Path) -> (String, String) {
+    let phrase = generate_phrase();
+    let path = dir.join("heir.phrase");
+    std::fs::write(&path, phrase.as_str()).unwrap();
+    let code = identity_from_phrase(&phrase).unwrap().code().to_string();
+    (path.to_str().unwrap().to_string(), code)
+}
+
 fn heir_code() -> String {
     identity_from_phrase(&generate_phrase())
         .unwrap()
@@ -35,9 +44,12 @@ fn heir_code() -> String {
 fn a_lock_is_refused_without_the_confirmation_flag() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().join("home");
-    let code = heir_code();
+    let (words, _) = heir_words(dir.path());
     // No store exists: the refusal comes before anything else happens.
-    let out = sg(&home, &["plan", "lock", "--heir", &code, "--until", "90d"]);
+    let out = sg(
+        &home,
+        &["plan", "lock", "--phrase-file", &words, "--until", "90d"],
+    );
     assert!(!out.status.success());
     let err = text(&out.stderr);
     assert!(err.contains("--i-have-my-heir-words"), "{err}");
@@ -46,31 +58,59 @@ fn a_lock_is_refused_without_the_confirmation_flag() {
 }
 
 #[test]
+fn a_lock_needs_the_words_not_just_a_pasted_code() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    let (words, code) = heir_words(dir.path());
+    let lock = |extra: &[&str]| {
+        let mut a = vec!["plan", "lock", "--i-have-my-heir-words", "--until", "90d"];
+        a.extend_from_slice(extra);
+        let out = sg(&home, &a);
+        assert!(!out.status.success());
+        text(&out.stderr)
+    };
+    // A code alone is refused, before any network use or store access.
+    let err = lock(&["--heir", &code]);
+    assert!(err.contains("--phrase-file"), "{err}");
+    assert!(err.contains("proof"), "{err}");
+    // A code that does not belong to the words is refused; the right one is named.
+    let other = heir_code();
+    let err = lock(&["--phrase-file", &words, "--heir", &other]);
+    assert!(err.contains("None of the --heir codes"), "{err}");
+    assert!(err.contains(&code), "{err}");
+    // A bad phrase file is refused without echoing its content.
+    let bad = dir.path().join("bad.phrase");
+    std::fs::write(&bad, "abandon abandon abandon").unwrap();
+    let err = lock(&["--phrase-file", bad.to_str().unwrap()]);
+    assert!(err.contains("expected 24 words"), "{err}");
+    assert!(!home.exists());
+}
+
+#[test]
 fn lock_arguments_are_checked_before_any_network_use() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().join("home");
-    let code = heir_code();
+    let (words, code) = heir_words(dir.path());
     let run = |extra: &[&str]| {
-        let mut a = vec!["plan", "lock", "--i-have-my-heir-words"];
+        let mut a = vec![
+            "plan",
+            "lock",
+            "--i-have-my-heir-words",
+            "--phrase-file",
+            &words,
+        ];
         a.extend_from_slice(extra);
         text(&sg(&home, &a).stderr)
     };
-    assert!(run(&["--until", "90d"]).contains("at least one heir"));
-    assert!(run(&["--heir", &code, "--until", "soon"]).contains("not a duration"));
-    assert!(run(&["--heir", &code, "--until", "2027-06-01"]).contains("not an unlock time"));
-    assert!(run(&["--heir", &code, "--until", "2020-01-01T00:00:00Z"]).contains("at least"));
-    assert!(run(&["--heir", &code, "--until", "10s"]).contains("at least 30 seconds"));
-    assert!(run(&["--heir", &code, "--until", "999999d"]).contains("30 years"));
-    assert!(run(&[
-        "--heir",
-        &code,
-        "--until",
-        "200d",
-        "--mailbox",
-        "http://localhost:1"
-    ])
-    .contains("170 days"));
-    assert!(run(&["--heir", "nope", "--until", "90d"]).contains("heir code #1"));
+    assert!(run(&["--until", "soon"]).contains("not a duration"));
+    assert!(run(&["--until", "2027-06-01"]).contains("not an unlock time"));
+    assert!(run(&["--until", "2020-01-01T00:00:00Z"]).contains("at least"));
+    assert!(run(&["--until", "10s"]).contains("at least 30 seconds"));
+    assert!(run(&["--until", "999999d"]).contains("30 years"));
+    assert!(run(&["--until", "200d", "--mailbox", "http://localhost:1"]).contains("170 days"));
+    // Extra heir codes may accompany the words; the derived one must be among them.
+    assert!(run(&["--heir", &code, "--heir", "nope", "--until", "90d"]).contains("heir code #2"));
+    assert!(run(&["--heir", &code, "--heir", &code, "--until", "90d"]).contains("duplicate"));
 }
 
 #[test]

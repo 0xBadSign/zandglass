@@ -14,7 +14,10 @@ import {
   checkOwner,
   repinOwnerKey,
   verifyOwnerSig,
+  OwnerLinkError,
+  parseClaimFragment,
   type OwnerCheck,
+  type OwnerContext,
   WrongHeirKeyError,
   openKit,
   parseKit,
@@ -31,7 +34,7 @@ const MAX_KIT_BYTES = 1024 * 1024;
 const main = mountShell('claim', { wide: true });
 mountDust();
 
-type Source = { kind: 'mailbox'; origin: string; id: string; token: string } | { kind: 'file'; name: string };
+type Source = { kind: 'mailbox'; origin: string; id: string; token: string; hint: string | null } | { kind: 'file'; name: string };
 
 type Problem = { tone: 'bad' | 'warn' | 'info'; title: string; body: string; retry?: () => void };
 
@@ -151,21 +154,17 @@ function networkLabel(k: LoadedKit): { text: string; test: boolean } {
 
 /* ------------------------------------------------------------ loading */
 
-function parseFragment(): { id: string; token: string; origin: string } | 'incomplete' | null {
-  const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-  const id = params.get('m');
-  const token = params.get('r');
-  if (!id && !token) return null;
-  if (!id || !token) return 'incomplete';
+function parseFragment(): { id: string; token: string; origin: string; hint: string | null } | 'incomplete' | null {
+  const f = parseClaimFragment(window.location.hash);
+  if (f === null || f === 'incomplete') return f;
   let origin = window.location.origin;
-  const k = params.get('k');
-  if (k) {
+  if (f.keeper) {
     // Testing override: only a local keeper is honoured; the token is never
     // sent to any other origin. A refused value falls back to this origin.
-    const local = acceptLocalKeeper(k, 'the &k= keeper override');
+    const local = acceptLocalKeeper(f.keeper, 'the &k= keeper override');
     if (local !== null) origin = local;
   }
-  return { id, token, origin };
+  return { id: f.id, token: f.token, origin, hint: f.hint };
 }
 
 function setKit(text: string, src: Source): void {
@@ -175,7 +174,7 @@ function setKit(text: string, src: Source): void {
     problem = null;
     result = null;
     owner = null;
-    void checkKitOwner(kit);
+    void checkKitOwner(kit, src.kind === 'mailbox' ? { hint: src.hint, mailbox: src.id } : {});
   } catch {
     kit = null;
     problem = {
@@ -189,9 +188,9 @@ function setKit(text: string, src: Source): void {
 }
 
 /** Verify the owner signature and pin the owner key; an invalid signature drops the kit. */
-async function checkKitOwner(k: LoadedKit): Promise<void> {
+async function checkKitOwner(k: LoadedKit, ctx: OwnerContext): Promise<void> {
   try {
-    const r = await checkOwner(k);
+    const r = await checkOwner(k, ctx);
     if (kit !== k) return;
     owner = r;
   } catch (e) {
@@ -199,7 +198,17 @@ async function checkKitOwner(k: LoadedKit): Promise<void> {
     kit = null;
     owner = null;
     problem =
-      e instanceof OwnerSigInvalidError
+      e instanceof OwnerLinkError
+        ? {
+            tone: 'bad',
+            title: 'This kit was not sealed by the owner who sent you this link',
+            body:
+              (e.reason === 'unsigned'
+                ? 'Your link names the owner\'s signing key, but this kit carries no signature. '
+                : 'Your link names the owner\'s signing key, but this kit is signed by a different key. ') +
+              'Whoever runs the mailbox may have put a decoy kit there. Do not use it. Ask the owner for a new claim link or a kit file. Nothing was opened.',
+          }
+        : e instanceof OwnerSigInvalidError
         ? {
             tone: 'bad',
             title: 'This kit was altered',
@@ -220,11 +229,38 @@ function ownerView(k: LoadedKit): HTMLElement | null {
   switch (owner.status) {
     case 'match':
       return h('p', { class: 'notice ok', id: 'owner-sig' }, `Signed by the same owner as the kit you opened before (key ${owner.fingerprint}).`);
+    case 'link':
+      return h('p', { class: 'notice ok', id: 'owner-sig' }, `Signed by the owner your link names (key ${owner.fingerprint}).`);
     case 'new':
+      // A kit from a mailbox with a link that names no key proves nothing: the
+      // mailbox operator (or whoever made a fresh plan id) could have signed it.
+      return source?.kind === 'mailbox'
+        ? h(
+            'p',
+            { class: 'notice info', id: 'owner-sig' },
+            `This kit is signed with key ${owner.fingerprint}, but your link does not name the owner's key, so nothing shows that this is the owner's. ` +
+              'This browser remembers the key from now on. Check it with the owner, or ask for a newer claim link that names it.',
+          )
+        : h(
+            'p',
+            { class: 'notice info', id: 'owner-sig' },
+            `Signed by the owner. Owner key ${owner.fingerprint} is now remembered in this browser; if you can, check it with the owner.`,
+          );
+    case 'unsigned-mailbox':
       return h(
-        'p',
-        { class: 'notice info', id: 'owner-sig' },
-        `Signed by the owner. Owner key ${owner.fingerprint} is now remembered in this browser; if you can, check it with the owner.`,
+        'div',
+        { class: 'notice warn', id: 'owner-sig', role: 'status' },
+        h(
+          'div',
+          {},
+          h('strong', {}, 'Nothing shows that the owner made this kit'),
+          h(
+            'p',
+            {},
+            'It carries no owner signature and your link does not name the owner\'s key, so whoever runs the mailbox could have put a decoy kit here. ' +
+              'Ask the owner to confirm, or for a newer claim link, before you rely on it.',
+          ),
+        ),
       );
     case 'unsigned':
       return h('p', { class: 'muted small', id: 'owner-sig' }, 'This kit carries no owner signature (plans made before signatures, and playground kits, are unsigned).');
@@ -243,7 +279,7 @@ function ownerView(k: LoadedKit): HTMLElement | null {
           onclick: async () => {
             const sig = await verifyOwnerSig(k);
             if (sig !== 'unsigned' && k.meta?.plan) {
-              repinOwnerKey(k.meta.plan, sig.key);
+              repinOwnerKey(k.meta.plan, sig.key, source?.kind === 'mailbox' ? source.id : null);
               owner = { status: 'match', fingerprint: sig.fingerprint };
               render();
             }
@@ -251,16 +287,23 @@ function ownerView(k: LoadedKit): HTMLElement | null {
         },
         'The owner confirmed the new key: trust it',
       );
+      if (owner.planChanged) {
+        return warn(
+          'This mailbox now serves a kit of a different plan',
+          `Earlier, this claim link served a kit of another plan (signed by the same key, ${owner.fingerprint}). A decoy made by whoever runs the mailbox looks like this. Confirm with the owner before you rely on it.`,
+          h('div', { class: 'actions' }, trust),
+        );
+      }
       return warn(
         'This kit was signed by a different owner key',
-        `Earlier kits of this plan were signed by ${owner.pinnedFingerprint}; this one by ${owner.fingerprint}. It may be a decoy sealed by someone else. Confirm with the owner before you rely on it.`,
+        `Earlier kits of this plan or on this claim link were signed by ${owner.pinnedFingerprint}; this one by ${owner.fingerprint}. It may be a decoy sealed by someone else. Confirm with the owner before you rely on it.`,
         h('div', { class: 'actions' }, trust),
       );
     }
   }
 }
 
-async function loadMailbox(m: { id: string; token: string; origin: string }): Promise<void> {
+async function loadMailbox(m: { id: string; token: string; origin: string; hint: string | null }): Promise<void> {
   loading = true;
   problem = null;
   render();
@@ -917,7 +960,13 @@ function resultView(r: OpenedPayload): HTMLElement {
   }
   parts.push(h('h3', {}, 'Restore it in a wallet'), restoreGuide(payload));
   if (hints.length) {
-    parts.push(h('h3', {}, 'Notes in the kit'), h('ul', { class: 'checklist' }, ...hints.map((x) => h('li', {}, x))));
+    // Free text from whoever made the kit: anyone who knows the heir code can
+    // write it, so it gets the same caution as the message.
+    parts.push(
+      h('h3', {}, 'Notes in the kit'),
+      h('ul', { class: 'checklist', id: 'kit-hints' }, ...hints.map((x) => h('li', {}, x))),
+      h('p', { class: 'muted small' }, 'Anyone who knows your heir code can write these notes, so treat them with care: never send your words or money, or visit a site, because a note asks for it.'),
+    );
   }
   parts.push(
     h(

@@ -388,7 +388,7 @@ pub async fn split(
                 rec.mailbox_id = Some(created.id.clone());
                 rec.mailbox_write_token = Some(created.write_token.clone());
                 put_result = mb.put(&created.id, &created.write_token, &kit.to_json()?);
-                link = Some(ClaimLink::new(url, created).to_string());
+                link = Some(ClaimLink::for_kit(url, created, &kit).to_string());
             }
             // Record the mailbox before checking the upload so a failure deletes it.
             items.push(rec);

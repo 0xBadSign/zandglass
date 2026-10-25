@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BeaconNotReadyError, NetworkError, relayClient } from './drand';
-import { generatePhrase, heirCodeFromPhrase, identityFromPhrase, isValidPhrase } from './heir';
+import { generatePhrase, heirCodeFingerprint, heirCodeFromPhrase, identityFromPhrase, isValidPhrase } from './heir';
 import { KitDamagedError, WrongHeirKeyError, armorRound, openKit, parseKit } from './kit';
 import { TEST_PAYLOAD, makeJsonKit, read, recordedBeacon, recordedClient } from '../test-helpers';
 
@@ -18,6 +18,15 @@ describe('heir keys', () => {
   it('derives the committed heir code', async () => {
     expect(await heirCodeFromPhrase(phrase)).toBe(read('heir_code.txt').trim());
     expect(await heirCodeFromPhrase(`  ${phrase.toUpperCase()}\n`)).toBe(read('heir_code.txt').trim());
+  });
+
+  it('gives a short comparable id of a heir code', async () => {
+    const code = await heirCodeFromPhrase(phrase);
+    const fp = heirCodeFingerprint(code);
+    expect(fp).toMatch(/^[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}$/);
+    expect(heirCodeFingerprint(`  ${code}\n`)).toBe(fp);
+    expect(heirCodeFingerprint(code.slice(0, -1) + (code.endsWith('q') ? 'p' : 'q'))).not.toBe(fp);
+    expect(heirCodeFingerprint('  ')).toBe('');
   });
 
   it('rejects short or misspelt phrases', () => {

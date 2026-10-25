@@ -1,12 +1,17 @@
+import { createHash } from 'node:crypto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { read } from '../test-helpers';
 import { parseKit } from './kit';
 import {
+  OwnerLinkError,
   OwnerSigInvalidError,
   checkOwner,
   ownerFingerprint,
+  ownerKeyHint,
   ownerSigMessage,
+  parseClaimFragment,
   pinOwnerKey,
+  pinnedMailbox,
   pinnedOwnerKey,
   repinOwnerKey,
   verifyOwnerSigOf,
@@ -154,5 +159,108 @@ describe('owner key pinning', () => {
       }),
     );
     expect(await checkOwner(unsigned)).toEqual({ status: 'unsigned' });
+  });
+});
+
+describe('claim link owner hint', () => {
+  beforeEach(memoryStorage);
+
+  const unsignedKit = (plan = PLAN) =>
+    parseKit(
+      mutated((k) => {
+        delete k['owner_key'];
+        delete k['owner_sig'];
+        k['plan'] = plan;
+      }),
+    );
+  const HINT = createHash('sha256').update(Buffer.from(PUBLIC, 'hex')).digest('hex').slice(0, 32);
+
+  it('is the first 16 bytes of the key hash, as the Rust core builds it', () => {
+    expect(ownerKeyHint(PUBLIC)).toBe(HINT);
+    expect(HINT).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it('parses claim fragments, with and without the hint', () => {
+    expect(parseClaimFragment('')).toBeNull();
+    expect(parseClaimFragment('#')).toBeNull();
+    expect(parseClaimFragment('#m=abc&r=def')).toEqual({ id: 'abc', token: 'def', hint: null, keeper: null });
+    expect(parseClaimFragment(`#m=abc&r=def&o=${HINT}`)).toEqual({ id: 'abc', token: 'def', hint: HINT, keeper: null });
+    expect(parseClaimFragment(`#m=abc&r=def&o=${HINT}&k=http%3A%2F%2F127.0.0.1%3A1`)).toMatchObject({
+      hint: HINT,
+      keeper: 'http://127.0.0.1:1',
+    });
+    expect(parseClaimFragment('#m=abc')).toBe('incomplete');
+    expect(parseClaimFragment('#r=def')).toBe('incomplete');
+    expect(parseClaimFragment(`#o=${HINT}`)).toBe('incomplete');
+  });
+
+  it('refuses a malformed hint instead of ignoring it', () => {
+    for (const bad of ['', 'abc', HINT.toUpperCase(), HINT + '0', 'g'.repeat(32)]) {
+      expect(parseClaimFragment(`#m=abc&r=def&o=${bad}`)).toBe('incomplete');
+    }
+  });
+
+  it('accepts a kit signed by the key the link names', async () => {
+    const r = await checkOwner(parseKit(kitText), { hint: HINT, mailbox: 'mb1' });
+    expect(r).toEqual({ status: 'link', fingerprint: FINGERPRINT });
+  });
+
+  it('refuses a kit signed by another key', async () => {
+    await expect(checkOwner(parseKit(kitText), { hint: 'f'.repeat(32), mailbox: 'mb1' })).rejects.toMatchObject({
+      name: 'OwnerLinkError',
+      reason: 'mismatch',
+    });
+    // Nothing was pinned from the refused kit.
+    expect(pinnedOwnerKey(PLAN)).toBeNull();
+    expect(pinnedMailbox('mb1')).toBeNull();
+  });
+
+  it('refuses an unsigned kit when the link names a key', async () => {
+    const p = checkOwner(unsignedKit(), { hint: HINT, mailbox: 'mb1' });
+    await expect(p).rejects.toBeInstanceOf(OwnerLinkError);
+    await expect(p).rejects.toMatchObject({ reason: 'unsigned' });
+  });
+
+  it('a kit from a mailbox without a hint: unsigned is a warning state, a file is not', async () => {
+    expect(await checkOwner(unsignedKit(), { mailbox: 'mb1' })).toEqual({ status: 'unsigned-mailbox' });
+    expect(await checkOwner(unsignedKit())).toEqual({ status: 'unsigned' });
+  });
+
+  it('pins by mailbox id too', async () => {
+    const real = parseKit(kitText);
+    expect(await checkOwner(real, { mailbox: 'mb1' })).toEqual({ status: 'new', fingerprint: FINGERPRINT });
+    expect(pinnedMailbox('mb1')).toEqual({ plan: PLAN, key: PUBLIC });
+    expect(await checkOwner(real, { mailbox: 'mb1' })).toEqual({ status: 'match', fingerprint: FINGERPRINT });
+
+    // A decoy with a fresh plan id but no signature is a stripped signature for this mailbox.
+    expect(await checkOwner(unsignedKit('1'.repeat(32)), { mailbox: 'mb1' })).toEqual({
+      status: 'stripped',
+      pinnedFingerprint: FINGERPRINT,
+    });
+
+    // Another key on a mailbox that served a different one: mismatch, and the pin does not move.
+    repinOwnerKey('2'.repeat(32), 'c'.repeat(64), 'mb2');
+    const r = await checkOwner(real, { mailbox: 'mb2' });
+    expect(r.status).toBe('mismatch');
+    expect(pinnedMailbox('mb2')?.key).toBe('c'.repeat(64));
+  });
+
+  it('flags the same key under another plan id on a pinned mailbox', async () => {
+    repinOwnerKey('3'.repeat(32), PUBLIC, 'mb3');
+    const r = await checkOwner(parseKit(kitText), { mailbox: 'mb3' });
+    expect(r).toMatchObject({ status: 'mismatch', planChanged: true, pinnedFingerprint: FINGERPRINT });
+  });
+
+  it('works without localStorage', async () => {
+    (globalThis as { localStorage?: unknown }).localStorage = {
+      getItem: () => {
+        throw new Error('blocked');
+      },
+      setItem: () => {
+        throw new Error('blocked');
+      },
+    };
+    expect(await checkOwner(parseKit(kitText), { mailbox: 'mb9' })).toEqual({ status: 'new', fingerprint: FINGERPRINT });
+    expect(await checkOwner(parseKit(kitText), { hint: HINT, mailbox: 'mb9' })).toMatchObject({ status: 'link' });
   });
 });

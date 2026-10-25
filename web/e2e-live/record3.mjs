@@ -2,7 +2,7 @@
 // Not part of the test suite. Writes raw clips and the time marks the editor uses.
 //
 //   OUT=../.private/video3/raw SEGMENTS=heir,claim,owner BASE=https://zandglass.cash \
-//     KIT_FILE=<a locked, signed kit> OWNER_URL=http://127.0.0.1:8798/owner#t=... HEIR=age1... \
+//     KIT_FILE=<a locked, signed kit> OWNER_URL=http://127.0.0.1:8798/owner#t=... HEIR=age1... HEIR_WORDS='<the 24 words of HEIR>' \
 //     node e2e-live/record3.mjs
 //
 // Review the clips before publishing.
@@ -193,7 +193,8 @@ if (SEGMENTS.includes('owner')) {
     await page.getByRole('button', { name: /Savings lock/ }).click();
     mark('lock');
     await sleep(1000);
-    await page.locator('#lock-heir').pressSequentially(HEIR, { delay: 6 });
+    // The lock asks for the owner's own 24 heir words (the code is derived in the browser).
+    await page.locator('#lock-words').pressSequentially(process.env.HEIR_WORDS ?? '', { delay: 6 });
     await page.selectOption('#lock-until', '365d').catch(() => undefined);
     await page.locator('#lock-message').pressSequentially('Do not touch before next year.', { delay: 20 });
     await glide(page, '#lock-understood', 900, 300);

@@ -209,8 +209,15 @@ enum PlanCmd {
     /// to your own heir code, the vault seed is deleted at once, and nothing
     /// (not even you) can move the funds before the unlock time.
     Lock {
-        /// Your own heir code (age1...), made on the heir page or with
-        /// `zandglass heir new`. Up to 3 may be given; any one can open it.
+        /// File holding your own 24 heir words (the phrase of `zandglass
+        /// heir new` or the heir page). The heir code is derived from it
+        /// here, so a lock can only be made to a code you can open: a
+        /// pasted code is never taken on trust.
+        #[arg(long)]
+        phrase_file: Option<PathBuf>,
+        /// Optional extra heir codes (age1...) that may also open the lock
+        /// (up to 3 in all). If given, they must include the code derived
+        /// from --phrase-file.
         #[arg(long = "heir")]
         heirs: Vec<String>,
         /// When the lock ends: an RFC 3339 UTC time (2027-06-01T09:00:00Z) or
@@ -441,6 +448,7 @@ async fn run(cli: Cli) -> Result<()> {
             }
         }
         Cmd::Plan(PlanCmd::Lock {
+            phrase_file,
             heirs,
             until,
             message,
@@ -457,7 +465,8 @@ async fn run(cli: Cli) -> Result<()> {
                      confirm that you have the words and will keep the kit."
                 ));
             }
-            ops::check_heirs(heirs)?;
+            let heirs = lock_heirs(phrase_file.as_deref(), heirs)?;
+            ops::check_heirs(&heirs)?;
             let until_at = ops::parse_until(until, now())?;
             ops::check_lock_time(until_at, now(), mailbox.is_some())?;
             let amount_zat = amount.as_deref().map(ops::parse_zec).transpose()?;
@@ -469,7 +478,7 @@ async fn run(cli: Cli) -> Result<()> {
                 network,
                 &mut client,
                 ops::NewLock {
-                    heirs: heirs.clone(),
+                    heirs,
                     until: until_at,
                     message: message.clone(),
                     mailbox_url: mailbox.clone(),
@@ -1060,12 +1069,56 @@ fn read_links_file(path: &Path) -> Result<Vec<String>> {
         .collect())
 }
 
+/// The heir codes of a savings lock. A lock cannot be undone and nobody can
+/// open it without the words behind its heir code, so the code is derived
+/// here from the owner's words (`--phrase-file`) instead of being taken as
+/// pasted: a code swapped on the way (clipboard malware, a typo) would lock
+/// the funds to a key the owner does not hold. Extra `--heir` codes must
+/// include the derived one.
+fn lock_heirs(phrase_file: Option<&Path>, extra: &[String]) -> Result<Vec<String>> {
+    let Some(path) = phrase_file else {
+        return Err(anyhow!(
+            "A savings lock needs proof that you hold your heir words: give --phrase-file <file with your 24 words>. \
+             The heir code is derived from the words; a pasted code is not accepted on its own."
+        ));
+    };
+    let phrase = Zeroizing::new(
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?,
+    );
+    let derived = identity_from_phrase(&phrase)
+        .map_err(|e| anyhow!("--phrase-file: {e}"))?
+        .code()
+        .to_string();
+    if extra.is_empty() {
+        return Ok(vec![derived]);
+    }
+    if !extra.contains(&derived) {
+        return Err(anyhow!(
+            "None of the --heir codes is the code of the words in --phrase-file (that code is {derived}). \
+             A lock made to a code you cannot open is lost for good, so nothing was created."
+        ));
+    }
+    Ok(extra.to_vec())
+}
+
 fn load_kit(source: &str) -> Result<Kit> {
     match ClaimLink::parse(source) {
         Some(link) if !Path::new(source).exists() => {
             ops::require_secure_url(&link.base, "keeper")?;
             let text = MailboxClient::new(&link.base).get(&link.id, &link.read_token)?;
-            Ok(Kit::from_json(&text)?)
+            let kit = Kit::from_json(&text)?;
+            // A link that names the owner's key only accepts a kit signed by
+            // it: a mailbox operator cannot swap in a decoy.
+            if let Some(hint) = &link.owner_hint {
+                zandglass_core::owner::check_link_hint(&kit, hint).map_err(|_| {
+                    coded(
+                        "kit_invalid",
+                        "This kit was not sealed by the owner who sent you this link. \
+                         The mailbox may hold a decoy kit. Nothing was opened; ask the owner for a new link.",
+                    )
+                })?;
+            }
+            Ok(kit)
         }
         _ => read_kit(Path::new(source)),
     }
