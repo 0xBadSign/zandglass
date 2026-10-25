@@ -1307,3 +1307,78 @@ label.check input {
 .custom-period[hidden] {
   display: none;
 }
+
+/* Paper kit: a light sheet on screen, the only thing on paper. */
+.paper-box {
+  margin: 1.2rem 0 0.4rem;
+}
+
+.paper-sheet {
+  max-width: 24rem;
+  padding: 1.2rem;
+  border-radius: 14px;
+  background: #fff;
+  color: #000;
+}
+
+.paper-sheet h2,
+.paper-sheet p,
+.paper-sheet code {
+  color: #000;
+  font-size: 1rem;
+}
+
+.paper-qr svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.paper-scan {
+  margin-top: 1.4rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.paper-video {
+  display: block;
+  width: 100%;
+  max-width: 22rem;
+  margin: 0.8rem 0;
+  border-radius: 12px;
+}
+
+.paper-video[hidden] {
+  display: none;
+}
+
+.pulse {
+  margin: 1rem 0;
+}
+
+.paper-small {
+  font-size: 0.85rem !important;
+}
+
+#paper-print {
+  display: none;
+}
+
+@media print {
+  body > *:not(#paper-print) {
+    display: none !important;
+  }
+
+  body {
+    background: #fff !important;
+  }
+
+  #paper-print {
+    display: block;
+  }
+
+  #paper-print .paper-sheet {
+    max-width: 16cm;
+    margin: 0 auto;
+  }
+}

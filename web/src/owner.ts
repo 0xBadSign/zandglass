@@ -5,6 +5,7 @@ import './console.css';
 import { clear, copyButton, h, type Child } from './lib/dom';
 import { GlassCanvas, mountDust } from './lib/fx';
 import { formatCountdown, formatZec } from './lib/playground';
+import { fitsQr, kitQrText } from './lib/paper';
 import { qrSvg } from './lib/qr';
 import { mountShell } from './lib/shell';
 
@@ -134,6 +135,9 @@ let newKind: 'legacy' | 'installments' = 'legacy';
 let splitDone: SplitDone | null = null;
 let fundFor = '';
 let fund: { address: string; uri: string } | null = null;
+let paperFor = '';
+let paperEpoch = 0;
+let paper: { text: string; fits: boolean } | null = null;
 let cancelFor = '';
 let problem: { tone: 'bad' | 'warn' | 'ok' | 'info'; title: string; body: string } | null = null;
 let mode: 'local' | 'remote' | 'loading' = token ? 'loading' : 'remote';
@@ -365,6 +369,58 @@ function passForm(kind: 'init' | 'unlock'): HTMLElement {
   );
 }
 
+/**
+ * The paper kit: one QR code of the current kit, the short plan id and the
+ * unlock date. No amounts, no addresses. A copy goes into #paper-print, the
+ * only thing the print stylesheet shows.
+ */
+function paperSheet(p: PlanSum, k: { text: string }): HTMLElement {
+  const when = p.unlock_time ? new Date(p.unlock_time * 1000).toLocaleDateString(undefined, { dateStyle: 'long' }) : 'unknown';
+  return h(
+    'div',
+    { class: 'paper-sheet' },
+    h('h2', {}, 'Zandglass paper kit'),
+    h('div', { class: 'paper-qr' }, qrSvg(k.text, `QR code of the kit of plan ${p.short_id}`, 'L')),
+    h('p', { class: 'paper-meta' }, 'Plan ', h('code', {}, p.short_id), ' · unlocks ', h('strong', {}, when)),
+    h('p', {}, 'Scan on zandglass.cash/claim, or with any QR reader and save as a file. You also need the heir phrase, which is not on this page.'),
+    h('p', { class: 'paper-small' }, 'This kit is replaced if the owner flips the plan: always use the newest one.'),
+  );
+}
+
+function printPaper(p: PlanSum, k: { text: string }): void {
+  document.getElementById('paper-print')?.remove();
+  const root = h('div', { id: 'paper-print' }, paperSheet(p, k));
+  document.body.append(root);
+  window.addEventListener('afterprint', () => root.remove(), { once: true });
+  window.print();
+}
+
+function paperView(p: PlanSum, k: { text: string; fits: boolean }): HTMLElement {
+  if (!k.fits) {
+    return h(
+      'div',
+      { class: 'notice warn', id: 'paper-kit' },
+      h(
+        'div',
+        {},
+        h('strong', {}, 'This kit is too big for one QR code'),
+        h('p', {}, 'It has too much data (many heirs or a long message). Use "Download kit" and give your heirs the file instead.'),
+      ),
+    );
+  }
+  return h(
+    'div',
+    { class: 'paper-box', id: 'paper-kit' },
+    paperSheet(p, k),
+    h(
+      'div',
+      { class: 'actions' },
+      h('button', { type: 'button', class: 'btn-primary', onclick: () => printPaper(p, k) }, 'Print'),
+    ),
+    h('p', { class: 'muted small' }, 'The kit is public ciphertext. Heirs also need their heir phrase. Print a new one after every flip.'),
+  );
+}
+
 function planCard(p: PlanSum): HTMLElement {
   const active = p.status === 'active';
   const sel = p.id === selected;
@@ -539,6 +595,31 @@ function planCard(p: PlanSum): HTMLElement {
             },
             'Download kit',
           );
+    const paperBtn =
+      p.kind === 'installments'
+        ? null
+        : h(
+            'button',
+            {
+              type: 'button',
+              class: 'btn',
+              disabled: busy ? true : null,
+              onclick: () =>
+                void act('Reading the kit...', async () => {
+                  if (paperFor === p.id) {
+                    paperFor = '';
+                    paper = null;
+                    return;
+                  }
+                  const k = await api<{ file_name: string; text: string }>('GET', `/api/plans/${p.id}/kit`);
+                  const text = kitQrText(k.text);
+                  paper = { text, fits: fitsQr(text) };
+                  paperFor = p.id;
+                  paperEpoch = p.epoch;
+                }),
+            },
+            paperFor === p.id ? 'Hide paper kit' : 'Print paper kit',
+          );
     const calBtn = h(
       'button',
       {
@@ -558,9 +639,10 @@ function planCard(p: PlanSum): HTMLElement {
       { type: 'button', class: 'btn-quiet', disabled: busy ? true : null, onclick: () => ((cancelFor = cancelFor === p.id ? '' : p.id), render()) },
       'Cancel plan',
     );
-    parts.push(h('div', { class: 'actions' }, flipBtn, fundBtn, kitBtn, calBtn, cancelBtn));
+    parts.push(h('div', { class: 'actions' }, flipBtn, fundBtn, kitBtn, paperBtn, calBtn, cancelBtn));
   }
   if (active) {
+    if (paperFor === p.id && paperEpoch === p.epoch && paper) parts.push(paperView(p, paper));
     if (fundFor === p.id && fund) {
       const f = fund;
       parts.push(
