@@ -61,7 +61,9 @@ fn lock_arguments_are_checked_before_any_network_use() {
     assert!(run(&["--heir", &code, "--until", "2020-01-01T00:00:00Z"]).contains("at least"));
     assert!(run(&["--heir", &code, "--until", "10s"]).contains("at least 30 seconds"));
     assert!(run(&["--heir", &code, "--until", "999999d"]).contains("30 years"));
-    assert!(run(&[
+    // A mailbox no longer limits the lock: the keeper keeps it until 180 days
+    // after the unlock. The run now gets as far as the (unreachable) keeper.
+    assert!(!run(&[
         "--heir",
         &code,
         "--until",

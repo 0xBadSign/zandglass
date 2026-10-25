@@ -6,7 +6,9 @@
 //! `./keeper.sqlite`), `ZANDGLASS_TRUST_PROXY=1` (use `X-Forwarded-For` for
 //! rate limiting), `ZANDGLASS_WEB_DIR` (static files served at `/`),
 //! `ZANDGLASS_MAX_MAILBOXES` (default 50000) and
-//! `ZANDGLASS_MAX_CREATES_PER_HOUR` (default 2000, all clients together).
+//! `ZANDGLASS_MAX_CREATES_PER_HOUR` (default 2000, all clients together),
+//! `ZANDGLASS_MAX_EMPTY_MAILBOXES` (default 10000, never-filled ones) and
+//! `ZANDGLASS_MAX_CREATES_PER_IP_PER_HOUR` (default 300 per client bucket).
 //! The playground is enabled by `ZANDGLASS_PLAYGROUND_NETWORK`; see
 //! `docs/PLAYGROUND_API.md` for its variables.
 
@@ -40,6 +42,12 @@ async fn main() -> Result<()> {
         max_mailboxes: number("ZANDGLASS_MAX_MAILBOXES")?.unwrap_or(defaults.max_mailboxes),
         max_creates_per_hour: number("ZANDGLASS_MAX_CREATES_PER_HOUR")?
             .map_or(defaults.max_creates_per_hour, |n| {
+                usize::try_from(n).unwrap_or(usize::MAX)
+            }),
+        max_empty_mailboxes: number("ZANDGLASS_MAX_EMPTY_MAILBOXES")?
+            .unwrap_or(defaults.max_empty_mailboxes),
+        max_creates_per_ip_per_hour: number("ZANDGLASS_MAX_CREATES_PER_IP_PER_HOUR")?
+            .map_or(defaults.max_creates_per_ip_per_hour, |n| {
                 usize::try_from(n).unwrap_or(usize::MAX)
             }),
     };

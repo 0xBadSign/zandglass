@@ -492,10 +492,6 @@ pub async fn create_plan(
 pub const MIN_LOCK_SECS: u64 = 60;
 /// The longest savings lock (30 years): anything longer is a typo.
 pub const MAX_LOCK_SECS: u64 = 30 * 365 * 86_400;
-/// The keeper deletes a mailbox 180 days after its last update, and a lock
-/// never updates it. A lock with a mailbox must end well inside that.
-pub const MAILBOX_LOCK_MAX_SECS: u64 = 170 * 86_400;
-
 /// Parses a lock end: an RFC 3339 UTC time (`2027-06-01T09:00:00Z`) or a
 /// duration from `now` (`90d`).
 pub fn parse_until(text: &str, now: u64) -> Result<u64> {
@@ -508,8 +504,10 @@ pub fn parse_until(text: &str, now: u64) -> Result<u64> {
     Ok(now + parse_duration(text)?)
 }
 
-/// Checks the length of a savings lock (and its mailbox, if any).
-pub fn check_lock_time(until: u64, now: u64, mailbox: bool) -> Result<()> {
+/// Checks the length of a savings lock. The keeper keeps a mailbox until 180
+/// days after its kit unlocks, so a mailbox adds no limit (`_mailbox` is kept
+/// for the callers).
+pub fn check_lock_time(until: u64, now: u64, _mailbox: bool) -> Result<()> {
     if until < now + MIN_LOCK_SECS {
         return Err(anyhow!(
             "the unlock time must be at least {MIN_LOCK_SECS} seconds from now"
@@ -518,11 +516,6 @@ pub fn check_lock_time(until: u64, now: u64, mailbox: bool) -> Result<()> {
     if until - now > MAX_LOCK_SECS {
         return Err(anyhow!(
             "the unlock time is more than 30 years away; that is almost certainly a typo"
-        ));
-    }
-    if mailbox && until - now > MAILBOX_LOCK_MAX_SECS {
-        return Err(anyhow!(
-            "the keeper deletes a mailbox 180 days after its last update and a savings lock never updates it, so a lock longer than 170 days cannot use a mailbox. Keep the kit file (or a paper copy) instead"
         ));
     }
     Ok(())
@@ -548,7 +541,7 @@ pub struct NewLock {
     pub until: u64,
     /// Optional message sealed into the kit.
     pub message: Option<String>,
-    /// Optional keeper mailbox URL (a lock of at most 170 days).
+    /// Optional keeper mailbox URL (kept until 180 days after the unlock).
     pub mailbox_url: Option<String>,
     /// Optional funding amount for the ZIP 321 request, in zatoshi.
     pub amount: Option<u64>,
@@ -1151,7 +1144,7 @@ pub async fn cancel(
     plan.status = PlanStatus::Cancelled;
     store.put_plan(&plan)?;
     // Funds are already safe; a failed delete is reported, not fatal. The
-    // keeper removes the mailbox by itself after 180 days.
+    // keeper removes the mailbox by itself, 180 days after the unlock.
     let mailbox_error = delete_mailbox(&plan).err().map(|e| format!("{e:#}"));
     Ok(CancelReport {
         plan,
@@ -1487,10 +1480,11 @@ mod tests {
         assert!(check_lock_time(now + 10, now, false).is_err());
         assert!(check_lock_time(now - 5, now, false).is_err());
         assert!(check_lock_time(now + 31 * 365 * 86_400, now, false).is_err());
-        // A mailbox is deleted after 180 days; a longer lock cannot use one.
+        // The keeper keeps a mailbox until 180 days after the unlock, so a
+        // mailbox adds no limit.
         assert!(check_lock_time(now + 100 * 86_400, now, true).is_ok());
-        assert!(check_lock_time(now + 171 * 86_400, now, true).is_err());
-        assert!(check_lock_time(now + 171 * 86_400, now, false).is_ok());
+        assert!(check_lock_time(now + 400 * 86_400, now, true).is_ok());
+        assert!(check_lock_time(now + 31 * 365 * 86_400, now, true).is_err());
     }
 
     #[test]

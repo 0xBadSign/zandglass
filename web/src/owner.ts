@@ -1020,7 +1020,7 @@ function lockForm(): HTMLElement {
       amount,
       h('label', { for: 'lock-message' }, 'A note to yourself'),
       message,
-      h('label', { class: 'check' }, link, h('span', {}, 'Also keep the kit in a blind mailbox at ', h('strong', {}, 'zandglass.cash'), ' (locks of up to 170 days only: the keeper deletes a mailbox after 180 days). The kit file is what counts.')),
+      h('label', { class: 'check' }, link, h('span', {}, 'Also keep the kit in a blind mailbox at ', h('strong', {}, 'zandglass.cash'), ' (the keeper keeps it until 180 days after the unlock). The kit file is what counts.')),
       h('label', { class: 'check' }, understood, h('span', {}, 'I have my 24 heir words written down and I will keep the kit file safe. I understand I cannot get this money back before the lock ends.')),
       h('label', { for: 'lock-confirm' }, 'Type LOCK to confirm'),
       confirm,

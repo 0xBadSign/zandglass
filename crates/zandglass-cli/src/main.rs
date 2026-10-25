@@ -220,8 +220,8 @@ enum PlanCmd {
         /// A message for yourself, sealed into the kit.
         #[arg(long)]
         message: Option<String>,
-        /// Keeper URL for a claim link (locks up to 170 days only: the keeper
-        /// deletes a mailbox after 180 days).
+        /// Keeper URL for a claim link (the keeper keeps the mailbox until
+        /// 180 days after the unlock).
         #[arg(long)]
         mailbox: Option<String>,
         /// Amount in ZEC to put in the funding request.
@@ -862,14 +862,14 @@ async fn run(cli: Cli) -> Result<()> {
                     }
                     None => {}
                     Some(e) => eprintln!(
-                        "WARNING: some keeper mailboxes could not be deleted ({e}); the keeper removes them after 180 days."
+                        "WARNING: some keeper mailboxes could not be deleted ({e}); the keeper removes them 180 days after the unlock."
                     ),
                 }
             } else if r.plan.mailbox_id.is_some() {
                 match &r.mailbox_error {
                     None => println!("The keeper mailbox was deleted."),
                     Some(e) => eprintln!(
-                        "WARNING: the keeper mailbox could not be deleted ({e}); the keeper removes it after 180 days."
+                        "WARNING: the keeper mailbox could not be deleted ({e}); the keeper removes it 180 days after the unlock."
                     ),
                 }
             }

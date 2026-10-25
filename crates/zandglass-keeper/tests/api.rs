@@ -8,7 +8,19 @@ use zandglass_keeper::{spawn_background, Config};
 
 const SEED: &str = "legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth title";
 
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
 fn kit_json(epoch: u32) -> String {
+    kit_json_unlocking(epoch, now_secs() + 3600)
+}
+
+/// A kit that unlocks at (about) `unlock_at`, unix seconds.
+fn kit_json_unlocking(epoch: u32, unlock_at: u64) -> String {
     let heir = identity_from_phrase(&generate_phrase()).unwrap();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -29,7 +41,7 @@ fn kit_json(epoch: u32) -> String {
             kind: Kind::Legacy,
             sequence: None,
             now,
-            unlock_round: drand::unlock_round(now + 3600),
+            unlock_round: drand::unlock_round(unlock_at),
             heirs: &[heir.code()],
         },
     )
@@ -255,6 +267,8 @@ fn cors_allows_get_from_any_origin() {
         .contains("authorization"));
 }
 
+const DAY: u64 = 86_400;
+
 #[test]
 fn retention_deletes_old_mailboxes() {
     let (base, _d, state) = start();
@@ -263,26 +277,256 @@ fn retention_deletes_old_mailboxes() {
     let fresh = c.create().unwrap();
     c.put(&old.id, &old.write_token, &kit_json(1)).unwrap();
     c.put(&fresh.id, &fresh.write_token, &kit_json(1)).unwrap();
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
+    let now = now_secs();
     state
         .db()
         .set_updated(&old.id, now - zandglass_keeper::RETENTION_SECS - 10)
         .unwrap();
-    assert_eq!(
-        state
-            .db()
-            .purge_before(now - zandglass_keeper::RETENTION_SECS)
-            .unwrap(),
-        1
-    );
+    // Its kit unlocked long ago, so nothing keeps it.
+    state
+        .db()
+        .set_unlock_time(
+            &old.id,
+            Some(now - zandglass_keeper::UNLOCK_GRACE_SECS - 10),
+        )
+        .unwrap();
+    assert_eq!(state.db().purge_stale(now).unwrap(), 1);
     assert_eq!(
         c.get(&old.id, &old.read_token).unwrap_err().code,
         "mailbox_not_found"
     );
     assert!(c.get(&fresh.id, &fresh.read_token).is_ok());
+}
+
+#[test]
+fn a_kit_that_has_not_unlocked_is_not_purged() {
+    let (base, _d, state) = start();
+    let c = MailboxClient::new(&base);
+    let now = now_secs();
+    // Stored today, unlocks in 300 days (a legacy plan with a long flip
+    // period, or a late installment).
+    let m = c.create().unwrap();
+    let kit = kit_json_unlocking(1, now + 300 * DAY);
+    c.put(&m.id, &m.write_token, &kit).unwrap();
+    let unlock = Kit::from_json(&kit).unwrap().unlock_time();
+    assert_eq!(state.db().unlock_time(&m.id).unwrap(), Some(unlock));
+
+    // A purge run 200 days after the store: the old rule would delete it.
+    assert_eq!(state.db().purge_stale(now + 200 * DAY).unwrap(), 0);
+    assert!(c.get(&m.id, &m.read_token).is_ok());
+    // Still there on the unlock day and 179 days after it ...
+    assert_eq!(state.db().purge_stale(unlock + 179 * DAY).unwrap(), 0);
+    assert!(c.get(&m.id, &m.read_token).is_ok());
+    // ... gone once the grace after the unlock has passed.
+    assert_eq!(state.db().purge_stale(unlock + 181 * DAY).unwrap(), 1);
+    assert_eq!(
+        c.get(&m.id, &m.read_token).unwrap_err().code,
+        "mailbox_not_found"
+    );
+}
+
+#[test]
+fn a_kit_unlocked_long_ago_is_purged_when_old() {
+    let (base, _d, state) = start();
+    let c = MailboxClient::new(&base);
+    let now = now_secs();
+    let m = c.create().unwrap();
+    // The server accepts a kit whose unlock time is already past.
+    c.put(
+        &m.id,
+        &m.write_token,
+        &kit_json_unlocking(1, now - 200 * DAY),
+    )
+    .unwrap();
+    // Recently updated: kept whatever the unlock time says.
+    assert_eq!(state.db().purge_stale(now).unwrap(), 0);
+    // Not updated for more than the retention, unlocked 200 days ago: purged.
+    state
+        .db()
+        .set_updated(&m.id, now - zandglass_keeper::RETENTION_SECS - 10)
+        .unwrap();
+    assert_eq!(state.db().purge_stale(now).unwrap(), 1);
+    assert_eq!(
+        c.get(&m.id, &m.read_token).unwrap_err().code,
+        "mailbox_not_found"
+    );
+}
+
+#[test]
+fn a_kit_unlocking_far_in_the_future_is_refused() {
+    let (base, _d, _s) = start();
+    let c = MailboxClient::new(&base);
+    let m = c.create().unwrap();
+    let far = kit_json_unlocking(1, now_secs() + 32 * 365 * DAY);
+    let err = c.put(&m.id, &m.write_token, &far).unwrap_err();
+    assert_eq!(err.code, "kit_invalid");
+    // Thirty years is fine.
+    c.put(
+        &m.id,
+        &m.write_token,
+        &kit_json_unlocking(1, now_secs() + 30 * 365 * DAY),
+    )
+    .unwrap();
+}
+
+#[test]
+fn an_old_database_without_unlock_times_is_migrated() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("old.sqlite");
+    let now = now_secs();
+    let long_kit = Kit::from_json(&kit_json_unlocking(1, now + 300 * DAY)).unwrap();
+    let long_json = long_kit.to_json().unwrap();
+    {
+        // The schema an older keeper created, with no `unlock_time` column.
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE mailboxes (
+                 id TEXT PRIMARY KEY,
+                 write_hash BLOB NOT NULL,
+                 read_hash BLOB NOT NULL,
+                 kit TEXT,
+                 created INTEGER NOT NULL,
+                 updated INTEGER NOT NULL
+             );
+             CREATE INDEX mailboxes_updated ON mailboxes (updated);",
+        )
+        .unwrap();
+        let old = (now - 250 * DAY) as i64;
+        for (id, kit) in [
+            ("longkit", Some(long_json.as_str())),
+            ("garbage", Some("not a kit")),
+            ("empty", None),
+        ] {
+            conn.execute(
+                "INSERT INTO mailboxes (id, write_hash, read_hash, kit, created, updated)
+                 VALUES (?1, x'00', x'01', ?2, ?3, ?3)",
+                rusqlite::params![id, kit, old],
+            )
+            .unwrap();
+        }
+    }
+    for round in 0..2 {
+        // The second open checks that the migration is repeatable.
+        let db = zandglass_keeper::Db::open(&path).unwrap();
+        assert_eq!(
+            db.unlock_time("longkit").unwrap(),
+            Some(long_kit.unlock_time()),
+            "round {round}"
+        );
+        if round == 0 {
+            assert_eq!(db.unlock_time("garbage").unwrap(), None);
+            assert_eq!(db.unlock_time("empty").unwrap(), None);
+            // Updated 250 days ago: the unparsable kit follows the old rule,
+            // the long kit is kept until its unlock.
+            assert_eq!(db.purge_stale(now).unwrap(), 2);
+        }
+    }
+    // The data of the mailbox that stayed is intact.
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    let kept: String = conn
+        .query_row("SELECT kit FROM mailboxes WHERE id = 'longkit'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(kept, long_json);
+}
+
+#[test]
+fn batch_is_charged_n_against_the_per_address_hourly_quota() {
+    // A legitimate installment batch of 120 passes for a fresh address ...
+    let (base, _d, _s) = start();
+    let c = MailboxClient::new(&base);
+    assert_eq!(c.create_many(120).unwrap().len(), 120);
+    assert_eq!(c.create_many(120).unwrap().len(), 120);
+    // ... but the default 300 an hour runs out: a third batch needs 360.
+    assert_eq!(c.create_many(120).unwrap_err().code, "rate_limited");
+    // The refused batch took nothing: 60 still fit, then singles do not.
+    assert_eq!(c.create_many(60).unwrap().len(), 60);
+    assert_eq!(c.create().unwrap_err().code, "rate_limited");
+
+    // A small quota: batches count N, singles count 1.
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = Config {
+        max_creates_per_ip_per_hour: 5,
+        ..Config::default()
+    };
+    let (addr, state) = spawn_background(&dir.path().join("k.sqlite"), cfg).unwrap();
+    let c = MailboxClient::new(&format!("http://{addr}"));
+    c.create_many(3).unwrap();
+    assert_eq!(c.create_many(3).unwrap_err().code, "rate_limited");
+    c.create_many(2).unwrap();
+    assert_eq!(c.create().unwrap_err().code, "rate_limited");
+    assert_eq!(state.db().count().unwrap(), 5);
+}
+
+#[test]
+fn a_client_over_its_quota_cannot_use_up_the_global_hourly_cap() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = Config {
+        max_creates_per_ip_per_hour: 4,
+        max_creates_per_hour: 6,
+        trust_proxy: true,
+        ..Config::default()
+    };
+    let (addr, _s) = spawn_background(&dir.path().join("k.sqlite"), cfg).unwrap();
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .build()
+        .into();
+    let post = |cf: &str, count: usize| {
+        let req = ureq::http::Request::builder()
+            .method("POST")
+            .uri(format!("http://{addr}/v1/mailboxes"))
+            .header("CF-Connecting-IP", cf)
+            .body(format!("{{\"count\":{count}}}"))
+            .unwrap();
+        agent.run(req).unwrap().status().as_u16()
+    };
+    assert_eq!(post("198.51.100.1", 4), 201);
+    // The first client is over its quota; refused attempts book nothing.
+    for _ in 0..5 {
+        assert_eq!(post("198.51.100.1", 2), 429);
+    }
+    // Another client can still use the rest of the global cap (2 of 6 left).
+    assert_eq!(post("198.51.100.2", 2), 201);
+    assert_eq!(post("198.51.100.2", 1), 429);
+}
+
+#[test]
+fn never_filled_mailboxes_have_their_own_smaller_cap() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = Config {
+        max_empty_mailboxes: 3,
+        ..Config::default()
+    };
+    let (addr, state) = spawn_background(&dir.path().join("k.sqlite"), cfg).unwrap();
+    let c = MailboxClient::new(&format!("http://{addr}"));
+    let made = c.create_many(3).unwrap();
+    // The cap on empty ones is reached, although the keeper is far from full.
+    assert_eq!(c.create().unwrap_err().code, "rate_limited");
+    assert_eq!(c.create_many(2).unwrap_err().code, "rate_limited");
+    // Filling one frees a slot for a new empty one; the filled one stays.
+    c.put(&made[0].id, &made[0].write_token, &kit_json(1))
+        .unwrap();
+    c.create().unwrap();
+    assert_eq!(c.create().unwrap_err().code, "rate_limited");
+    // Empty ones still expire after a day.
+    let now = now_secs();
+    for m in &made[1..] {
+        state
+            .db()
+            .set_created(&m.id, now - zandglass_keeper::EMPTY_RETENTION_SECS - 10)
+            .unwrap();
+    }
+    assert_eq!(
+        state
+            .db()
+            .purge_empty_before(now - zandglass_keeper::EMPTY_RETENTION_SECS)
+            .unwrap(),
+        2
+    );
+    assert!(c.get(&made[0].id, &made[0].read_token).is_ok());
+    c.create_many(2).unwrap();
 }
 
 #[test]

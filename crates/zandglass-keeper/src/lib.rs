@@ -20,6 +20,7 @@ use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
+use axum::Extension;
 use axum::{Json, Router};
 use rand::{rngs::OsRng, RngCore};
 use serde_json::json;
@@ -30,8 +31,15 @@ use tower_http::services::ServeDir;
 use zandglass_core::mailbox::{MAX_BATCH, MAX_KIT_BYTES};
 use zandglass_core::Kit;
 
-/// Mailboxes not updated for this long are deleted.
+/// A mailbox is only purged once it has not been updated for this long ...
 pub const RETENTION_SECS: u64 = 180 * 86_400;
+
+/// ... and its kit (when the keeper knows the unlock time) unlocked at least
+/// this long ago, so heirs keep half a year after the unlock to fetch it.
+pub const UNLOCK_GRACE_SECS: u64 = 180 * 86_400;
+
+/// A kit that unlocks further than this in the future is refused (sanity).
+pub const MAX_UNLOCK_AHEAD_SECS: u64 = 31 * 365 * 86_400;
 
 /// Mailboxes that never received a kit are deleted after this long.
 pub const EMPTY_RETENTION_SECS: u64 = 86_400;
@@ -40,6 +48,12 @@ pub const EMPTY_RETENTION_SECS: u64 = 86_400;
 pub const DEFAULT_MAX_MAILBOXES: u64 = 50_000;
 /// Mailboxes the whole keeper creates per hour by default.
 pub const DEFAULT_MAX_CREATES_PER_HOUR: usize = 2_000;
+/// Never-filled mailboxes the whole keeper may hold at once by default, so a
+/// flood of empty mailboxes cannot crowd out filled ones.
+pub const DEFAULT_MAX_EMPTY_MAILBOXES: u64 = 10_000;
+/// Mailboxes one client bucket may create per hour by default (a batch
+/// counts N; one installment plan needs at most 120).
+pub const DEFAULT_MAX_CREATES_PER_IP_PER_HOUR: usize = 300;
 
 /// Runtime configuration.
 #[derive(Clone)]
@@ -53,6 +67,11 @@ pub struct Config {
     pub max_mailboxes: u64,
     /// Most mailboxes created per hour across all clients.
     pub max_creates_per_hour: usize,
+    /// Most never-filled mailboxes held at once (they expire after a day).
+    pub max_empty_mailboxes: u64,
+    /// Most mailboxes one client bucket (an IPv4 address or an IPv6 /48)
+    /// creates per hour; a batch counts N.
+    pub max_creates_per_ip_per_hour: usize,
 }
 
 impl Default for Config {
@@ -62,6 +81,8 @@ impl Default for Config {
             web_dir: None,
             max_mailboxes: DEFAULT_MAX_MAILBOXES,
             max_creates_per_hour: DEFAULT_MAX_CREATES_PER_HOUR,
+            max_empty_mailboxes: DEFAULT_MAX_EMPTY_MAILBOXES,
+            max_creates_per_ip_per_hour: DEFAULT_MAX_CREATES_PER_IP_PER_HOUR,
         }
     }
 }
@@ -89,6 +110,48 @@ fn random_hex(bytes: usize) -> String {
     hex::encode(buf)
 }
 
+/// Upgrades a database created by an older keeper. Version 1 had no
+/// `unlock_time` column: add it (a metadata-only change in SQLite), then fill
+/// it for every stored kit so those mailboxes also get unlock-aware
+/// retention. Rows whose kit cannot be parsed keep NULL (the plain
+/// `RETENTION_SECS` rule). Safe to run on every start.
+fn migrate(conn: &rusqlite::Connection) -> Result<()> {
+    let has_column: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('mailboxes') WHERE name = 'unlock_time'",
+        [],
+        |r| r.get(0),
+    )?;
+    if has_column == 0 {
+        conn.execute_batch("ALTER TABLE mailboxes ADD COLUMN unlock_time INTEGER")?;
+    }
+    let pending: Vec<(String, String)> = {
+        let mut stmt = conn.prepare(
+            "SELECT id, kit FROM mailboxes WHERE kit IS NOT NULL AND unlock_time IS NULL",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        rows.collect::<std::result::Result<_, _>>()?
+    };
+    if pending.is_empty() {
+        return Ok(());
+    }
+    let tx = conn.unchecked_transaction()?;
+    for (id, kit) in pending {
+        if let Some(t) = kit_unlock_time(&kit) {
+            tx.execute(
+                "UPDATE mailboxes SET unlock_time = ?2 WHERE id = ?1",
+                rusqlite::params![id, t as i64],
+            )?;
+        }
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+/// The unix time a stored kit unlocks, when it parses.
+fn kit_unlock_time(kit: &str) -> Option<u64> {
+    Kit::from_json(kit).ok().map(|k| k.unlock_time())
+}
+
 /// SQLite storage.
 pub struct Db {
     conn: Mutex<rusqlite::Connection>,
@@ -111,10 +174,12 @@ impl Db {
                  read_hash BLOB NOT NULL,
                  kit TEXT,
                  created INTEGER NOT NULL,
-                 updated INTEGER NOT NULL
+                 updated INTEGER NOT NULL,
+                 unlock_time INTEGER
              );
              CREATE INDEX IF NOT EXISTS mailboxes_updated ON mailboxes (updated);",
         )?;
+        migrate(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -145,10 +210,22 @@ impl Db {
         })
     }
 
+    /// Stores a kit; the unlock time is read from the kit itself.
     fn put_kit(&self, id: &str, kit: &str, now: u64) -> Result<()> {
+        self.put_kit_unlocking(id, kit, kit_unlock_time(kit), now)
+    }
+
+    /// Stores a kit whose unlock time (unix seconds) is already known.
+    fn put_kit_unlocking(
+        &self,
+        id: &str,
+        kit: &str,
+        unlock_time: Option<u64>,
+        now: u64,
+    ) -> Result<()> {
         self.conn().execute(
-            "UPDATE mailboxes SET kit = ?2, updated = ?3 WHERE id = ?1",
-            rusqlite::params![id, kit, now as i64],
+            "UPDATE mailboxes SET kit = ?2, updated = ?3, unlock_time = ?4 WHERE id = ?1",
+            rusqlite::params![id, kit, now as i64, unlock_time.map(|t| t as i64)],
         )?;
         Ok(())
     }
@@ -161,10 +238,21 @@ impl Db {
             })?)
     }
 
-    fn count(&self) -> Result<u64> {
+    /// All mailboxes held.
+    pub fn count(&self) -> Result<u64> {
         let n: i64 = self
             .conn()
             .query_row("SELECT COUNT(*) FROM mailboxes", [], |r| r.get(0))?;
+        Ok(u64::try_from(n).unwrap_or(0))
+    }
+
+    /// Mailboxes that never received a kit.
+    fn count_empty(&self) -> Result<u64> {
+        let n: i64 = self.conn().query_row(
+            "SELECT COUNT(*) FROM mailboxes WHERE kit IS NULL",
+            [],
+            |r| r.get(0),
+        )?;
         Ok(u64::try_from(n).unwrap_or(0))
     }
 
@@ -182,11 +270,39 @@ impl Db {
         Ok(())
     }
 
-    /// Deletes mailboxes last updated before `cutoff`; returns how many.
-    pub fn purge_before(&self, cutoff: u64) -> Result<usize> {
-        Ok(self
-            .conn()
-            .execute("DELETE FROM mailboxes WHERE updated < ?1", [cutoff as i64])?)
+    /// Deletes stale mailboxes as of `now`; returns how many. A mailbox goes
+    /// when it was last updated more than `RETENTION_SECS` ago AND its kit
+    /// (if the keeper knows the unlock time) unlocked more than
+    /// `UNLOCK_GRACE_SECS` ago: a kit that has not unlocked yet is never
+    /// purged.
+    pub fn purge_stale(&self, now: u64) -> Result<usize> {
+        Ok(self.conn().execute(
+            "DELETE FROM mailboxes WHERE updated < ?1
+               AND (unlock_time IS NULL OR unlock_time < ?2)",
+            rusqlite::params![
+                now.saturating_sub(RETENTION_SECS) as i64,
+                now.saturating_sub(UNLOCK_GRACE_SECS) as i64
+            ],
+        )?)
+    }
+
+    /// Test helper: the stored unlock time of a mailbox.
+    pub fn unlock_time(&self, id: &str) -> Result<Option<u64>> {
+        let t: Option<i64> = self.conn().query_row(
+            "SELECT unlock_time FROM mailboxes WHERE id = ?1",
+            [id],
+            |r| r.get(0),
+        )?;
+        Ok(t.and_then(|t| u64::try_from(t).ok()))
+    }
+
+    /// Test helper: override a mailbox's stored unlock time.
+    pub fn set_unlock_time(&self, id: &str, unlock_time: Option<u64>) -> Result<()> {
+        self.conn().execute(
+            "UPDATE mailboxes SET unlock_time = ?2 WHERE id = ?1",
+            rusqlite::params![id, unlock_time.map(|t| t as i64)],
+        )?;
+        Ok(())
     }
 
     /// Deletes mailboxes that never received a kit and were created before
@@ -267,6 +383,11 @@ impl Limiter {
     }
 
     fn allow(&self, ip: IpAddr) -> bool {
+        self.allow_n(ip, 1.0)
+    }
+
+    /// Takes `cost` tokens from the address's bucket, or none if it holds fewer.
+    fn allow_n(&self, ip: IpAddr, cost: f64) -> bool {
         let key = bucket_key(ip);
         let now = Instant::now();
         let mut map = self.buckets.lock().unwrap_or_else(|p| p.into_inner());
@@ -292,8 +413,8 @@ impl Limiter {
         let elapsed = now.duration_since(b.last).as_secs_f64();
         b.tokens = (b.tokens + elapsed * self.per_sec).min(self.capacity);
         b.last = now;
-        if b.tokens >= 1.0 {
-            b.tokens -= 1.0;
+        if b.tokens >= cost {
+            b.tokens -= cost;
             true
         } else {
             false
@@ -306,7 +427,10 @@ pub struct AppState {
     db: Arc<Db>,
     config: Config,
     general: Limiter,
+    /// Creation requests per client (a batch is one request here).
     creation: Limiter,
+    /// Mailboxes created per client and hour (a batch is charged N).
+    creation_quota: Limiter,
     /// When the mailboxes created in the last hour were created.
     recent_creations: Mutex<VecDeque<Instant>>,
     playground: OnceLock<Arc<playground::Playground>>,
@@ -315,14 +439,18 @@ pub struct AppState {
 impl AppState {
     /// Builds the state with the default rate limits.
     pub fn new(db: Db, config: Config) -> Arc<Self> {
+        let quota = config.max_creates_per_ip_per_hour as f64;
         Arc::new(Self {
             db: Arc::new(db),
             config,
             playground: OnceLock::new(),
             // 60 requests in a burst, then 2 per second.
             general: Limiter::new(60.0, 2.0),
-            // 10 new mailboxes in a burst, then 1 per minute.
+            // 10 creation requests in a burst, then 1 per minute.
             creation: Limiter::new(10.0, 1.0 / 60.0),
+            // The whole hourly quota may be used at once, then it refills
+            // evenly over the hour.
+            creation_quota: Limiter::new(quota, quota / 3600.0),
             recent_creations: Mutex::new(VecDeque::new()),
         })
     }
@@ -463,11 +591,18 @@ async fn health() -> Json<serde_json::Value> {
     Json(json!({ "ok": true, "version": zandglass_core::VERSION }))
 }
 
+/// The client address the rate limiter saw, passed on to the handlers.
+#[derive(Clone, Copy)]
+struct ClientAddr(IpAddr);
+
 /// `POST /v1/mailboxes`: one mailbox, or `{"count": N}` for a batch. A batch
-/// counts once against the per-address limiter (in the middleware) and N
-/// against the global caps; it is refused as a whole if it does not fit.
+/// counts once against the per-address request limiter (in the middleware),
+/// N against the per-address hourly quota and N against the global caps (the
+/// hourly cap, the total, and the never-filled total); it is refused as a
+/// whole if it does not fit.
 async fn create_mailbox(
     State(state): State<Arc<AppState>>,
+    Extension(client): Extension<ClientAddr>,
     body: Body,
 ) -> Result<Response, ApiError> {
     let full = || {
@@ -500,9 +635,15 @@ async fn create_mailbox(
         (n, n > 1)
     };
     let held = state.db.count()?;
+    let empty = state.db.count_empty()?;
     if held.saturating_add(count as u64) > state.config.max_mailboxes
-        || !state.allow_creation(count)
+        || empty.saturating_add(count as u64) > state.config.max_empty_mailboxes
     {
+        return Err(full());
+    }
+    // The client's own quota is charged before the global hourly cap, so a
+    // client over its quota cannot use up the shared cap.
+    if !state.creation_quota.allow_n(client.0, count as f64) || !state.allow_creation(count) {
         return Err(full());
     }
     let now = unix_now();
@@ -548,8 +689,18 @@ async fn put_kit(
             "The kit is not valid UTF-8 JSON.",
         )
     })?;
-    let stored = canonical_kit(text)?;
-    state.db.put_kit(&id, &stored, unix_now())?;
+    let now = unix_now();
+    let (stored, unlock_time) = canonical_kit(text)?;
+    if unlock_time > now.saturating_add(MAX_UNLOCK_AHEAD_SECS) {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "kit_invalid",
+            "The kit unlocks more than 31 years from now.",
+        ));
+    }
+    state
+        .db
+        .put_kit_unlocking(&id, &stored, Some(unlock_time), now)?;
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -571,9 +722,9 @@ const KIT_FIELDS: [&str; 12] = [
 ];
 
 /// Validates a kit and returns its canonical re-serialisation, which is what
-/// the keeper stores (never the submitted text). Public part only: format,
-/// version, drand chain, round and time.
-fn canonical_kit(text: &str) -> Result<String, ApiError> {
+/// the keeper stores (never the submitted text), with the unix time the kit
+/// unlocks. Public part only: format, version, drand chain, round and time.
+fn canonical_kit(text: &str) -> Result<(String, u64), ApiError> {
     let invalid = || {
         ApiError::new(
             StatusCode::BAD_REQUEST,
@@ -594,7 +745,8 @@ fn canonical_kit(text: &str) -> Result<String, ApiError> {
     if fields.keys().any(|k| !KIT_FIELDS.contains(&k.as_str())) {
         return Err(invalid());
     }
-    kit.to_json().map_err(|_| invalid())
+    let json = kit.to_json().map_err(|_| invalid())?;
+    Ok((json, kit.unlock_time()))
 }
 
 async fn get_kit(
@@ -645,8 +797,13 @@ fn client_ip(state: &AppState, req: &Request) -> Option<IpAddr> {
         .map(|c| c.0.ip())
 }
 
-async fn rate_limit(State(state): State<Arc<AppState>>, req: Request, next: Next) -> Response {
-    if let Some(ip) = client_ip(&state, &req) {
+async fn rate_limit(State(state): State<Arc<AppState>>, mut req: Request, next: Next) -> Response {
+    let ip = client_ip(&state, &req);
+    // Handlers that charge their own quotas read the address from here.
+    req.extensions_mut().insert(ClientAddr(
+        ip.unwrap_or(IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)),
+    ));
+    if let Some(ip) = ip {
         let creating = req.method() == Method::POST
             && matches!(
                 req.uri().path(),
@@ -782,9 +939,9 @@ pub fn app(state: Arc<AppState>) -> Router {
 pub fn spawn_retention(state: Arc<AppState>) {
     tokio::spawn(async move {
         loop {
-            let _ = state
-                .db
-                .purge_before(unix_now().saturating_sub(RETENTION_SECS));
+            // Kits that have not unlocked yet (plus a grace period after)
+            // are kept however long ago they were stored.
+            let _ = state.db.purge_stale(unix_now());
             // Empty mailboxes (never written) must not hold a slot for months.
             let _ = state
                 .db
@@ -844,6 +1001,16 @@ mod tests {
         assert!(l.allow(a));
         assert!(!l.allow(b), "same /48 shares one bucket");
         assert!(l.allow(c));
+    }
+
+    #[test]
+    fn a_costly_request_takes_n_tokens_or_none() {
+        let l = Limiter::new(10.0, 0.0);
+        assert!(l.allow_n(ip(1), 7.0));
+        assert!(!l.allow_n(ip(1), 4.0), "only 3 tokens are left");
+        assert!(l.allow_n(ip(1), 3.0), "a refusal takes nothing");
+        assert!(!l.allow(ip(1)));
+        assert!(!l.allow_n(ip(2), 11.0), "more than the bucket never passes");
     }
 
     #[test]

@@ -21,7 +21,7 @@ All bodies are JSON. Tokens go in `Authorization: Bearer <token>`.
 - A claim link is `<keeper>/claim#m=<id>&r=<read token>` (the heir page). Older links ending in `/claim.html#...` are also accepted, and the keeper redirects `/claim.html` (and the other `.html` pages) to the clean address. The heir page also accepts an optional `&k=<keeper origin>` when the page and the keeper live on different origins. The fragment is not sent to any server by the browser; the page uses it to build the `GET` request.
 - `PUT` validates the kit's public part offline, with the same rules as `docs/KIT_FORMAT.md` section 4 (format, version, plan id, drand chain, round and time consistency, header round, and the optional `owner_key`/`owner_sig` pair: both absent, or both present with a valid Ed25519 signature). It cannot and does not look inside `sealed`. Kits are limited to 64 KiB; a signed kit is about 250 bytes larger than an unsigned one.
 - A mailbox that has been created but never filled answers `GET` with `404 mailbox_not_found`. A mailbox that never receives a kit is deleted after 24 hours.
-- A batch request (`count` above 1) counts once against the per-address limiter, but N times against the keeper-wide limits (mailboxes per hour, mailboxes held). It is refused as a whole with `429 rate_limited` when it does not fit. A `count` outside 1 to 120, or a body that is not `{ "count": N }`, answers `400 invalid_request`. Without a body, or with `count` 1, the reply is the single-mailbox shape, so existing clients keep working.
+- A batch request (`count` above 1) counts once against the per-address request limiter, but N times against the per-address hourly quota (300 mailboxes per client bucket and hour; one installment plan needs at most 120) and N times against the keeper-wide limits (mailboxes per hour, mailboxes held, and never-filled mailboxes held, 10000 at most so empty mailboxes cannot crowd out filled ones). It is refused as a whole with `429 rate_limited` when it does not fit. A `count` outside 1 to 120, or a body that is not `{ "count": N }`, answers `400 invalid_request`. Without a body, or with `count` 1, the reply is the single-mailbox shape, so existing clients keep working.
 
 Example:
 
@@ -55,7 +55,7 @@ Errors are `{ "error": "<code>", "message": "<plain English>" }`.
 
 - Kit size: 64 KiB (`MAX_KIT_BYTES`).
 - Rate limit per client address, in memory only (IPv6 addresses are grouped by /48): a burst of 60 requests, then 2 per second. Creating a mailbox (and a playground session) has its own bucket: a burst of 10, then 1 per minute.
-- With `ZANDGLASS_TRUST_PROXY=1` the client address is taken from `CF-Connecting-IP` when present (Cloudflare), otherwise from the last entry of `X-Forwarded-For`. Enable it only behind a reverse proxy you control.
+- With `ZANDGLASS_TRUST_PROXY=1` the client address is taken from `CF-Connecting-IP` when present (Cloudflare), otherwise from the last entry of `X-Forwarded-For`. Enable it only behind a reverse proxy you control, and make sure the origin is reachable only through that proxy (the production keeper listens on 127.0.0.1 behind a cloudflared tunnel): otherwise a client could send its own `CF-Connecting-IP` and pick its rate-limit bucket.
 
 Every response carries `Strict-Transport-Security: max-age=31536000`.
 
@@ -65,7 +65,7 @@ Any origin is allowed (`Access-Control-Allow-Origin: *`), methods `GET` and `POS
 
 ## Retention
 
-A mailbox is deleted 180 days after its last update (creation counts as an update). A background task checks hourly. The owner can delete earlier with `DELETE`. The keeper keeps only the latest kit; replacing it removes the old one.
+A mailbox that holds a kit is deleted when both hold: it was last updated more than 180 days ago, and its kit unlocked more than 180 days ago, so heirs keep half a year after the unlock to fetch it. The keeper reads the unlock time from the kit when it is stored (a kit that unlocks more than 31 years from now is refused with `400 kit_invalid`); a kit that has not unlocked yet is never deleted for age. A background task checks hourly. Databases from older keepers are migrated on start (an `unlock_time` column is added and filled from the stored kits). A mailbox that never receives a kit is deleted after 24 hours (see above). The owner can delete earlier with `DELETE`. The keeper keeps only the latest kit; replacing it removes the old one.
 
 ## Privacy
 
@@ -82,5 +82,9 @@ A mailbox is deleted 180 days after its last update (creation counts as an updat
 | `ZANDGLASS_LISTEN` | `127.0.0.1:8787` | Address to bind |
 | `ZANDGLASS_DB` | `./keeper.sqlite` | SQLite database file |
 | `ZANDGLASS_TRUST_PROXY` | off | `1` to use `CF-Connecting-IP` or `X-Forwarded-For` for rate limiting |
+| `ZANDGLASS_MAX_MAILBOXES` | `50000` | Mailboxes held at once |
+| `ZANDGLASS_MAX_CREATES_PER_HOUR` | `2000` | Mailboxes created per hour, all clients together |
+| `ZANDGLASS_MAX_EMPTY_MAILBOXES` | `10000` | Never-filled mailboxes held at once |
+| `ZANDGLASS_MAX_CREATES_PER_IP_PER_HOUR` | `300` | Mailboxes created per hour by one client bucket (a batch counts N) |
 | `ZANDGLASS_WEB_DIR` | none | Directory of static files (the built `web/dist`) served at `/` |
 | `ZANDGLASS_PLAYGROUND_*` | off | Enables the playground; see [PLAYGROUND_API.md](PLAYGROUND_API.md) |
