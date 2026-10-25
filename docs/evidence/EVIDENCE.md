@@ -2,6 +2,20 @@
 
 Each row is an on-chain or reproducible proof. All times are UTC.
 
+## Verify it in two minutes
+
+The three mainnet transactions of the end-to-end run, on a public explorer:
+
+| Step | Transaction |
+|---|---|
+| Fund the vault (epoch 1) | [`b58f467f…`](https://mainnet.zcashexplorer.app/transactions/b58f467f642d9e7a777f6d84f73e6dbd8fea3cf2fd51f3f526d3a5c2d29adc01) |
+| Flip to a fresh vault (epoch 2) | [`d5ce33a9…`](https://mainnet.zcashexplorer.app/transactions/d5ce33a9c4dc04a5b12609cf2865d0100af3c2aae4ae5f1f570d8482ea5cebfe) |
+| Heir claim after the unlock | [`e4fb38b6…`](https://mainnet.zcashexplorer.app/transactions/e4fb38b61ac5a81623701809b29e1ff50adedf1bb441fa67e573495aed01a88c) |
+
+What to look for: each is fully shielded ("Public Inputs / Outputs 0 / 0"), pays the standard ZIP 317 fee (0.0001 ZEC for these sizes) and, in the raw JSON, has the default expiry of 40 blocks after the height it was built for. Nothing marks it as a vault, a flip or a claim: it has the shape of any shielded wallet's send. The live vault's funding ([`e3c9432f…`](https://mainnet.zcashexplorer.app/transactions/e3c9432f7a72a5ab34a361d74c933f91e49fadc3d7ce85a2fd58bc71c88fedf1)) was sent from a third-party wallet; its unlock time is published at [zandglass.cash/live-vault.json](https://zandglass.cash/live-vault.json) and the claim txid is added there after 2026-11-12T20:37:33Z.
+
+## All runs
+
 | Date | Network | What it proves | Reference |
 |---|---|---|---|
 | 2026-09-30 | testnet | A vault seed is funded; funds land in the Ironwood pool | faucet tx `d49a3bbceb9766194bbe9e8c184677b74c00ce2f419318c7adc7e17bcd571ea1` (block 4423675) |

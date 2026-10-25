@@ -56,7 +56,7 @@ Properties:
 
 ## 4. Installments
 
-The kit format already carries `kind: "installment"` and a `sequence` (index, count), and the kit validator checks them. **The `plan installments` command does not exist on this branch.** Splitting a funding vault into N payee vaults, payee auto-claim and installment cancel are in progress (task T2.3 in `docs/PROGRESS.md`). `claim --wait` waits for one kit; there is no `--watch` mode yet.
+Scheduled payments (an allowance, a salary) reuse the same mechanism, one vault per installment. `zandglass plan installments --payee <heir code> --amount <ZEC> --every <period> --count <N>` creates the plan and a funding request; once the funding vault is funded, `zandglass installments split` sends it into N installment vaults in one ordinary transaction and seals one kit per installment (kit `kind: "installment"` with a `sequence` index and count), each unlocking one period after the previous one. The payee runs `zandglass claim --watch --links-file <plan>-claim-links.txt --to <address>`, which waits for each unlock and sweeps every installment as it opens. `zandglass cancel` sweeps the installments that are still locked back to the owner; their kits then open empty vaults. The owner panel offers the same steps (evidence: `docs/evidence/EVIDENCE.md`, 2026-10-01 rows).
 
 ## 5. Claim paths
 
@@ -75,7 +75,7 @@ The claim sweep is not subject to the 0.25 ZEC cap; the cap applies to creating 
 
 A kit holds a seed, not a transaction. Every transaction (funding aside, which comes from any wallet) is built when it is sent, by the wallet code of the day, with the current consensus branch, anchor and expiry. A network upgrade therefore cannot make a kit stale. This is the main reason the pre-signed design was rejected (`docs/PRIVACY.md`).
 
-What an upgrade does require is a wallet-library bump. The released `zcash_client_*` crates this repository builds on do not yet know NU7 (decision D-011); the plan is to bump before mainnet NU7 (2026-11-05). Balances are read, and sweeps taken, from the Sapling, Orchard and Ironwood pools.
+What an upgrade does require is a wallet-library bump. This repository builds on `zcash_client_backend` 0.25 and `zcash_protocol` 0.11, which know NU7 (mainnet activation height 3,543,405, around 2026-11-05); the bump was tested on testnet, which already runs NU7 (`docs/evidence/EVIDENCE.md`, 2026-10-25). Balances are read, and sweeps taken, from the Sapling, Orchard and Ironwood pools.
 
 ## 7. Time math
 

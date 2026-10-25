@@ -20,7 +20,7 @@ How it works: your heir makes a key in the browser and sends you a public heir c
 
 Use it on Monday: a downloadable program (Windows, macOS, Linux) opens an owner panel on your own computer to create plans, fund them by QR code, flip with one click and add calendar reminders. A draft ZIP lets any wallet adopt the kit format.
 
-Why it does not leak: no smart contract, no custody, nothing pre-signed. Every funding, flip and claim is an ordinary shielded transaction built by the standard librustzcash flow at send time (default expiry and anchor, ZIP 317 fee, OvkPolicy::Discard). Kits are constant-size; the mailbox keeper stores only ciphertext it can never open. An independent review found no critical issue.
+Why it does not leak: no smart contract, no custody, nothing pre-signed. Every funding, flip and claim is an ordinary shielded transaction built by the standard librustzcash flow at send time (default expiry and anchor, ZIP 317 fee, OvkPolicy::Discard). Kits are constant-size; the mailbox keeper stores only ciphertext it can never open. The privacy review is in docs/PRIVACY.md.
 
 Real: mainnet fund, flip and claim txids, a public mainnet playground, and a live vault that unlocks on 2026-11-12 during judging; testnet runs of installments and of a vault spent in ECC's zcash-devtool. Evidence: docs/evidence/EVIDENCE.md.
 Mock: in the playground the server plays the owner with a tiny demo vault (your heir key stays in your browser); timers are minutes. Unaudited; mainnet plans are capped.

@@ -7,9 +7,33 @@
     <meta name="description" content="Zandglass gives a shielded Zcash vault a time-locked recovery path. Your heir can open it only after you stop checking in, and nothing about it appears on chain." />
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
     <title>Zandglass: time-locked inheritance for shielded Zcash</title>
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Zandglass" />
+    <meta property="og:title" content="Zandglass: time-locked inheritance for shielded Zcash" />
+    <meta property="og:description" content="Zandglass gives a shielded Zcash vault a time-locked recovery path. Your heir can open it only after you stop checking in, and nothing about it appears on chain." />
+    <meta property="og:url" content="https://zandglass.cash/" />
+    <meta property="og:image" content="https://zandglass.cash/og.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="prerender">
+        <h1>Pass on your shielded ZEC. Privately.</h1>
+        <p>Shielded Zcash has no timelocks, so there is no private way to pass it on. Zandglass gives a vault a time-locked recovery path: your heir can open it only after you stop checking in, and nothing on chain reveals the plan, the heir or the amounts.</p>
+        <h2>How it works</h2>
+        <ol>
+          <li>Your heir makes a key in the browser and sends you a public heir code.</li>
+          <li>Zandglass moves your funds into a fresh vault and seals its seed twice: to the heir code (age, X25519) and to a future drand round (timelock).</li>
+          <li>While you are around you flip: funds move to a new vault and a new kit is sealed, so old kits open empty vaults.</li>
+          <li>If you stop, the sand runs out: the heir opens the kit and restores the vault in any Zcash wallet.</li>
+        </ol>
+        <h2>Real, on mainnet</h2>
+        <p>Every funding, flip and claim is an ordinary shielded transaction (default expiry and anchor, ZIP 317 fee, no outgoing viewing key). Mainnet evidence: fund b58f467f..., flip d5ce33a9..., claim e4fb38b6... A live vault unlocks on 2026-11-12. Details in the <a href="https://github.com/0xBadSign/zandglass/blob/main/docs/evidence/EVIDENCE.md">evidence file</a>.</p>
+        <p><a href="./playground">Try the playground</a> &middot; <a href="./heir">Become an heir</a> &middot; <a href="https://github.com/0xBadSign/zandglass">Source code</a></p>
+      </div>
+    </div>
     <noscript><p>Zandglass needs JavaScript to run. Nothing is sent anywhere.</p></noscript>
     <script type="module" src="/src/home.ts"></script>
   </body>

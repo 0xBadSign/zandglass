@@ -986,3 +986,13 @@ main > *:nth-child(n + 4) {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Static text shown before the scripts run (and to crawlers and link previews). */
+.prerender {
+  max-width: 42rem;
+  margin: 0 auto;
+  padding: 4rem 1rem;
+  line-height: 1.6;
+}
+.prerender h1 { font-size: 2.2rem; line-height: 1.15; margin: 0 0 1rem; }
+.prerender h2 { font-size: 1.2rem; margin: 2rem 0 0.5rem; }

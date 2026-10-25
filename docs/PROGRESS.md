@@ -8,12 +8,12 @@ Live state of the project. The agent updates it at the end of every work unit, n
 
 | | |
 |---|---|
-| Last updated | 2026-09-30 |
+| Last updated | 2026-10-25 |
 | Plan version | 2 |
-| Current milestone | M0 Foundations and feasibility (starts 2026-10-01) |
-| Next task | T2.3 installments, T2.4 multiple heirs (already supported in core and CLI: verify), then M3 landing, playground and deploy; T1.5 mainnet run when O-5 arrives |
-| Blocked / waiting on owner | O-5 (0.02 ZEC to the mainnet float address, by 10-08) |
-| Days to deadline | 28 (submissions due 2026-10-28 23:59 UTC; owner submits by 10-27) |
+| Current milestone | M5 Submission (all of M0 to M4 done) |
+| Next task | Release v0.1.0 binaries, owner submits the form, tag `zecathon-submission` at the deadline; during judging keep the site up and claim the live vault after 2026-11-12T20:37:33Z |
+| Blocked / waiting on owner | O-6 submit the form |
+| Days to deadline | 3 (submissions due 2026-10-28 23:59 UTC) |
 | Health | on track |
 
 ---
@@ -26,7 +26,7 @@ Live state of the project. The agent updates it at the end of every work unit, n
 | O-2 | Server: reuse the existing VPS (install the agent's new SSH public key) or buy a Hetzner CX33 | 2026-10-12 | done 2026-10-01: existing VPS reachable with the deploy key (4 vCPU, 6 GB RAM, 50 GB; details in .private/SERVER.md) |
 | O-3 | (Optional) domain | 2026-10-14 | done 2026-10-01: `zandglass.cash`, nameservers on Cloudflare |
 | O-4 | (If needed) testnet TAZ to the agent's development address | 2026-10-02 | done 2026-09-30: owner sent 1 TAZ |
-| O-5 | 0.02 ZEC (0.01 is enough to start) to the mainnet demo and evidence wallet (what is left is returned) | 2026-10-08 | open: NEW address `u1zhzeajwadh8vr6rtjmyf3ykkscyu79vujvych0wxuhpwn450whzymh99cmujj0za86cuy8gk5qymv4dr65ymfc0nhafndczy9qgzukxx` (birthday 3502506). The earlier address is abandoned (D-015): never send to it |
+| O-5 | 0.02 ZEC (0.01 is enough to start) to the mainnet demo and evidence wallet (what is left is returned) | 2026-10-08 | done: funded by the owner; the address is kept in `.private/` |
 | O-6 | Save a draft (10-25) and SUBMIT (10-27) with texts from `docs/SUBMISSION.md` and the judge code from `.private/`; prize address; repository-public box | 10-25 / 10-27 | open |
 | O-7 | (Optional) video voiceover | 2026-10-24 | open |
 
