@@ -9,6 +9,7 @@ import { BeaconNotReadyError, NetworkError, relayClient } from './lib/drand';
 import { InvalidPhraseError, isValidPhrase } from './lib/heir';
 import {
   KitDamagedError,
+  PRACTICE_HANDOFF_KEY,
   WrongHeirKeyError,
   openKit,
   parseKit,
@@ -613,7 +614,28 @@ function restoreGuide(payload: { birthday_height: number; network?: string } | n
   return box;
 }
 
+function practiceView(): HTMLElement {
+  return h(
+    'section',
+    { class: 'card', id: 'practice-result' },
+    h('h2', { tabindex: '-1', id: 'result-title' }, 'Practice complete'),
+    h(
+      'div',
+      { class: 'notice ok', role: 'status' },
+      h(
+        'div',
+        {},
+        h('strong', {}, 'This was a practice kit'),
+        h('p', {}, 'No funds. You are ready. Your 24 words opened the seal, so a real kit will open the same way.'),
+      ),
+    ),
+    h('p', {}, 'Keep your words on paper. When the owner sends a real claim link, open it here at the same page.'),
+    h('p', { class: 'muted small' }, 'Nothing was stored or sent. There is no seed in a practice kit.'),
+  );
+}
+
 function resultView(r: OpenedPayload): HTMLElement {
+  if (r.kind === 'json' && r.payload.practice) return practiceView();
   const seed = r.kind === 'json' ? r.payload.vault_seed : r.text;
   const seedBox = h('div', { class: 'seed hidden', id: 'seed', 'aria-live': 'polite' });
   const toggle = h('button', { type: 'button', class: 'btn', 'aria-pressed': 'false' }, 'Show the seed');
@@ -769,8 +791,24 @@ function render(): void {
 window.clearInterval(timer);
 timer = window.setInterval(tick, 1000);
 
+// A practice kit handed over from the heir page (same origin, read once).
+let handoff: { name: string; text: string } | null = null;
+try {
+  const raw = sessionStorage.getItem(PRACTICE_HANDOFF_KEY);
+  if (raw) {
+    sessionStorage.removeItem(PRACTICE_HANDOFF_KEY);
+    const v = JSON.parse(raw) as { name?: unknown; text?: unknown };
+    if (typeof v.name === 'string' && typeof v.text === 'string') handoff = { name: v.name, text: v.text };
+  }
+} catch {
+  handoff = null;
+}
+
 const frag = parseFragment();
-if (frag === 'incomplete') {
+if (handoff && !frag) {
+  setKit(handoff.text, { kind: 'file', name: handoff.name });
+  render();
+} else if (frag === 'incomplete') {
   problem = {
     tone: 'bad',
     title: 'This claim link is incomplete',

@@ -7,6 +7,7 @@ import { qrSvg as qr } from './lib/qr';
 import { mountDust } from './lib/fx';
 import { generatePhrase, heirCodeFromPhrase, normalizePhrase, pickPositions } from './lib/heir';
 import { mountShell } from './lib/shell';
+import { PRACTICE_HANDOFF_KEY, sealPracticeKit, type PracticeKit } from './lib/kit';
 
 type Step = 'intro' | 'backup' | 'confirm' | 'code';
 const STEPS: { id: Step; label: string }[] = [
@@ -259,6 +260,92 @@ function confirm(): HTMLElement {
   );
 }
 
+function downloadFile(name: string, text: string): void {
+  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  const a = h('a', { href: url, download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+/** The "Rehearse the claim" block: seals a practice kit in the browser. */
+function rehearsal(): HTMLElement {
+  const box = h('div', { class: 'rehearsal', id: 'rehearsal' });
+  const status = h('p', { class: 'field-error', role: 'alert' });
+  const paint = (kit: PracticeKit | null): void => {
+    if (!kit) {
+      box.replaceChildren(
+        h('h3', {}, 'Rehearse the claim'),
+        h(
+          'p',
+          {},
+          'Make a practice kit that unlocks in about a minute. Open it on the Claim page with your words, ' +
+            'just like the real one. It holds no funds.',
+        ),
+        status,
+        h(
+          'div',
+          { class: 'actions' },
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'btn',
+              id: 'make-practice',
+              onclick: () => {
+                status.textContent = '';
+                void sealPracticeKit(heirCode).then(paint, () => {
+                  status.textContent = 'Could not make the practice kit. Please try again.';
+                });
+              },
+            },
+            'Make a practice kit',
+          ),
+        ),
+      );
+      return;
+    }
+    box.replaceChildren(
+      h('h3', {}, 'Rehearse the claim'),
+      h(
+        'div',
+        { class: 'notice ok', role: 'status' },
+        h(
+          'div',
+          {},
+          h('strong', {}, 'Your practice kit is ready'),
+          h('p', {}, 'It unlocks in about a minute. It holds no funds and no seed. Open it on the Claim page and type your 24 words.'),
+        ),
+      ),
+      h(
+        'div',
+        { class: 'actions' },
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'btn-primary',
+            id: 'open-practice',
+            onclick: () => {
+              try {
+                sessionStorage.setItem(PRACTICE_HANDOFF_KEY, JSON.stringify({ name: kit.fileName, text: kit.text }));
+              } catch {
+                downloadFile(kit.fileName, kit.text);
+              }
+              window.location.href = './claim';
+            },
+          },
+          'Open it on the Claim page',
+        ),
+        h('button', { type: 'button', class: 'btn', id: 'download-practice', onclick: () => downloadFile(kit.fileName, kit.text) }, 'Download the practice kit'),
+      ),
+    );
+  };
+  paint(null);
+  return box;
+}
+
 function code(): HTMLElement {
   return h(
     'section',
@@ -294,6 +381,7 @@ function code(): HTMLElement {
       { class: 'notice warn', role: 'note' },
       h('div', {}, h('strong', {}, 'Send only the code, never the words'), h('p', {}, 'The owner does not need your 24 words and must never receive them.')),
     ),
+    rehearsal(),
     h(
       'details',
       {},

@@ -3,12 +3,12 @@
  * sealed = tlock_R( age_to(heir_codes, payload) ). Everything here runs in the
  * browser; the phrase and the decrypted payload never leave it.
  */
-import { Decrypter } from 'age-encryption';
+import { Decrypter, Encrypter } from 'age-encryption';
 import type { ChainClient } from 'drand-client';
-import { Buffer, timelockDecrypt } from 'tlock-js';
-import { BeaconNotReadyError, NetworkError } from './drand';
+import { Buffer, timelockDecrypt, timelockEncrypt } from 'tlock-js';
+import { BeaconNotReadyError, NetworkError, QUICKNET_INFO } from './drand';
 import { identityFromPhrase } from './heir';
-import { roundTime } from '../drand';
+import { roundTime, unlockRound } from '../drand';
 
 export class KitDamagedError extends Error {
   constructor(message = 'kit damaged') {
@@ -50,6 +50,8 @@ export interface Payload {
   epoch?: number;
   message?: string;
   restore_hints?: string[];
+  /** True only for a practice kit (heir fire drill): it holds no seed. */
+  practice?: boolean;
 }
 
 export type OpenedPayload =
@@ -184,10 +186,81 @@ export function parsePayload(text: string): OpenedPayload {
       if (typeof p['epoch'] === 'number') payload.epoch = p['epoch'];
       if (typeof p['message'] === 'string' && p['message']) payload.message = p['message'];
       if (hints && hints.length) payload.restore_hints = hints;
+      if (p['practice'] === true) payload.practice = true;
       return { kind: 'json', payload };
     }
   } catch {
     // not JSON: fall through and show the text as it is
   }
   return { kind: 'raw', text };
+}
+
+/** sessionStorage key used to hand a practice kit from /heir to /claim (same origin). */
+export const PRACTICE_HANDOFF_KEY = 'zandglass-practice-kit';
+
+/** Seconds between sealing a practice kit and its unlock. */
+export const PRACTICE_DELAY_SECONDS = 60;
+
+function randomHex(bytes: number): string {
+  return Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** A client that only knows the pinned quicknet chain info: sealing needs no network. */
+const sealClient = {
+  options: { disableBeaconVerification: true, noCache: true },
+  latest: async () => {
+    throw new Error('latest is not supported');
+  },
+  get: async () => {
+    throw new Error('get is not supported');
+  },
+  chain: () => ({ baseUrl: '', info: async () => QUICKNET_INFO }),
+} as unknown as ChainClient;
+
+/** Seal `payload` to the heir codes and `round`: tlock( age_to(heirCodes, payload) ). */
+export async function sealPayload(payload: object, heirCodes: string[], round: number): Promise<string> {
+  const enc = new Encrypter();
+  for (const code of heirCodes) enc.addRecipient(code);
+  const inner = await enc.encrypt(JSON.stringify(payload));
+  return timelockEncrypt(round, Buffer.from(inner), sealClient);
+}
+
+export interface PracticeKit {
+  /** The kit file text (JSON). */
+  text: string;
+  /** Suggested file name: practice-<short>.zandglass */
+  fileName: string;
+  round: number;
+}
+
+/**
+ * A PRACTICE kit sealed to the heir's own code, unlocking about a minute from
+ * `nowMs`. The payload holds no seed (empty vault_seed) and `practice: true`.
+ */
+export async function sealPracticeKit(heirCode: string, nowMs: number = Date.now()): Promise<PracticeKit> {
+  const plan = randomHex(16);
+  const round = unlockRound(nowMs / 1000 + PRACTICE_DELAY_SECONDS);
+  const iso = (sec: number): string => new Date(sec * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const payload = {
+    vault_seed: '',
+    birthday_height: 0,
+    network: 'main',
+    plan,
+    epoch: 1,
+    message: 'Practice kit: no funds.',
+    practice: true,
+  };
+  const sealed = await sealPayload(payload, [heirCode], round);
+  const kit = {
+    format: 'zandglass-kit',
+    version: 1,
+    kind: 'legacy',
+    network: 'main',
+    created: iso(Math.floor(nowMs / 1000)),
+    plan,
+    epoch: 1,
+    unlock: { drand_chain: QUICKNET_INFO.hash, round, time: iso(roundTime(round)) },
+    sealed,
+  };
+  return { text: JSON.stringify(kit), fileName: `practice-${plan.slice(0, 8)}.zandglass`, round };
 }
