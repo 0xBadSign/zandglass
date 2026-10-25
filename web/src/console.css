@@ -1319,7 +1319,7 @@ label.check input {
 }
 
 .paper-sheet {
-  max-width: 24rem;
+  max-width: 36rem;
   padding: 1.2rem;
   border-radius: 14px;
   background: #fff;
@@ -1331,6 +1331,25 @@ label.check input {
 .paper-sheet code {
   color: #000;
   font-size: 1rem;
+}
+
+.paper-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.8rem;
+  margin: 0.6rem 0;
+}
+
+.paper-part {
+  margin: 0;
+  break-inside: avoid;
+  text-align: center;
+}
+
+.paper-part figcaption {
+  color: #000;
+  font-weight: 600;
+  font-size: 0.95rem;
 }
 
 .paper-qr svg {
@@ -1383,7 +1402,21 @@ label.check input {
   }
 
   #paper-print .paper-sheet {
-    max-width: 16cm;
+    max-width: 18cm;
+    margin: 0 auto;
+    padding: 0;
+  }
+
+  /* Six 6.5 cm codes fit one A4 or Letter page under the heading. */
+  #paper-print .paper-grid {
+    grid-template-columns: repeat(2, 6.5cm);
+    justify-content: space-around;
+    gap: 0.4cm;
+  }
+
+  #paper-print .paper-qr svg {
+    width: 6.5cm;
+    height: 6.5cm;
     margin: 0 auto;
   }
 }
