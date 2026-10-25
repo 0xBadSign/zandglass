@@ -35,6 +35,37 @@ pub fn fingerprint(key: &[u8; 32]) -> String {
     )
 }
 
+/// The owner hint of a claim link (`&o=`): the first 16 bytes of the SHA-256
+/// of the public key as 32 lowercase hex characters.
+pub fn link_hint(key: &[u8; 32]) -> String {
+    hex::encode(&Sha256::digest(key)[..16])
+}
+
+/// Whether `s` is well-formed as a claim link owner hint.
+pub fn is_link_hint(s: &str) -> bool {
+    s.len() == 32 && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// Why a kit does not satisfy the owner hint of the claim link it came from.
+#[derive(Debug, PartialEq, Eq)]
+pub enum LinkProblem {
+    /// The kit carries no owner signature.
+    Unsigned,
+    /// The kit is signed by another key than the link names, or its owner
+    /// fields are unusable.
+    Mismatch,
+}
+
+/// Checks `kit` against the `&o=` hint of a claim link: it must be signed
+/// (validly) by a key whose [`link_hint`] equals `hint`.
+pub fn check_link_hint(kit: &Kit, hint: &str) -> Result<(), LinkProblem> {
+    match verify(kit) {
+        Ok(None) => Err(LinkProblem::Unsigned),
+        Ok(Some(key)) if link_hint(&key) == hint => Ok(()),
+        _ => Err(LinkProblem::Mismatch),
+    }
+}
+
 /// The exact bytes that are signed, for a kit whose `owner_key` is `owner_key`
 /// (lowercase hex). Fixed field order, one `name=value` line each, every
 /// line ends in `\n`. `owner_sig` is not part of it; `sealed` is covered by

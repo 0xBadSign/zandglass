@@ -5,7 +5,7 @@ import './console.css';
 import { clear, copyButton, h } from './lib/dom';
 import { qrSvg as qr } from './lib/qr';
 import { mountDust } from './lib/fx';
-import { generatePhrase, heirCodeFromPhrase, normalizePhrase, pickPositions } from './lib/heir';
+import { generatePhrase, heirCodeFingerprint, heirCodeFromPhrase, normalizePhrase, pickPositions } from './lib/heir';
 import { mountShell } from './lib/shell';
 import { PRACTICE_HANDOFF_KEY, sealPracticeKit, type PracticeKit } from './lib/kit';
 
@@ -357,6 +357,7 @@ function code(): HTMLElement {
       h('div', {}, h('strong', {}, 'Your key is ready'), h('p', {}, 'This code is public. It is safe to send. It cannot open anything by itself.')),
     ),
     h('code', { class: 'code-box', id: 'heir-code' }, heirCode),
+    h('p', { class: 'muted small', id: 'heir-code-id' }, `Code ID ${heirCodeFingerprint(heirCode)}. Read it to the owner by phone to check that the code arrived unchanged.`),
     h(
       'div',
       { class: 'qr-wrap' },

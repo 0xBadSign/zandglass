@@ -49,6 +49,18 @@ export async function heirCodeFromPhrase(input: string): Promise<string> {
   return identityToRecipient(identityFromPhrase(input));
 }
 
+/**
+ * A short comparable id of a heir code, `xxxx-xxxx-xxxx` (first six bytes of
+ * the SHA-256 of the code text). Owners and heirs can read it to each other to
+ * check that a pasted code was not swapped on the way. Empty for blank input.
+ */
+export function heirCodeFingerprint(code: string): string {
+  const text = code.trim();
+  if (!text) return '';
+  const h = Array.from(sha256(new TextEncoder().encode(text)).slice(0, 6), (b) => b.toString(16).padStart(2, '0')).join('');
+  return `${h.slice(0, 4)}-${h.slice(4, 8)}-${h.slice(8, 12)}`;
+}
+
 /** `count` distinct 1-based word positions in ascending order. */
 export function pickPositions(count: number, total: number): number[] {
   const picked = new Set<number>();

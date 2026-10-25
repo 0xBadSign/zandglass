@@ -476,7 +476,7 @@ pub async fn create_plan(
     let address = vault.address()?;
     let uri = vault.zip321_uri(new.amount)?;
     let claim_link = match (&plan.mailbox_url, &mailbox) {
-        (Some(u), Some(m)) => Some(ClaimLink::new(u, m)),
+        (Some(u), Some(m)) => Some(ClaimLink::for_kit(u, m, &kit)),
         _ => None,
     };
     Ok(PlanCreated {
@@ -713,7 +713,7 @@ pub fn seal_lock(
         store.put_plan(&plan)?;
         Ok((kit, path))
     })();
-    let (_kit, kit_path) = match built {
+    let (kit, kit_path) = match built {
         Ok(k) => k,
         Err(e) => {
             // Nothing was funded: drop the unused kit and key.
@@ -725,7 +725,7 @@ pub fn seal_lock(
         }
     };
     let uri = crate::vault::zip321_uri_for(&address, new.amount)?;
-    let claim_link = mailbox.map(|(u, m)| ClaimLink::new(u, m));
+    let claim_link = mailbox.map(|(u, m)| ClaimLink::for_kit(u, m, &kit));
     Ok(LockCreated {
         plan,
         kit_path,

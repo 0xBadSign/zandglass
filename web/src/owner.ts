@@ -5,6 +5,7 @@ import './console.css';
 import { clear, copyButton, h, type Child } from './lib/dom';
 import { GlassCanvas, mountDust } from './lib/fx';
 import { formatCountdown, formatZec } from './lib/playground';
+import { heirCodeFingerprint, heirCodeFromPhrase, isValidPhrase } from './lib/heir';
 import { dateToUntil, untilEpoch } from './lib/lock';
 import { MAX_PARTS, PART_ECC, kitQrText, splitKit } from './lib/paper';
 import { qrSvg } from './lib/qr';
@@ -911,10 +912,28 @@ function kindSwitch(): HTMLElement {
   );
 }
 
+const codeFingerprints = new WeakMap<HTMLInputElement, HTMLElement>();
+
 function codeInputs(word: string): HTMLInputElement[] {
-  return [0, 1, 2].map((i) =>
-    h('input', { type: 'text', id: `code${i}`, placeholder: 'age1...', autocomplete: 'off', spellcheck: 'false', 'aria-label': `${word} code ${i + 1}` }),
-  );
+  return [0, 1, 2].map((i) => {
+    const input = h('input', { type: 'text', id: `code${i}`, placeholder: 'age1...', autocomplete: 'off', spellcheck: 'false', 'aria-label': `${word} code ${i + 1}` });
+    // A short id of the pasted code, to read back to its owner out of band.
+    const fp = h('span', { class: 'muted small code-fp', id: `code${i}-fp`, 'aria-live': 'polite' });
+    input.addEventListener('input', () => {
+      const f = heirCodeFingerprint(input.value);
+      fp.textContent = f ? `Code ID ${f}: check it with the ${word.toLowerCase()}.` : '';
+    });
+    codeFingerprints.set(input, fp);
+    return input;
+  });
+}
+
+/** The code inputs, each followed by its fingerprint line. */
+function codeFields(inputs: HTMLInputElement[]): HTMLElement[] {
+  return inputs.flatMap((input) => {
+    const fp = codeFingerprints.get(input);
+    return fp ? [input, fp] : [input];
+  });
 }
 
 function newPlanForm(): HTMLElement {
@@ -936,7 +955,30 @@ const LOCK_PERIODS: [string, string][] = [
  * the box and typed LOCK.
  */
 function lockForm(): HTMLElement {
-  const heir = h('input', { type: 'text', id: 'lock-heir', placeholder: 'age1...', autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Your own heir code' });
+  // The 24 words are typed here only to prove that the owner holds them: the
+  // heir code is derived in this tab and only that public code goes to the
+  // local panel. The words are never sent, stored or logged, and the field is
+  // emptied as soon as it has been used.
+  const words = h('textarea', {
+    id: 'lock-words',
+    name: 'lock-heir-words',
+    rows: '3',
+    autocomplete: 'off',
+    autocapitalize: 'none',
+    autocorrect: 'off',
+    spellcheck: 'false',
+    placeholder: 'word1 word2 ... word24',
+  });
+  const derived = h('p', { class: 'muted small', id: 'lock-derived', 'aria-live': 'polite' });
+  let derivedFor = 0;
+  words.addEventListener('input', () => {
+    const mine = ++derivedFor;
+    derived.textContent = '';
+    if (!isValidPhrase(words.value)) return;
+    void heirCodeFromPhrase(words.value).then((code) => {
+      if (mine === derivedFor) derived.textContent = `These words give heir code ID ${heirCodeFingerprint(code)} (ends ${code.slice(-8)}). The words stay in this browser tab.`;
+    });
+  });
   const until = periodPicker('lock-until', LOCK_PERIODS, '365d', true);
   const preview = h('p', { class: 'muted small', 'aria-live': 'polite' });
   const paintPreview = (): void => {
@@ -963,7 +1005,7 @@ function lockForm(): HTMLElement {
       {},
       'Put shielded ZEC out of your own reach until a date you choose. The kit is sealed to your own heir key: make one on the ',
       h('a', { href: 'https://zandglass.cash/heir', target: '_blank', rel: 'noreferrer noopener' }, 'Become an heir page'),
-      ', write down its 24 words, and paste its public heir code below.',
+      ', write down its 24 words, and type them below. This page works out the public heir code from the words in your browser and sends only that code to the panel; the words are not sent, saved or kept, and the box is emptied after use. Typing them proves that you hold them, so a code swapped on the way cannot lock your funds.',
     ),
     notice(
       'warn',
@@ -976,9 +1018,8 @@ function lockForm(): HTMLElement {
         novalidate: true,
         onsubmit: (e: Event) => {
           e.preventDefault();
-          const code = heir.value.trim();
-          if (!code) {
-            err.textContent = 'Paste your own heir code (age1...), made on the Become an heir page.';
+          if (!isValidPhrase(words.value)) {
+            err.textContent = 'Type your own 24 heir words (made on the Become an heir page) exactly as written. A mistyped word or a missing one is refused.';
             return;
           }
           const when = until.value();
@@ -995,7 +1036,12 @@ function lockForm(): HTMLElement {
             return;
           }
           err.textContent = '';
+          const typed = words.value;
+          words.value = '';
+          derived.textContent = '';
+          derivedFor++;
           void act('Sealing the kit and deleting the seed...', async () => {
+            const code = await heirCodeFromPhrase(typed);
             created = await api<Created>('POST', '/api/locks', {
               heirs: [code],
               until: when,
@@ -1011,8 +1057,9 @@ function lockForm(): HTMLElement {
           });
         },
       },
-      h('label', { for: 'lock-heir' }, 'Your own heir code'),
-      heir,
+      h('label', { for: 'lock-words' }, 'Your 24 heir words'),
+      words,
+      derived,
       h('label', { for: 'lock-until' }, 'Locked until'),
       until.el,
       preview,
@@ -1073,7 +1120,7 @@ function legacyForm(): HTMLElement {
           });
         },
       },
-      h('fieldset', { class: 'heir-fields' }, h('legend', {}, 'Heir codes (one is enough; up to three, any of them can claim)'), ...heirs),
+      h('fieldset', { class: 'heir-fields' }, h('legend', {}, 'Heir codes (one is enough; up to three, any of them can claim)'), ...codeFields(heirs)),
       h('label', { for: 'every' }, 'Flip at least every'),
       every.el,
       h('label', { for: 'amount' }, 'Amount to request in the funding QR (ZEC)'),
@@ -1154,7 +1201,7 @@ function installmentsForm(): HTMLElement {
           });
         },
       },
-      h('fieldset', { class: 'heir-fields' }, h('legend', {}, 'Payee codes (one is enough; up to three, any of them can claim)'), ...payees),
+      h('fieldset', { class: 'heir-fields' }, h('legend', {}, 'Payee codes (one is enough; up to three, any of them can claim)'), ...codeFields(payees)),
       h('div', { class: 'form-row' }, h('div', {}, h('label', { for: 'inst-amount' }, `Each installment (${unit()})`), amount), h('div', {}, h('label', { for: 'inst-count' }, 'Number of installments'), count)),
       h('label', { for: 'inst-every' }, 'How often'),
       every.el,
