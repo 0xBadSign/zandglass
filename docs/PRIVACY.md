@@ -90,6 +90,8 @@ The landing page, the heir page and the claim page are static pages. They send r
 
 The heir phrase, the heir identity and the decrypted vault seed are created and used in the browser only. The claim link keeps the mailbox id and read token in the URL fragment, which browsers do not send to servers on page load. Requests use `credentials: 'omit'` and `referrerPolicy: 'no-referrer'`. The pages have no analytics or third-party scripts, and the Content-Security-Policy, served by the keeper on every response and mirrored in `web/vite.config.ts` for previews, is `default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'` plus the three drand hosts. The playground stores the judge code in `sessionStorage` for the tab only.
 
+**Paper kit, practice kit, pulse.** A paper kit is printed by the owner's own browser from a locally made kit, and the claim page decodes the QR codes in the browser (photos and the camera stay on the device); nothing is uploaded. A practice kit is sealed in the heir's browser to the heir's own code and is never uploaded. The heir pulse uses only the public fields of the kit that the heir already holds (`created`, `epoch`, `unlock`) and builds the calendar file locally. A savings lock leaves no vault seed on disk (see `docs/HOW_IT_WORKS.md`, Savings lock), and on chain it is an ordinary funding transaction, like any other plan's.
+
 The playground create request carries only `heir_code` (public), `judge_code` and `minutes`; settle requests carry only `action` and, for "send", the destination address.
 
 **Playwright leak tests (`web/e2e/`).** These record every request the pages make and fail on:

@@ -30,7 +30,7 @@ The same kit mechanism gives two more plan types: **scheduled payments** (one in
 Built for the people who use it, not only for the cryptography:
 
 - **Heir fire drill.** On the heir page the heir seals a practice kit to their own code that opens in 60 seconds, and opens it on the claim page with their own 24 words. They learn the claim long before it matters; the practice kit holds no seed.
-- **Owner-signed kits.** Every kit carries a per-plan Ed25519 owner signature. The claim page and `zandglass claim` refuse an altered kit and warn when a kit of the same plan is signed by a different key or not at all, so a mailbox operator cannot swap in a decoy ([docs/KIT_FORMAT.md](docs/KIT_FORMAT.md) section 8).
+- **Owner-signed kits.** Kits of every new plan carry a per-plan Ed25519 owner signature (plans made before signatures and playground kits are unsigned, which stays valid). The claim page and `zandglass claim` refuse an altered kit and warn when a kit of the same plan is signed by a different key or not at all, so a mailbox operator cannot swap in a decoy ([docs/KIT_FORMAT.md](docs/KIT_FORMAT.md) section 8).
 - **Owner check-in for the heir.** While a kit is locked the heir sees when the owner last checked in (the kit's creation date and vault number) and can add the unlock date to their own calendar; nothing is sent anywhere.
 - **Paper kit.** The owner panel prints a kit as numbered QR codes for the will envelope; the claim page reads them from photos or the camera, in any order, so the heir needs no file and no server.
 
@@ -83,14 +83,14 @@ Details, residual metadata and trust assumptions: [docs/PRIVACY.md](docs/PRIVACY
 
 ## Download
 
-Ready-made programs for Windows, macOS (Apple silicon and Intel) and Linux are on the [Releases page](https://github.com/0xBadSign/zandglass/releases). Unpack and **double-click `zandglass`**: it opens the owner panel in your browser. Choose **Testnet** in the panel to try it with free test coins first.
+The [Releases page](https://github.com/0xBadSign/zandglass/releases) has v0.2.0 builds for Windows, macOS (Apple silicon and Intel) and Linux, with the owner-signed kits, savings lock, heir fire drill, heir pulse and paper kit described above. Unpack and **double-click `zandglass`**: it opens the owner panel in your browser. Choose **Testnet** in the panel to try it with free test coins first.
 
 - The programs are not code-signed yet. Windows SmartScreen shows "More info, Run anyway"; on macOS right-click the file, choose Open, then Open again.
 - Each download has a `.sha256` file to check it. The same program runs every command from a terminal (`zandglass --help`).
 
 ## The owner panel
 
-`zandglass ui` (or simply starting `zandglass` with no command) opens a page on your own computer to do everything without a terminal: create the encrypted store, create an inheritance plan or **scheduled payments**, fund them by scanning a QR code with any Zcash wallet, sync, **flip**, start a payment schedule, download the kit and a **calendar reminder** (`.ics`), and cancel. It listens on 127.0.0.1 only, needs the one-time session key from the address it prints, and runs the same code as the CLI. Your vault seeds never leave the machine.
+`zandglass ui` (or simply starting `zandglass` with no command) opens a page on your own computer to do everything without a terminal: create the encrypted store, create an inheritance plan, **scheduled payments** or a **savings lock**, fund them by scanning a QR code with any Zcash wallet, sync, **flip**, start a payment schedule, download the kit, **print a paper kit** (numbered QR codes for the will envelope) and a **calendar reminder** (`.ics`), and cancel. It listens on 127.0.0.1 only, needs the one-time session key from the address it prints, and runs the same code as the CLI. Your vault seeds never leave the machine.
 
 ![The owner panel after a flip (testnet)](docs/img/owner-panel.png)
 
@@ -133,7 +133,7 @@ Add `--mailbox https://<keeper>` to `plan legacy` to upload every kit to a keepe
 
 - [docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md): keys, the nested seal, flips, claims, time math
 - [docs/PRIVACY.md](docs/PRIVACY.md): threat model, who learns what, fingerprint analysis
-- [docs/KIT_FORMAT.md](docs/KIT_FORMAT.md): kit v1 and how to open one by hand
+- [docs/KIT_FORMAT.md](docs/KIT_FORMAT.md): kit v1, owner signatures, practice kits, and how to open one by hand
 - [docs/ZIP_DRAFT.md](docs/ZIP_DRAFT.md): a draft ZIP so any Zcash wallet can offer time-locked recovery kits
 - [docs/KEEPER_API.md](docs/KEEPER_API.md) and [docs/PLAYGROUND_API.md](docs/PLAYGROUND_API.md): the mailbox and playground APIs
 - [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md): dependencies and licenses

@@ -110,6 +110,13 @@ A keeper is a blind mailbox: the owner creates a mailbox, receives a write token
 
 Wallets SHOULD remind the owner to flip before each unlock. Reminders SHOULD be local (notifications, or an iCalendar file the owner imports) rather than a server that would learn the schedule.
 
+## Informative notes
+
+These notes are not normative.
+
+- **Savings lock.** A wallet may offer to lock funds from the owner themselves. This needs no new kit type: it is a plain `legacy` kit sealed to the owner's own heir code, with a fixed unlock time, and the wallet deletes the vault seed after sealing it. Only the kit and the owner's heir words open the vault, and only after the unlock.
+- **Practice kits.** A wallet may let an heir rehearse a claim by sealing a practice kit to their own heir code with a short unlock time and an empty vault seed. It is an ordinary kit and holds no funds; marking it (for example with a `practice` payload field) is a user-interface choice only.
+
 # Privacy considerations
 
 | Party | Learns | Does not learn |

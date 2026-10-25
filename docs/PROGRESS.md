@@ -11,7 +11,7 @@ Live state of the project. The agent updates it at the end of every work unit, n
 | Last updated | 2026-10-25 |
 | Plan version | 2 |
 | Current milestone | M5 Submission (all of M0 to M4 done) |
-| Next task | Owner submits the form, tag `zecathon-submission` at the deadline; during judging keep the site up and claim the live vault after 2026-11-12T20:37:33Z |
+| Next task | Release v0.2.0 (tag `v0.2.0`); the owner submits the form (O-6); tag `zecathon-submission` at the deadline; during judging keep the site up and claim the live vault after 2026-11-12T20:37:33Z |
 | Blocked / waiting on owner | O-6 submit the form |
 | Days to deadline | 3 (submissions due 2026-10-28 23:59 UTC) |
 | Health | on track |
@@ -39,7 +39,7 @@ Live state of the project. The agent updates it at the end of every work unit, n
 - [x] T0.2 Toolchain: Rust 1.98.1, age 1.2.1, tle v1.2.0, Go 1.26, protoc (WSL)
 - [x] T0.3 Dependency decision (D-011)
 - [x] T0.4 Connectivity: zec.rocks:443 (main, height 3501837) and testnet.zec.rocks:443 (test, 4423651), lightwalletd v0.5.x; drand D-012
-- [x] T0.5 Wallets and funds: 1 TAZ from the owner (faucet), mainnet float address issued (O-5 pending)
+- [x] T0.5 Wallets and funds: 1 TAZ from the owner (faucet), mainnet float address issued (O-5 done later, see the session log)
 - [x] T0.6 Spike A: fund, flip (standard fields) and restore proven on testnet; third-party wallet restore moves to T1.5
 - [x] T0.7 Spike B: nested sealing; Rust, tle+age and tlock-js+age-encryption open each other's kits (scripts/interop-kit.sh)
 - [x] T0.8 Decisions recorded; M0 exit review (all spikes passed; no plan change needed; known issue: re-sync right before building a sweep, since testnet blocks come about every 18 s and a stale tip expired one attempt)
@@ -49,8 +49,8 @@ Live state of the project. The agent updates it at the end of every work unit, n
 - [x] T1.2 core::seal, heir keys, kit v1
 - [x] T1.3 zandglass-wallet: encrypted store, flip, cancel, claim (split moves to T2.3)
 - [x] T1.4 CLI commands (terminal QR not done; low priority)
-- [ ] T1.5 End to end: testnet DONE (evidence 2026-09-30); mainnet pending O-5; third-party wallet restore pending
-- [ ] T1.6 CI
+- [x] T1.5 End to end: testnet (evidence 2026-09-30) and mainnet (2026-10-01); third-party wallet restore verified 2026-10-01
+- [x] T1.6 CI (`.github/workflows/ci.yml`, green)
 
 ### M2 Keeper, heir page, installments (10-11 to 10-16)
 - [x] T2.1 Keeper mailbox (axum + SQLite, token hashes, no IP logs, CLI --mailbox and claim links)
@@ -59,18 +59,18 @@ Live state of the project. The agent updates it at the end of every work unit, n
 - [x] T2.4 Multiple heirs (1 to 3), testnet evidence
 
 ### M3 Mainnet playground and deployment (10-17 to 10-21)
-- [x] T3.1 Playground backend (judge code, caps, float; offline-tested; live run pending funded float)
+- [x] T3.1 Playground backend (judge code, caps, float; offline-tested; live run done after O-5)
 - [x] T3.2 Landing and playground UI (mocked-API Playwright flow, leak checks, axe)
-- [ ] T3.3 Deploy (server, TLS, Pages, health, backups)
-- [ ] T3.4 Browser end-to-end tests and axe
-- [ ] T3.5 Live vault on mainnet (unlock about 2026-11-12)
+- [x] T3.3 Deploy (server, TLS, Pages, health, backups): live at https://zandglass.cash
+- [x] T3.4 Browser end-to-end tests and axe (74 Playwright tests)
+- [x] T3.5 Live vault on mainnet (unlock 2026-11-12T20:37:33Z)
 
 ### M4 Polish, docs, video, submission texts (10-22 to 10-25)
 - [x] T4.1 Adversarial security and privacy review: no critical; 2 high (flip seed deletion on ambiguous broadcast) and 9 others fixed; PRIVACY.md corrected
 - [x] T4.2 Docs set (README, HOW_IT_WORKS, PRIVACY, KIT_FORMAT, KEEPER_API, THIRD_PARTY); plan-vs-code gaps listed in the session log
-- [ ] T4.3 Video (2:00 or less)
+- [x] T4.3 Video (2:00 or less): v2, 1:39, https://zandglass.cash/media/zandglass-demo-v2.mp4
 - [x] T4.4 docs/SUBMISSION.md drafted (1,832 of 2,000 characters; placeholders for demo URL, video URL, judge code)
-- [ ] T4.5 Release v0.1.0
+- [x] T4.5 Release v0.1.0 (2026-10-25); v0.2.0 is next
 - [ ] T4.6 Owner draft saved (O-6)
 
 ### M5 Final (10-26 to 10-28)
@@ -131,6 +131,12 @@ None yet.
 
 ## Session log (newest first)
 
+### 2026-10-25 (evening): new features
+- Five features: heir fire drill (a practice kit sealed in the browser on /heir, opened on /claim, unlock about 60 s, empty seed, never uploaded); owner-signed kits (per-plan Ed25519 key, KIT_FORMAT.md section 8; plans made before this and playground kits stay unsigned); heir pulse on /claim (the kit's public creation date and epoch, local .ics); paper kit (multi-part QR codes `ZGK1:<i>/<n>:<hash>:<chunk>`, printed from the owner panel, read on /claim from photos or the camera); savings lock (`zandglass plan lock`, plan kind lock, no seed stored, a plain legacy kit sealed to the owner's own heir code).
+- Fixed the multi-part QR code of the paper kit; the plan id is now readable on the printed kit.
+- Version 0.2.0. Demo video v2 (1:39) replaces v1. Documentation updated for all of the above (README, HOW_IT_WORKS, PRIVACY, KIT_FORMAT, ZIP_DRAFT, THIRD_PARTY with the NU7 cohort versions, jsqr and @noble/curves).
+- Tests: 74 Playwright tests, all Rust and web unit tests green.
+- Next: release v0.2.0, the owner submits the form, tag `zecathon-submission`.
 
 ### 2026-10-25: NU7 bump, release v0.1.0, repository public
 - NU7: zcash_client_backend 0.25, zcash_client_sqlite 0.23, zcash_protocol 0.11 (mainnet NU7 at 3,543,405). Testnet CLI flow passed (fund, flip, claim, old kit empty) and a mainnet playground run passed on the deployed build (EVIDENCE.md, 2026-10-25 rows). Commits 9554819, 0f46acf.

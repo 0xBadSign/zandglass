@@ -53,6 +53,7 @@ The public part never contains amounts, addresses, seeds or transaction ids.
   "plan": "0123456789abcdef0123456789abcdef",
   "epoch": 2,
   "message": "optional words from the owner",
+  "practice": true,
   "restore_hints": ["...", "..."]
 }
 ```
@@ -64,6 +65,7 @@ The public part never contains amounts, addresses, seeds or transaction ids.
 | `network` | `main` or `test`; must equal the public `network`. |
 | `plan`, `epoch` | Must equal the public `plan` and `epoch`. |
 | `message` | Optional text from the owner. Omitted when absent. |
+| `practice` | Optional boolean. `true` only in a practice kit (section 9); omitted otherwise. |
 | `restore_hints` | Human steps for restoring in common wallets and with `zandglass claim`. Default empty list. |
 
 ## 3. The sealed layers
@@ -209,3 +211,12 @@ The fingerprint of an owner key is the first eight bytes of the SHA-256 of the 3
 ### Where the key lives
 
 The owner's store keeps the signing key in `vaults/<plan>/owner_key.age`, encrypted with the store passphrase like the vault seeds (`seed.age`); it is never written in plaintext and never leaves the owner's machine. The key opens no funds and no kit: a stolen key lets a thief sign a decoy kit that the heirs' pages would treat as genuine for that plan, so it is protected like the seeds. `plans.json` holds no key material; it stays HMAC-authenticated. A plan without the file (created by an older version) keeps working and produces unsigned kits.
+
+## 9. Practice kits
+
+A practice kit is an ordinary kit used for the heir fire drill, so that an heir can rehearse the claim long before it matters. The heir page (`/heir`) makes it in the browser (`sealPracticeKit` in `web/src/lib/kit.ts`), and the claim page opens it.
+
+- The payload has an empty `vault_seed` (`""`) and `practice: true` (the optional field of section 2); the message says that it holds no funds.
+- It is sealed to the heir's own heir code, with an unlock about 60 seconds after it was made.
+- It is unsigned (no `owner_key`, no `owner_sig`), holds no funds and no seed, and is never uploaded: it stays in the browser (and in a file if the heir downloads it).
+- The public part is the same as for any other `legacy` kit and nothing in it marks the kit as a practice kit; only the payload does, so the claim page shows a practice banner after opening it. Readers that do not know `practice` ignore it and would show an empty seed.
