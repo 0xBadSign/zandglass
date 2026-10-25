@@ -6,6 +6,18 @@
 
 On mainnet: a vault funded, flipped and claimed by the heir ([verify the transactions in two minutes](docs/evidence/EVIDENCE.md#verify-it-in-two-minutes)), and a live vault that unlocks on 2026-11-12 during judging (countdown on the site).
 
+## For judges: try it in 5–10 minutes
+
+No wallet and no ZEC needed. The [playground](https://zandglass.cash/playground) runs on **Zcash mainnet**: the server plays the owner with a tiny demo vault (0.0001 ZEC per session, from its own demo wallet), and **you play the heir**. Your heir key is made and kept in your browser.
+
+1. **Judge code.** Open [zandglass.cash/playground](https://zandglass.cash/playground) and enter the judge code from the submission form.
+2. **Become the heir.** Click "Create my heir key", then "Use this heir code". Your 24 words and heir code are made in the browser and never sent anywhere.
+3. **Start a vault.** Pick a timer (choose **10 minutes** to be sure to see the flip; mainnet blocks can be slow) and click "Start the vault". The server funds a fresh vault and seals its kit to your heir code and to a future drand round. Each step links to the mainnet transaction.
+4. **Flip.** Click "Flip (I'm still here)": the funds move to a new vault and a new kit is sealed; the old kit now opens an empty vault. Then click "Stop flipping": the owner is gone, the sand runs out.
+5. **Open the kit.** When the timer ends, click "Open the kit": it is decrypted in your browser with the drand beacon and your heir key, and shows the vault. Confirm to send the coins back to the demo wallet, or keep them by restoring the vault in your own wallet.
+
+Look the transactions up on the explorer: they are ordinary shielded transactions, with nothing that marks them as an inheritance. Then try the **heir fire drill** on [Become an heir](https://zandglass.cash/heir) (a practice kit that opens in 60 seconds), the [claim page](https://zandglass.cash/claim), or download the [owner panel](https://github.com/0xBadSign/zandglass/releases/tag/v0.2.0) and pick Testnet. The [demo video](https://zandglass.cash/media/zandglass-demo-v2.mp4) shows the whole flow in 1:39.
+
 ![Zandglass landing page](docs/img/landing.png)
 
 Shielded Zcash has no timelocks, so there is no private way to pass it on. Zandglass gives a vault a time-locked recovery path: your heir can open it only after you stop checking in, and nothing on chain reveals the plan, the heir or the amounts.
