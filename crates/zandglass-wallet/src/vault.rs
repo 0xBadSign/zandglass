@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context, Result};
 use bip0039::{Count, English, Mnemonic};
-use rand::rngs::OsRng;
+use rand_crypto::{rand_core::UnwrapErr, rngs::SysRng};
 use rusqlite::Connection;
 use secrecy::SecretVec;
 use zcash_address::ZcashAddress;
@@ -14,6 +14,7 @@ use zcash_client_backend::data_api::wallet::input_selection::{
 use zcash_client_backend::fees::{
     standard::SingleOutputChangeStrategy, DustOutputPolicy, StandardFeeRule,
 };
+use zcash_client_backend::util::SystemClock;
 use zcash_client_backend::{
     data_api::{
         wallet::{
@@ -26,7 +27,7 @@ use zcash_client_backend::{
     sync,
     wallet::OvkPolicy,
 };
-use zcash_client_sqlite::{util::SystemClock, wallet::init::init_wallet_db, AccountUuid, WalletDb};
+use zcash_client_sqlite::{wallet::init::init_wallet_db, AccountUuid, WalletDb};
 use zcash_keys::keys::{UnifiedAddressRequest, UnifiedSpendingKey};
 use zcash_primitives::transaction::fees::{zip317, FeeRule};
 use zcash_proofs::prover::LocalTxProver;
@@ -36,7 +37,7 @@ use zeroize::Zeroizing;
 use crate::{blockcache::MemBlockCache, lightwalletd::Client};
 
 /// The wallet database type used by vaults.
-pub type Db = WalletDb<Connection, Network, SystemClock, OsRng>;
+pub type Db = WalletDb<Connection, Network, SystemClock, UnwrapErr<SysRng>>;
 
 const DB_FILE: &str = "wallet.sqlite";
 const SYNC_BATCH_SIZE: u32 = 1000;
@@ -115,7 +116,7 @@ pub struct Vault {
 }
 
 fn open_db(dir: &Path, network: Network) -> Result<Db> {
-    let mut db = WalletDb::for_path(dir.join(DB_FILE), network, SystemClock, OsRng)
+    let mut db = WalletDb::for_path(dir.join(DB_FILE), network, SystemClock, UnwrapErr(SysRng))
         .context("opening wallet database")?;
     init_wallet_db(&mut db, None).map_err(|e| anyhow!("wallet migration failed: {e:?}"))?;
     Ok(db)
@@ -398,6 +399,8 @@ impl Vault {
         >(
             &mut self.db,
             &self.network,
+            &SystemClock,
+            &mut UnwrapErr(SysRng),
             &prover,
             &prover,
             &SpendingKeys::from_unified_spending_key(usk),
@@ -478,6 +481,8 @@ impl Vault {
         >(
             &mut self.db,
             &self.network,
+            &SystemClock,
+            &mut UnwrapErr(SysRng),
             &prover,
             &prover,
             &SpendingKeys::from_unified_spending_key(usk),

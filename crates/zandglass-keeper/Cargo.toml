@@ -21,7 +21,7 @@ sha2 = "0.10"
 subtle = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync"] }
 tower-http = { version = "0.6", default-features = false, features = ["cors", "fs"] }
-zcash_keys = { version = "0.16.1", features = ["orchard"] }
+zcash_keys = { version = "0.17.0", features = ["orchard"] }
 zeroize = "1.9.0"
 
 [dev-dependencies]

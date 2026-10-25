@@ -3,6 +3,8 @@
 //! ZIP 317 fee, default expiry and anchor, `OvkPolicy::Discard`.
 
 use anyhow::{anyhow, bail, Context, Result};
+use rand_crypto::{rand_core::UnwrapErr, rngs::SysRng};
+use zcash_client_backend::util::SystemClock;
 use zcash_client_backend::{
     data_api::{
         wallet::{
@@ -82,6 +84,8 @@ impl Vault {
         >(
             &mut self.db,
             &self.network,
+            &SystemClock,
+            &mut UnwrapErr(SysRng),
             &prover,
             &prover,
             &SpendingKeys::from_unified_spending_key(usk),
