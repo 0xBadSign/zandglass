@@ -206,6 +206,7 @@ pub async fn create_installments(
         }),
         pending: None,
         archived: Vec::new(),
+        lock: None,
     };
     store.put_plan(&plan)?;
     let address = vault.address()?;

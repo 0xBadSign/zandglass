@@ -5,6 +5,7 @@ import './console.css';
 import { clear, copyButton, h, type Child } from './lib/dom';
 import { GlassCanvas, mountDust } from './lib/fx';
 import { formatCountdown, formatZec } from './lib/playground';
+import { dateToUntil, untilEpoch } from './lib/lock';
 import { fitsQr, kitQrText } from './lib/paper';
 import { qrSvg } from './lib/qr';
 import { mountShell } from './lib/shell';
@@ -131,7 +132,7 @@ let selected = '';
 let busy = '';
 let created: Created | null = null;
 let showNew = false;
-let newKind: 'legacy' | 'installments' = 'legacy';
+let newKind: 'legacy' | 'installments' | 'lock' = 'legacy';
 let splitDone: SplitDone | null = null;
 let fundFor = '';
 let fund: { address: string; uri: string } | null = null;
@@ -225,7 +226,12 @@ function nextUnlock(p: PlanSum): { at: number; from: number; label: string } | n
     return { at, from, label: `Installment ${k + 1} of ${s.count}` };
   }
   if (!p.unlock_time) return null;
-  return { at: p.unlock_time, from: p.epoch_created ?? p.unlock_time - p.period_secs, label: `Plan ${p.short_id}` };
+  return { at: p.unlock_time, from: p.epoch_created ?? p.unlock_time - p.period_secs, label: p.kind === 'lock' ? 'Savings lock' : `Plan ${p.short_id}` };
+}
+
+/** A unix time as a readable local date and time. */
+function whenText(unix: number): string {
+  return new Date(unix * 1000).toLocaleString(undefined, { dateStyle: 'long', timeStyle: 'short' });
 }
 
 function paintStage(): void {
@@ -266,6 +272,14 @@ function paintStage(): void {
       );
     if (all.length > 8) items.push(h('li', { class: 'none' }, `+${all.length - 8} more`));
     vaultRow.replaceChildren(...items);
+    return;
+  }
+  if (p.kind === 'lock') {
+    stageCaption.textContent =
+      left > 0
+        ? 'Locked from yourself: nobody, you included, can move these funds before the sand runs out.'
+        : 'The lock has opened. Open the kit with your heir words on the claim page.';
+    vaultRow.replaceChildren(h('li', { class: left > 0 ? 'cur' : 'old' }, h('span', { class: 'v-n' }, '#1'), h('span', { class: 'v-s' }, left > 0 ? 'locked' : 'open')));
     return;
   }
   stageCaption.textContent =
@@ -383,7 +397,7 @@ function paperSheet(p: PlanSum, k: { text: string }): HTMLElement {
     h('div', { class: 'paper-qr' }, qrSvg(k.text, `QR code of the kit of plan ${p.short_id}`, 'L')),
     h('p', { class: 'paper-meta' }, 'Plan ', h('code', {}, p.short_id), ' · unlocks ', h('strong', {}, when)),
     h('p', {}, 'Scan on zandglass.cash/claim, or with any QR reader and save as a file. You also need the heir phrase, which is not on this page.'),
-    h('p', { class: 'paper-small' }, 'This kit is replaced if the owner flips the plan: always use the newest one.'),
+    h('p', { class: 'paper-small' }, p.kind === 'lock' ? 'This kit never changes: a savings lock is not flipped.' : 'This kit is replaced if the owner flips the plan: always use the newest one.'),
   );
 }
 
@@ -421,18 +435,112 @@ function paperView(p: PlanSum, k: { text: string; fits: boolean }): HTMLElement 
   );
 }
 
+function fundButton(p: PlanSum): HTMLElement {
+  return h(
+    'button',
+    {
+      type: 'button',
+      class: 'btn',
+      disabled: busy ? true : null,
+      onclick: () =>
+        void act('Loading the funding address...', async () => {
+          if (fundFor === p.id) {
+            fundFor = '';
+            fund = null;
+            return;
+          }
+          fund = await api<{ address: string; uri: string }>('GET', `/api/plans/${p.id}/receive`);
+          fundFor = p.id;
+        }),
+    },
+    fundFor === p.id ? 'Hide funding QR' : 'Add funds',
+  );
+}
+
+function kitButton(p: PlanSum): HTMLElement {
+  return h(
+    'button',
+    {
+      type: 'button',
+      class: 'btn-primary',
+      disabled: busy ? true : null,
+      onclick: () =>
+        void act('Reading the kit...', async () => {
+          const k = await api<{ file_name: string; text: string }>('GET', `/api/plans/${p.id}/kit`);
+          download(k.file_name, k.text, 'application/json');
+        }),
+    },
+    'Download kit',
+  );
+}
+
+function paperButton(p: PlanSum): HTMLElement {
+  return h(
+    'button',
+    {
+      type: 'button',
+      class: 'btn',
+      disabled: busy ? true : null,
+      onclick: () =>
+        void act('Reading the kit...', async () => {
+          if (paperFor === p.id) {
+            paperFor = '';
+            paper = null;
+            return;
+          }
+          const k = await api<{ file_name: string; text: string }>('GET', `/api/plans/${p.id}/kit`);
+          const text = kitQrText(k.text);
+          paper = { text, fits: fitsQr(text) };
+          paperFor = p.id;
+          paperEpoch = p.epoch;
+        }),
+    },
+    paperFor === p.id ? 'Hide paper kit' : 'Print paper kit',
+  );
+}
+
+function calendarButton(p: PlanSum, label: string): HTMLElement {
+  return h(
+    'button',
+    {
+      type: 'button',
+      class: 'btn',
+      disabled: busy ? true : null,
+      onclick: () =>
+        void act('Making the calendar file...', async () => {
+          const c = await api<{ file_name: string; text: string }>('GET', `/api/plans/${p.id}/calendar`);
+          download(c.file_name, c.text, 'text/calendar');
+        }),
+    },
+    label,
+  );
+}
+
+/** The four numbers on a savings-lock card. There is no balance: the seed (and with it the wallet) is gone. */
+function lockStats(p: PlanSum, next: { at: number } | null): HTMLElement {
+  return h(
+    'dl',
+    { class: 'plan-stats' },
+    h('div', {}, h('dt', {}, 'Unlocks in'), h('dd', { 'data-unlock': String(next?.at ?? 0), class: 'plan-left' }, next ? formatCountdown(next.at - nowSec()) : '-')),
+    h('div', {}, h('dt', {}, 'Unlocks on'), h('dd', {}, p.unlock_time ? new Date(p.unlock_time * 1000).toLocaleDateString(undefined, { dateStyle: 'medium' }) : '-')),
+    h('div', {}, h('dt', {}, 'Seed'), h('dd', {}, 'Deleted')),
+    h('div', {}, h('dt', {}, 'Sealed to'), h('dd', {}, `${p.heirs} heir key${p.heirs === 1 ? '' : 's'}`)),
+  );
+}
+
 function planCard(p: PlanSum): HTMLElement {
   const active = p.status === 'active';
   const sel = p.id === selected;
+  const lock = p.kind === 'lock';
   const head = h(
     'div',
     { class: 'plan-head' },
-    h('span', { class: 'plan-id' }, p.kind === 'installments' ? 'Installments' : 'Legacy', ' · ', h('code', {}, p.short_id)),
+    h('span', { class: 'plan-id' }, p.kind === 'installments' ? 'Installments' : lock ? 'Savings lock' : 'Legacy', ' · ', h('code', {}, p.short_id)),
     h('span', { class: active ? 'badge' : 'badge test' }, active ? 'Active' : 'Cancelled'),
   );
   const inst = p.kind === 'installments' ? p.installments : null;
   const next = active ? nextUnlock(p) : null;
-  const stats = h(
+  const stats = lock ? lockStats(p, next) : h(
     'dl',
     { class: 'plan-stats' },
     h(
@@ -450,6 +558,16 @@ function planCard(p: PlanSum): HTMLElement {
       : h('div', {}, h('dt', {}, 'Heirs · vault'), h('dd', {}, `${p.heirs} · #${p.epoch}`)),
   );
   const parts: Child[] = [head, stats];
+  if (lock && p.unlock_time) {
+    parts.push(
+      h('p', { class: 'lock-line' }, h('strong', {}, `Locked until ${whenText(p.unlock_time)} · seed deleted`)),
+      h(
+        'p',
+        { class: 'muted small' },
+        'Nobody can move these funds before then, not even you, so there is nothing to flip or cancel. After the unlock, open the kit with your heir words on zandglass.cash/claim or with `zandglass claim`.',
+      ),
+    );
+  }
   if (p.pending) parts.push(notice('warn', 'A flip is not settled yet', 'Press Sync: it checks whether the last flip reached the network.'));
   if (active && p.balance && state?.network === 'main' && p.balance.total_zat > state.cap_zat) {
     parts.push(notice('warn', 'Above the safety cap', `This plan holds more than ${zec(state.cap_zat)}. Zandglass is unaudited; a flip refuses above the cap unless the panel was started with --accept-unaudited.`));
@@ -540,7 +658,10 @@ function planCard(p: PlanSum): HTMLElement {
     parts.push(h('div', { class: 'actions' }, startBtn, fundBtn, kitsBtn, calBtn, cancelBtn));
     if (!inst.split) parts.push(h('p', { class: 'muted small' }, 'Fund the plan with the amount in the QR request. When the funds have confirmed, start the schedule: one ordinary transaction fills one vault per installment and seals one kit for each.'));
   }
-  if (active && !inst) {
+  if (active && lock) {
+    parts.push(h('div', { class: 'actions' }, fundButton(p), kitButton(p), paperButton(p), calendarButton(p, 'Calendar reminder')));
+  }
+  if (active && !inst && !lock) {
     const flipBtn = h(
       'button',
       {
@@ -706,13 +827,15 @@ function planCard(p: PlanSum): HTMLElement {
  * `value()` returns a duration the CLI understands (for example 45d or 12h),
  * or null when the custom number is missing or not a whole number above 0.
  */
-function periodPicker(id: string, choices: [string, string][], selected: string): { el: HTMLElement; select: HTMLSelectElement; value: () => string | null } {
+function periodPicker(id: string, choices: [string, string][], selected: string, withDate = false): { el: HTMLElement; select: HTMLSelectElement; value: () => string | null } {
   const select = h(
     'select',
     { id },
     ...choices.map(([v, label]) => h('option', { value: v, selected: v === selected ? true : null }, label)),
+    withDate ? h('option', { value: 'date' }, 'On a date...') : null,
     h('option', { value: 'custom' }, 'Custom...'),
   );
+  const day = h('input', { type: 'date', id: `${id}-d`, 'aria-label': 'Unlock date' });
   const num = h('input', { type: 'number', id: `${id}-n`, min: '1', step: '1', value: '45', 'aria-label': 'Custom amount of time' });
   const unit = h(
     'select',
@@ -724,18 +847,21 @@ function periodPicker(id: string, choices: [string, string][], selected: string)
     h('option', { value: 'mo' }, 'months (30 days)'),
   );
   const custom = h('div', { class: 'custom-period' }, num, unit);
+  const dayBox = h('div', { class: 'custom-period' }, day);
   const paint = (): void => {
     custom.hidden = select.value !== 'custom';
+    dayBox.hidden = select.value !== 'date';
   };
   select.addEventListener('change', paint);
   paint();
   const value = (): string | null => {
+    if (select.value === 'date') return dateToUntil(day.value);
     if (select.value !== 'custom') return select.value;
     const n = Number(num.value);
     if (!Number.isInteger(n) || n < 1) return null;
     return unit.value === 'mo' ? `${n * 30}d` : `${n}${unit.value}`;
   };
-  return { el: h('div', {}, select, custom), select, value };
+  return { el: h('div', {}, select, custom, dayBox), select, value };
 }
 
 const PERIODS: [string, string][] = [
@@ -746,7 +872,7 @@ const PERIODS: [string, string][] = [
 ];
 
 function kindSwitch(): HTMLElement {
-  const btn = (k: 'legacy' | 'installments', title: string, sub: string) =>
+  const btn = (k: 'legacy' | 'installments' | 'lock', title: string, sub: string) =>
     h(
       'button',
       { type: 'button', class: `kind${newKind === k ? ' on' : ''}`, 'aria-pressed': String(newKind === k), onclick: () => ((newKind = k), render()) },
@@ -758,6 +884,7 @@ function kindSwitch(): HTMLElement {
     { class: 'kind-switch', role: 'group', 'aria-label': 'Plan type' },
     btn('legacy', 'Inheritance', 'Your heirs get the vault if you stop flipping.'),
     btn('installments', 'Scheduled payments', 'An allowance: one installment unlocks per period; cancel any time.'),
+    btn('lock', 'Savings lock', 'Lock it from yourself: nobody, you included, can touch it until a date.'),
   );
 }
 
@@ -768,7 +895,116 @@ function codeInputs(word: string): HTMLInputElement[] {
 }
 
 function newPlanForm(): HTMLElement {
-  return newKind === 'legacy' ? legacyForm() : installmentsForm();
+  return newKind === 'legacy' ? legacyForm() : newKind === 'lock' ? lockForm() : installmentsForm();
+}
+
+const LOCK_PERIODS: [string, string][] = [
+  ['30d', '30 days'],
+  ['90d', '90 days'],
+  ['180d', '6 months'],
+  ['365d', '1 year'],
+  ['1825d', '5 years'],
+  ['10m', '10 minutes (try it out)'],
+];
+
+/**
+ * A savings lock: the kit is sealed to the owner's own heir key and the vault
+ * seed is deleted at once. The form refuses to send until the owner has ticked
+ * the box and typed LOCK.
+ */
+function lockForm(): HTMLElement {
+  const heir = h('input', { type: 'text', id: 'lock-heir', placeholder: 'age1...', autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Your own heir code' });
+  const until = periodPicker('lock-until', LOCK_PERIODS, '365d', true);
+  const preview = h('p', { class: 'muted small', 'aria-live': 'polite' });
+  const paintPreview = (): void => {
+    const v = until.value();
+    const at = v ? untilEpoch(v, nowSec()) : null;
+    preview.textContent = at ? `The lock ends on ${whenText(at)}.` : '';
+  };
+  until.el.addEventListener('change', paintPreview);
+  until.el.addEventListener('input', paintPreview);
+  paintPreview();
+  const amount = h('input', { type: 'text', id: 'lock-amount', inputmode: 'decimal', placeholder: 'Optional, for example 0.1' });
+  const message = h('textarea', { id: 'lock-message', rows: '3', placeholder: 'Optional. A note to your future self, sealed into the kit.' });
+  const link = h('input', { type: 'checkbox', id: 'lock-claimlink' });
+  const understood = h('input', { type: 'checkbox', id: 'lock-understood' });
+  const confirm = h('input', { type: 'text', id: 'lock-confirm', autocomplete: 'off', spellcheck: 'false', placeholder: 'LOCK' });
+  const err = h('p', { class: 'field-error', role: 'alert' });
+  return h(
+    'section',
+    { class: 'card', id: 'new-plan' },
+    h('h2', { tabindex: '-1' }, 'New plan'),
+    kindSwitch(),
+    h(
+      'p',
+      {},
+      'Put shielded ZEC out of your own reach until a date you choose. The kit is sealed to your own heir key: make one on the ',
+      h('a', { href: 'https://zandglass.cash/heir', target: '_blank', rel: 'noreferrer noopener' }, 'Become an heir page'),
+      ', write down its 24 words, and paste its public heir code below.',
+    ),
+    notice(
+      'warn',
+      'A savings lock cannot be undone',
+      `The vault seed is deleted from this computer as soon as the kit is sealed. Until the lock ends nobody can move the funds, and that includes you: there is no flip, no cancel and no way to ask for help. Afterwards only two things open the vault: the kit file and your 24 heir words. If you lose either one, the funds are gone for good. Zandglass is unaudited, so keep the amount small (up to ${state ? zec(state.cap_zat) : 'the cap'} on mainnet).`,
+    ),
+    h(
+      'form',
+      {
+        novalidate: true,
+        onsubmit: (e: Event) => {
+          e.preventDefault();
+          const code = heir.value.trim();
+          if (!code) {
+            err.textContent = 'Paste your own heir code (age1...), made on the Become an heir page.';
+            return;
+          }
+          const when = until.value();
+          if (!when || !untilEpoch(when, nowSec())) {
+            err.textContent = 'Choose how long to lock: a date, or a whole number for the custom length.';
+            return;
+          }
+          if (!understood.checked) {
+            err.textContent = 'Tick the box to confirm that you have your heir words.';
+            return;
+          }
+          if (confirm.value.trim() !== 'LOCK') {
+            err.textContent = 'Type the word LOCK to confirm.';
+            return;
+          }
+          err.textContent = '';
+          void act('Sealing the kit and deleting the seed...', async () => {
+            created = await api<Created>('POST', '/api/locks', {
+              heirs: [code],
+              until: when,
+              message: message.value,
+              claim_link: link.checked,
+              amount: amount.value.trim().replace(',', '.') || null,
+              understood: true,
+              confirm: 'LOCK',
+            });
+            showNew = false;
+            setState(await api<UiState>('GET', '/api/state'));
+            selected = created.plan.id;
+          });
+        },
+      },
+      h('label', { for: 'lock-heir' }, 'Your own heir code'),
+      heir,
+      h('label', { for: 'lock-until' }, 'Locked until'),
+      until.el,
+      preview,
+      h('label', { for: 'lock-amount' }, `Amount to request in the funding QR (${unit()})`),
+      amount,
+      h('label', { for: 'lock-message' }, 'A note to yourself'),
+      message,
+      h('label', { class: 'check' }, link, h('span', {}, 'Also keep the kit in a blind mailbox at ', h('strong', {}, 'zandglass.cash'), ' (locks of up to 170 days only: the keeper deletes a mailbox after 180 days). The kit file is what counts.')),
+      h('label', { class: 'check' }, understood, h('span', {}, 'I have my 24 heir words written down and I will keep the kit file safe. I understand I cannot get this money back before the lock ends.')),
+      h('label', { for: 'lock-confirm' }, 'Type LOCK to confirm'),
+      confirm,
+      err,
+      h('div', { class: 'actions' }, h('button', { type: 'submit', class: 'btn-primary', disabled: busy ? true : null }, 'Create the savings lock')),
+    ),
+  );
 }
 
 function legacyForm(): HTMLElement {
@@ -913,6 +1149,7 @@ function installmentsForm(): HTMLElement {
 
 function createdCard(c: Created): HTMLElement {
   const inst = c.plan.kind === 'installments';
+  const lock = c.plan.kind === 'lock';
   return h(
     'section',
     { class: 'card created-card' },
@@ -924,7 +1161,17 @@ function createdCard(c: Created): HTMLElement {
       h('div', { class: 'qr-tile' }, qrSvg(c.uri, 'QR code of the funding request')),
       h('div', {}, h('code', { class: 'code-box' }, c.address), h('div', { class: 'actions' }, copyButton('Copy address', () => c.address), copyButton('Copy payment request', () => c.uri))),
     ),
-    inst
+    lock
+      ? h(
+          'div',
+          {},
+          h('p', {}, `2. Download the kit now and keep copies (the file, a paper print, a password manager). The seed was deleted from this computer: from now on only this kit and your 24 heir words open the vault, after ${c.plan.unlock_time ? whenText(c.plan.unlock_time) : 'the unlock time'}. Lose either and the funds are gone for good.`),
+          h('div', { class: 'actions' }, kitButton(c.plan)),
+          c.claim_link
+            ? h('div', {}, h('p', {}, 'Your claim link (shown only once):'), h('code', { class: 'code-box' }, c.claim_link), h('div', { class: 'actions' }, copyButton('Copy claim link', () => c.claim_link ?? '')))
+            : null,
+        )
+      : inst
       ? h('p', {}, '2. When the funds have confirmed, press "Start the schedule" on the plan. It seals one kit per installment and, if you chose the mailbox, gives you a file of claim links for the payee.')
       : c.claim_link
         ? h(
@@ -936,7 +1183,7 @@ function createdCard(c: Created): HTMLElement {
             h('p', { class: 'muted small' }, 'The link opens nothing by itself: your heir also needs their own 24 words, and must wait for the unlock time.'),
           )
         : h('p', {}, '2. Download the kit file below and give it to your heirs.'),
-    inst ? null : h('p', {}, '3. Add the flip reminders to your calendar, and flip before each unlock.'),
+    lock ? h('p', {}, '3. Optional: add the unlock date to your calendar with "Calendar reminder" on the plan.') : inst ? null : h('p', {}, '3. Add the flip reminders to your calendar, and flip before each unlock.'),
     h('div', { class: 'actions' }, h('button', { type: 'button', class: 'btn', onclick: () => ((created = null), render()) }, 'Done')),
   );
 }

@@ -195,3 +195,84 @@ test('owner: a custom flip period is sent as a duration', async ({ page }) => {
   await expect(page.locator('#created-title')).toBeVisible();
   expect(body).toMatchObject({ every: '60d' });
 });
+
+const LOCK_ID = '0123456789abcdef0123456789abcdef';
+const lockPlan = () =>
+  plan({
+    kind: 'lock',
+    period_secs: 180 * 86400,
+    unlock_time: now + 180 * 86400,
+    epoch_created: now,
+    mailbox: false,
+    balance: null,
+  });
+
+test('owner: a savings lock needs the box and the word LOCK, then hides flip and cancel', async ({ page }) => {
+  let body: Record<string, unknown> | null = null;
+  let made = false;
+  const calls = await mockApi(page, {
+    'GET /api/state': (r) => json(state({ plans: made ? [lockPlan()] : [] }))(r),
+    'POST /api/locks': (r) => {
+      body = JSON.parse(r.request().postData() ?? '{}') as Record<string, unknown>;
+      made = true;
+      return json({ plan: lockPlan(), address: 'u1lockaddress', uri: 'zcash:u1lockaddress', claim_link: null })(r);
+    },
+    [`GET /api/plans/${LOCK_ID}/kit`]: json({ file_name: '01234567-e1.zandglass', text: '{}' }),
+  });
+  await page.goto(`/owner#t=${TOKEN}`);
+  await page.getByRole('button', { name: /Savings lock/ }).click();
+  await expect(page.getByText('A savings lock cannot be undone')).toBeVisible();
+  await page.getByLabel('Your own heir code').fill('age1ownheir');
+  await page.getByLabel('Locked until').selectOption('180d');
+  await expect(page.getByText(/The lock ends on/)).toBeVisible();
+
+  // Nothing is sent until the box is ticked and LOCK is typed.
+  await page.getByRole('button', { name: 'Create the savings lock' }).click();
+  await expect(page.locator('.field-error')).toContainText('Tick the box');
+  await page.getByLabel(/I have my 24 heir words/).check();
+  await page.getByRole('button', { name: 'Create the savings lock' }).click();
+  await expect(page.locator('.field-error')).toContainText('Type the word LOCK');
+  await page.getByLabel('Type LOCK to confirm').fill('lock');
+  await page.getByRole('button', { name: 'Create the savings lock' }).click();
+  await expect(page.locator('.field-error')).toContainText('Type the word LOCK');
+  expect(calls).not.toContain('POST /api/locks');
+
+  await page.getByLabel('Type LOCK to confirm').fill('LOCK');
+  await page.getByRole('button', { name: 'Create the savings lock' }).click();
+  await expect(page.locator('#created-title')).toHaveText('Plan 01234567 is ready');
+  await expect(page.locator('.created-card .qr-tile svg')).toBeVisible();
+  await expect(page.locator('.created-card')).toContainText('seed was deleted');
+  expect(body).toMatchObject({ heirs: ['age1ownheir'], until: '180d', claim_link: false, understood: true, confirm: 'LOCK' });
+  await page.getByRole('button', { name: 'Done' }).click();
+
+  const card = page.locator('.plan-card');
+  await expect(card).toContainText('Savings lock');
+  await expect(card).toContainText('Locked until');
+  await expect(card).toContainText('seed deleted');
+  await expect(card.getByRole('button', { name: /Flip/ })).toHaveCount(0);
+  await expect(card.getByRole('button', { name: /Cancel/ })).toHaveCount(0);
+  const [dl] = await Promise.all([page.waitForEvent('download'), card.getByRole('button', { name: 'Download kit' }).click()]);
+  expect(dl.suggestedFilename()).toBe('01234567-e1.zandglass');
+});
+
+test('owner: a savings lock can end on a picked date', async ({ page }) => {
+  let body: Record<string, unknown> = {};
+  await mockApi(page, {
+    'GET /api/state': json(state({ plans: [] })),
+    'POST /api/locks': (r) => {
+      body = JSON.parse(r.request().postData() ?? '{}') as Record<string, unknown>;
+      return json({ plan: lockPlan(), address: 'u1lockaddress', uri: 'zcash:u1lockaddress', claim_link: null })(r);
+    },
+  });
+  await page.goto(`/owner#t=${TOKEN}`);
+  await page.getByRole('button', { name: /Savings lock/ }).click();
+  await page.getByLabel('Your own heir code').fill('age1ownheir');
+  await expect(page.getByLabel('Unlock date')).toBeHidden();
+  await page.getByLabel('Locked until').selectOption('date');
+  await page.getByLabel('Unlock date').fill('2099-01-15');
+  await page.getByLabel(/I have my 24 heir words/).check();
+  await page.getByLabel('Type LOCK to confirm').fill('LOCK');
+  await page.getByRole('button', { name: 'Create the savings lock' }).click();
+  await expect(page.locator('#created-title')).toBeVisible();
+  expect(String(body.until)).toMatch(/^2099-01-1[45]T\d{2}:\d{2}:\d{2}Z$/);
+});

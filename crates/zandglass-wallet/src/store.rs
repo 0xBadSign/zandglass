@@ -99,7 +99,7 @@ pub struct EpochRecord {
 pub struct Plan {
     /// Random 128-bit id, lowercase hex.
     pub id: String,
-    /// `legacy` (installments come in M2).
+    /// `legacy`, `installments` or `lock` (a savings lock: see [`LockInfo`]).
     pub kind: String,
     /// `main` or `test`.
     pub network: String,
@@ -142,6 +142,18 @@ pub struct Plan {
     /// never deleted automatically.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub archived: Vec<EpochRecord>,
+    /// Savings-lock data (lock plans only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lock: Option<LockInfo>,
+}
+
+/// What a savings lock keeps after its vault seed is gone. The seed exists
+/// only in memory while the kit is sealed and is never written to the store,
+/// so the funding address is kept here for later funding requests.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LockInfo {
+    /// The vault's shielded address (public).
+    pub address: String,
 }
 
 /// One installment vault of an installment plan.
@@ -417,7 +429,16 @@ impl Store {
                 Ok(first)
             }
             None => {
-                let mut active = plans.into_iter().filter(|p| p.status == PlanStatus::Active);
+                // Savings locks are never flipped or cancelled: when other
+                // plans are active, a bare command means one of those.
+                let mut active: Vec<Plan> = plans
+                    .into_iter()
+                    .filter(|p| p.status == PlanStatus::Active)
+                    .collect();
+                if active.len() > 1 {
+                    active.retain(|p| p.kind != "lock");
+                }
+                let mut active = active.into_iter();
                 let first = active
                     .next()
                     .ok_or_else(|| StoreError::PlanNotFound("(no active plan)".into()))?;
@@ -571,6 +592,7 @@ mod tests {
             installments: None,
             pending: None,
             archived: Vec::new(),
+            lock: None,
         }
     }
 
@@ -725,6 +747,7 @@ mod mac_tests {
             installments: None,
             pending: None,
             archived: Vec::new(),
+            lock: None,
         }
     }
 

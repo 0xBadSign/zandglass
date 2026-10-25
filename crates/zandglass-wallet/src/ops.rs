@@ -14,7 +14,7 @@ use zandglass_core::Kit;
 use zeroize::Zeroizing;
 
 use crate::error::coded;
-use crate::store::{EpochRecord, Plan, PlanStatus, Store};
+use crate::store::{EpochRecord, LockInfo, Plan, PlanStatus, Store};
 use crate::{Balances, Client, Network, SweepReport, Vault};
 
 /// Mainnet plans are capped at 0.25 ZEC until an audit (decision D-003).
@@ -451,6 +451,7 @@ pub async fn create_plan(
         installments: None,
         pending: None,
         archived: Vec::new(),
+        lock: None,
     };
     let kit = make_kit(
         &plan,
@@ -487,6 +488,260 @@ pub async fn create_plan(
     })
 }
 
+/// The shortest savings lock.
+pub const MIN_LOCK_SECS: u64 = 60;
+/// The longest savings lock (30 years): anything longer is a typo.
+pub const MAX_LOCK_SECS: u64 = 30 * 365 * 86_400;
+/// The keeper deletes a mailbox 180 days after its last update, and a lock
+/// never updates it. A lock with a mailbox must end well inside that.
+pub const MAILBOX_LOCK_MAX_SECS: u64 = 170 * 86_400;
+
+/// Parses a lock end: an RFC 3339 UTC time (`2027-06-01T09:00:00Z`) or a
+/// duration from `now` (`90d`).
+pub fn parse_until(text: &str, now: u64) -> Result<u64> {
+    let text = text.trim();
+    if text.contains('T') || text.contains('-') {
+        return crate::installments::parse_rfc3339(text).map_err(|_| {
+            anyhow!("`{text}` is not an unlock time; use 2027-06-01T09:00:00Z or a duration such as 90d")
+        });
+    }
+    Ok(now + parse_duration(text)?)
+}
+
+/// Checks the length of a savings lock (and its mailbox, if any).
+pub fn check_lock_time(until: u64, now: u64, mailbox: bool) -> Result<()> {
+    if until < now + MIN_LOCK_SECS {
+        return Err(anyhow!(
+            "the unlock time must be at least {MIN_LOCK_SECS} seconds from now"
+        ));
+    }
+    if until - now > MAX_LOCK_SECS {
+        return Err(anyhow!(
+            "the unlock time is more than 30 years away; that is almost certainly a typo"
+        ));
+    }
+    if mailbox && until - now > MAILBOX_LOCK_MAX_SECS {
+        return Err(anyhow!(
+            "the keeper deletes a mailbox 180 days after its last update and a savings lock never updates it, so a lock longer than 170 days cannot use a mailbox. Keep the kit file (or a paper copy) instead"
+        ));
+    }
+    Ok(())
+}
+
+/// The error flip and cancel give for a savings lock.
+pub fn lock_refusal(plan: &Plan) -> anyhow::Error {
+    let when = plan.epochs.first().map_or_else(
+        || "the unlock time".to_string(),
+        |e| zandglass_core::kit::format_time(e.unlock_time),
+    );
+    anyhow!(
+        "This is a savings lock: nobody can move the funds before {when}, not even you. \
+         After the unlock, open the kit on zandglass.cash/claim or with `zandglass claim`."
+    )
+}
+
+/// Inputs for [`create_lock`].
+pub struct NewLock {
+    /// The owner's own heir code(s): the kit is sealed to them.
+    pub heirs: Vec<String>,
+    /// Unix time the kit unlocks (it is rounded up to a drand round).
+    pub until: u64,
+    /// Optional message sealed into the kit.
+    pub message: Option<String>,
+    /// Optional keeper mailbox URL (a lock of at most 170 days).
+    pub mailbox_url: Option<String>,
+    /// Optional funding amount for the ZIP 321 request, in zatoshi.
+    pub amount: Option<u64>,
+    /// The caller's explicit confirmation that losing the heir words or the
+    /// kit means losing the funds. Without it nothing is created.
+    pub confirmed: bool,
+}
+
+/// What [`create_lock`] produced.
+pub struct LockCreated {
+    /// The stored plan (kind `lock`).
+    pub plan: Plan,
+    /// The kit file, written and checked before anything else.
+    pub kit_path: PathBuf,
+    /// The vault's shielded address.
+    pub address: String,
+    /// The ZIP 321 funding request.
+    pub uri: String,
+    /// The mailbox claim link, shown only now, when a mailbox was asked for.
+    pub claim_link: Option<ClaimLink>,
+}
+
+/// Creates a savings lock: a plan whose only kit is sealed to the owner's own
+/// heir code with a fixed unlock time, and whose vault seed is never kept.
+///
+/// The seed lives in memory just long enough to derive the address and seal
+/// the kit; it is not written to the store (a scratch wallet directory holds
+/// only viewing keys and is removed again). Only the kit and the heir's 24
+/// words can open the vault after the unlock.
+pub async fn create_lock(
+    store: &Store,
+    network: Network,
+    client: &mut Client,
+    new: NewLock,
+    kit_dir: &Path,
+    accept_unaudited: bool,
+) -> Result<LockCreated> {
+    if !new.confirmed {
+        return Err(coded(
+            "invalid_request",
+            "A savings lock cannot be undone. Confirm that you have your heir words: losing them or the kit means losing the funds.",
+        ));
+    }
+    check_heirs(&new.heirs)?;
+    if let Some(a) = new.amount {
+        check_cap(network, a, accept_unaudited)?;
+    }
+    let now = now();
+    check_lock_time(new.until, now, new.mailbox_url.is_some())?;
+    let mailbox_url = match &new.mailbox_url {
+        Some(u) => {
+            let u = normalize_base(u);
+            require_secure_url(&u, "mailbox")?;
+            Some(u)
+        }
+        None => None,
+    };
+    let mailbox = match &mailbox_url {
+        Some(u) => Some(MailboxClient::new(u).create()?),
+        None => None,
+    };
+    let id = random_id();
+    let rel = Store::vault_rel_dir(&id, 1);
+    let scratch = store.path(&rel);
+    let result: Result<LockCreated> = async {
+        let birthday = Vault::new_birthday(client).await?;
+        let mut vault = Vault::init(&scratch, network, client, Vault::new_seed(), birthday).await?;
+        let address = vault.address()?;
+        seal_lock(
+            store,
+            network,
+            &new,
+            id,
+            vault.seed_phrase(),
+            birthday,
+            address,
+            mailbox_url.as_deref().zip(mailbox.as_ref()),
+            now,
+            kit_dir,
+        )
+    }
+    .await;
+    // The scratch wallet (viewing keys only) is never needed again.
+    let _ = fs::remove_dir_all(&scratch);
+    if result.is_err() {
+        if let (Some(u), Some(m)) = (&mailbox_url, &mailbox) {
+            let _ = delete_mailbox_parts(u, &m.id, &m.write_token);
+        }
+    }
+    result
+}
+
+/// The offline part of [`create_lock`]: seals the kit for `phrase`, writes it
+/// and checks it, uploads it, and only then records the plan. `phrase` is
+/// never stored. On any failure the kit file and the owner key are removed
+/// (nothing was funded yet).
+#[allow(clippy::too_many_arguments)]
+pub fn seal_lock(
+    store: &Store,
+    network: Network,
+    new: &NewLock,
+    id: String,
+    phrase: &str,
+    birthday: u32,
+    address: String,
+    mailbox: Option<(&str, &zandglass_core::mailbox::Created)>,
+    now: u64,
+    kit_dir: &Path,
+) -> Result<LockCreated> {
+    let unlock_round = drand::unlock_round(new.until);
+    let unlock_time = drand::round_time(unlock_round);
+    let rel = Store::vault_rel_dir(&id, 1);
+    let plan = Plan {
+        id,
+        kind: "lock".into(),
+        network: network_name(network).into(),
+        heirs: new.heirs.clone(),
+        period_secs: unlock_time.saturating_sub(now),
+        message: new.message.clone(),
+        epoch: 1,
+        status: PlanStatus::Active,
+        created: now,
+        mailbox_url: mailbox.map(|(u, _)| u.to_string()),
+        mailbox_id: mailbox.map(|(_, m)| m.id.clone()),
+        mailbox_write_token: mailbox.map(|(_, m)| m.write_token.clone()),
+        epochs: vec![EpochRecord {
+            epoch: 1,
+            // Not a directory on disk: a lock keeps no vault files.
+            dir: rel,
+            birthday_height: birthday,
+            unlock_round,
+            unlock_time,
+            created: now,
+        }],
+        installments: None,
+        pending: None,
+        archived: Vec::new(),
+        lock: Some(LockInfo {
+            address: address.clone(),
+        }),
+    };
+    let owner_key = new_owner_key(store, &plan.id)?;
+    let mut kit_path: Option<PathBuf> = None;
+    let built: Result<(Kit, PathBuf)> = (|| {
+        let kit = make_kit(
+            &plan,
+            1,
+            phrase,
+            birthday,
+            unlock_round,
+            None,
+            now,
+            Some(&*owner_key),
+        )?;
+        let path = write_kit_file(kit_dir, &format!("{}-e1.zandglass", plan.short_id()), &kit)?;
+        kit_path = Some(path.clone());
+        // The kit is the only way back to the funds: read the file back and
+        // check it before anything depends on it.
+        let text =
+            fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+        let back = Kit::from_json(&text)?;
+        back.validate()?;
+        if back != kit || back.unlock.round != unlock_round || back.verify_owner_sig()?.is_none() {
+            return Err(anyhow!(
+                "the kit file did not read back as written; nothing was created"
+            ));
+        }
+        upload_kit(&plan, &kit)?;
+        store.put_plan(&plan)?;
+        Ok((kit, path))
+    })();
+    let (_kit, kit_path) = match built {
+        Ok(k) => k,
+        Err(e) => {
+            // Nothing was funded: drop the unused kit and key.
+            if let Some(p) = kit_path {
+                let _ = fs::remove_file(p);
+            }
+            store.remove_owner_key(&plan.id);
+            return Err(e);
+        }
+    };
+    let uri = crate::vault::zip321_uri_for(&address, new.amount)?;
+    let claim_link = mailbox.map(|(u, m)| ClaimLink::new(u, m));
+    Ok(LockCreated {
+        plan,
+        kit_path,
+        address,
+        uri,
+        claim_link,
+    })
+}
+
 /// What [`flip`] did.
 pub struct FlipReport {
     /// The updated plan.
@@ -515,6 +770,9 @@ pub async fn flip(
     accept_unaudited: bool,
 ) -> Result<FlipReport> {
     let mut plan = store.find_plan(Some(plan_id))?;
+    if plan.kind == "lock" {
+        return Err(lock_refusal(&plan));
+    }
     if plan.status != PlanStatus::Active {
         return Err(anyhow!("plan {} is cancelled", plan.short_id()));
     }
@@ -841,6 +1099,9 @@ pub async fn cancel(
     to_address: &str,
 ) -> Result<CancelReport> {
     let mut plan = store.find_plan(Some(plan_id))?;
+    if plan.kind == "lock" {
+        return Err(lock_refusal(&plan));
+    }
     // Cancelling again sweeps funds that reached a cancelled plan's vault
     // later (for example a late payment); with nothing there it is an error.
     let already = plan.status == PlanStatus::Cancelled;
@@ -964,6 +1225,7 @@ mod tests {
             installments: None,
             pending: Some(rec(2)),
             archived: Vec::new(),
+            lock: None,
         };
         store.put_plan(&plan).unwrap();
         store.write_seed(&rec(2).dir, "seed words").unwrap();
@@ -1003,6 +1265,249 @@ mod tests {
             assert_eq!(kit.verify_owner_sig().unwrap(), Some(key));
             assert_eq!(Kit::from_json(&kit.to_json().unwrap()).unwrap(), kit);
         }
+    }
+
+    /// A client that never connects: the lock code must refuse before any
+    /// network use in the cases below.
+    fn offline_client() -> Client {
+        let channel = tonic::transport::Channel::from_static("http://127.0.0.1:9").connect_lazy();
+        Client::new(channel)
+    }
+
+    fn lock_inputs(until: u64) -> NewLock {
+        let heir =
+            zandglass_core::heir::identity_from_phrase(&zandglass_core::heir::generate_phrase())
+                .unwrap();
+        NewLock {
+            heirs: vec![heir.code().to_string()],
+            until,
+            message: Some("for later".into()),
+            mailbox_url: None,
+            amount: Some(1_000_000),
+            confirmed: true,
+        }
+    }
+
+    fn test_address() -> String {
+        use zcash_address::ToAddress;
+        zcash_address::ZcashAddress::from_transparent_p2pkh(
+            zcash_protocol::consensus::NetworkType::Test,
+            [3; 20],
+        )
+        .encode()
+    }
+
+    #[test]
+    fn a_savings_lock_keeps_no_seed_and_a_valid_kit() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("s");
+        let store = Store::init_with(&root, "pw", 10).unwrap();
+        let kits = dir.path().join("kits");
+        let now = 1_790_000_000;
+        let until = now + 90 * 86_400;
+        let new = lock_inputs(until);
+        let phrase = Vault::new_seed();
+        let made = seal_lock(
+            &store,
+            Network::TestNetwork,
+            &new,
+            ID.into(),
+            &phrase,
+            1234,
+            test_address(),
+            None,
+            now,
+            &kits,
+        )
+        .unwrap();
+
+        // The kit file is on disk, parses and validates; its public kind is
+        // an ordinary legacy kit, signed by the plan's owner key.
+        let kit = Kit::from_json(&fs::read_to_string(&made.kit_path).unwrap()).unwrap();
+        kit.validate().unwrap();
+        assert_eq!(kit.kind, Kind::Legacy);
+        assert_eq!(kit.unlock.round, drand::unlock_round(until));
+        assert!(kit.verify_owner_sig().unwrap().is_some());
+        assert_eq!(made.plan.kind, "lock");
+        assert_eq!(made.plan.lock.as_ref().unwrap().address, made.address);
+        assert!(made.uri.starts_with("zcash:") && made.uri.contains("amount=0.01"));
+
+        // The plan is stored; the seed is nowhere in the store.
+        let saved = store.find_plan(Some(ID)).unwrap();
+        assert_eq!(saved, made.plan);
+        assert!(store.read_seed(&saved.epochs[0].dir).is_err());
+        assert!(!store.path(&saved.epochs[0].dir).exists());
+        let first_words: Vec<&str> = phrase.split(' ').take(3).collect();
+        let mut stack = vec![root.clone()];
+        while let Some(d) = stack.pop() {
+            for e in fs::read_dir(d).unwrap() {
+                let p = e.unwrap().path();
+                if p.is_dir() {
+                    stack.push(p);
+                    continue;
+                }
+                assert_ne!(p.file_name().unwrap(), "seed.age");
+                let text = String::from_utf8_lossy(&fs::read(&p).unwrap()).into_owned();
+                assert!(!text.contains(&first_words.join(" ")), "{}", p.display());
+            }
+        }
+        // The kit does not carry the seed in the clear either.
+        assert!(!fs::read_to_string(&made.kit_path)
+            .unwrap()
+            .contains(first_words[0..2].join(" ").as_str()));
+    }
+
+    #[tokio::test]
+    async fn flip_and_cancel_refuse_a_savings_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::init_with(&dir.path().join("s"), "pw", 10).unwrap();
+        let now = now();
+        seal_lock(
+            &store,
+            Network::TestNetwork,
+            &lock_inputs(now + 3600),
+            ID.into(),
+            &Vault::new_seed(),
+            1234,
+            test_address(),
+            None,
+            now,
+            &dir.path().join("kits"),
+        )
+        .unwrap();
+        let mut client = offline_client();
+        let kits = dir.path().join("kits2");
+        let e = flip(&store, Network::TestNetwork, &mut client, ID, &kits, false)
+            .await
+            .err()
+            .unwrap();
+        let msg = format!("{e:#}");
+        assert!(
+            msg.contains("savings lock") && msg.contains("not even you"),
+            "{msg}"
+        );
+        assert!(msg.contains("zandglass.cash/claim"), "{msg}");
+        let e = cancel(
+            &store,
+            Network::TestNetwork,
+            &mut client,
+            ID,
+            &test_address(),
+        )
+        .await
+        .err()
+        .unwrap();
+        assert!(format!("{e:#}").contains("savings lock"));
+        // Nothing changed.
+        assert_eq!(
+            store.find_plan(Some(ID)).unwrap().status,
+            PlanStatus::Active
+        );
+    }
+
+    #[tokio::test]
+    async fn a_lock_needs_the_explicit_confirmation() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::init_with(&dir.path().join("s"), "pw", 10).unwrap();
+        let mut new = lock_inputs(now() + 3600);
+        new.confirmed = false;
+        let mut client = offline_client();
+        let e = create_lock(
+            &store,
+            Network::TestNetwork,
+            &mut client,
+            new,
+            &dir.path().join("kits"),
+            false,
+        )
+        .await
+        .err()
+        .unwrap();
+        assert!(format!("{e:#}").contains("heir words"), "{e:#}");
+        assert!(store.plans().unwrap().is_empty());
+        assert!(!dir.path().join("kits").exists());
+        // Over the mainnet cap is refused too, before any network use.
+        let mut new = lock_inputs(now() + 3600);
+        new.amount = Some(MAINNET_CAP_ZAT + 1);
+        let e = create_lock(
+            &store,
+            Network::MainNetwork,
+            &mut client,
+            new,
+            &dir.path().join("kits"),
+            false,
+        )
+        .await
+        .err()
+        .unwrap();
+        assert!(format!("{e:#}").contains("cap"), "{e:#}");
+    }
+
+    #[test]
+    fn a_failed_upload_leaves_no_lock_behind() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("s");
+        let store = Store::init_with(&root, "pw", 10).unwrap();
+        let kits = dir.path().join("kits");
+        let created = zandglass_core::mailbox::Created {
+            id: "m".into(),
+            write_token: "w".into(),
+            read_token: "r".into(),
+        };
+        let now = now();
+        let e = seal_lock(
+            &store,
+            Network::TestNetwork,
+            &lock_inputs(now + 3600),
+            ID.into(),
+            &Vault::new_seed(),
+            1234,
+            test_address(),
+            Some(("http://127.0.0.1:9", &created)),
+            now,
+            &kits,
+        );
+        assert!(e.is_err());
+        assert!(store.plans().unwrap().is_empty());
+        assert!(store.read_owner_key(ID).unwrap().is_none());
+        assert_eq!(fs::read_dir(&kits).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn lock_times() {
+        let now = 1_790_000_000;
+        assert_eq!(parse_until("90d", now).unwrap(), now + 90 * 86_400);
+        assert_eq!(
+            parse_until("2026-12-01T09:00:00Z", now).unwrap(),
+            1_796_115_600
+        );
+        assert!(parse_until("soon", now).is_err());
+        assert!(parse_until("2026-12-01", now).is_err());
+        assert!(check_lock_time(now + 3600, now, false).is_ok());
+        assert!(check_lock_time(now + 10, now, false).is_err());
+        assert!(check_lock_time(now - 5, now, false).is_err());
+        assert!(check_lock_time(now + 31 * 365 * 86_400, now, false).is_err());
+        // A mailbox is deleted after 180 days; a longer lock cannot use one.
+        assert!(check_lock_time(now + 100 * 86_400, now, true).is_ok());
+        assert!(check_lock_time(now + 171 * 86_400, now, true).is_err());
+        assert!(check_lock_time(now + 171 * 86_400, now, false).is_ok());
+    }
+
+    #[test]
+    fn a_bare_command_means_the_plan_that_can_be_flipped() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::init_with(&dir.path().join("s"), "pw", 10).unwrap();
+        let (_d, _s, mut legacy, _) = pending_fixture();
+        legacy.pending = None;
+        legacy.id = "aa".repeat(16);
+        let mut lock = legacy.clone();
+        lock.id = "bb".repeat(16);
+        lock.kind = "lock".into();
+        store.put_plan(&lock).unwrap();
+        // Only a lock: a bare command finds it (and then refuses it).
+        assert_eq!(store.find_plan(None).unwrap().id, lock.id);
+        store.put_plan(&legacy).unwrap();
+        assert_eq!(store.find_plan(None).unwrap().id, legacy.id);
     }
 
     #[test]

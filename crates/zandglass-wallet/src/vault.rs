@@ -150,6 +150,23 @@ async fn birthday_at(client: &mut Client, height: u32) -> Result<AccountBirthday
         .map_err(|e| anyhow!("invalid birthday tree state: {e:?}"))
 }
 
+/// Builds a ZIP 321 payment request URI for `address` (and `amount_zat`, if
+/// given). Used for vaults whose seed is gone (savings locks).
+pub fn zip321_uri_for(address: &str, amount_zat: Option<u64>) -> Result<String> {
+    let addr: ZcashAddress = address
+        .parse()
+        .map_err(|e| anyhow!("address parse: {e:?}"))?;
+    let amount = amount_zat
+        .map(zcash_protocol::value::Zatoshis::from_u64)
+        .transpose()
+        .map_err(|e| anyhow!("amount: {e:?}"))?;
+    let payment = zip321::Payment::new(addr, amount, None, None, None, vec![])
+        .map_err(|e| anyhow!("payment: {e:?}"))?;
+    let request =
+        zip321::TransactionRequest::new(vec![payment]).map_err(|e| anyhow!("request: {e:?}"))?;
+    Ok(request.to_uri())
+}
+
 impl Vault {
     /// Generates a fresh random 24-word seed.
     pub fn new_seed() -> Zeroizing<String> {
@@ -286,19 +303,8 @@ impl Vault {
 
     /// Builds a ZIP 321 payment request URI for this vault's address.
     pub fn zip321_uri(&mut self, amount_zat: Option<u64>) -> Result<String> {
-        let addr: ZcashAddress = self
-            .address()?
-            .parse()
-            .map_err(|e| anyhow!("address parse: {e:?}"))?;
-        let amount = amount_zat
-            .map(zcash_protocol::value::Zatoshis::from_u64)
-            .transpose()
-            .map_err(|e| anyhow!("amount: {e:?}"))?;
-        let payment = zip321::Payment::new(addr, amount, None, None, None, vec![])
-            .map_err(|e| anyhow!("payment: {e:?}"))?;
-        let request = zip321::TransactionRequest::new(vec![payment])
-            .map_err(|e| anyhow!("request: {e:?}"))?;
-        Ok(request.to_uri())
+        let address = self.address()?;
+        zip321_uri_for(&address, amount_zat)
     }
 
     /// Syncs the wallet with lightwalletd until it is up to date.
